@@ -690,12 +690,90 @@ function pgToSqlite(sql) {
   return s;
 }
 
+// Zbiór wszystkich nazw kolumn i tabel w dvdrental (do wykrywania przypadkowego aliasowania przy braku przecinka)
+var ALL_SCHEMA_COLS = new Set();
+var ALL_SCHEMA_TABLES = new Set();
+SCHEMA_META.forEach(function(m) {
+  ALL_SCHEMA_TABLES.add(m.table.toLowerCase());
+  m.cols.forEach(function(c) { ALL_SCHEMA_COLS.add(c.toLowerCase()); });
+});
+
+// Walidator ścisłej składni PostgreSQL (DBeaver mode) - wykrywa brakujące przecinki w SELECT
+function validatePgStrict(rawSql) {
+  var lines = String(rawSql || '').split('\n');
+  var inSelect = false;
+
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i].replace(/--.*$/, '').trim();
+    if (!line) continue;
+
+    if (/^\bSELECT\b/i.test(line)) {
+      inSelect = true;
+      line = line.replace(/^\bSELECT\b(\s+DISTINCT(\s+ON\s*\([^)]+\))?)?/i, '').trim();
+    }
+    if (inSelect && /^\b(FROM|WHERE|GROUP|ORDER|LIMIT|HAVING|UNION|INTERSECT|EXCEPT)\b/i.test(line)) {
+      inSelect = false;
+    }
+
+    if (inSelect) {
+      // Przypadek A: w jednej linii wpisano dwie kolumny bez przecinka i bez AS (np. "rating length" albo "fc.category_id f.length")
+      var sameLineMatch = /^([a-zA-Z_][\w.]*)\s+([a-zA-Z_][\w.]*)\s*,?$/.exec(line);
+      if (sameLineMatch) {
+        var firstTok = sameLineMatch[1], secondTok = sameLineMatch[2];
+        var kwAllow = /^(AS|ASC|DESC|NULLS|FIRST|LAST|FROM| distinct)$/i;
+        if (!kwAllow.test(firstTok) && !kwAllow.test(secondTok)) {
+          if (secondTok.indexOf('.') > -1 || ALL_SCHEMA_COLS.has(secondTok.toLowerCase())) {
+            return {
+              line: i + 1,
+              msg: 'ERROR: syntax error at or near "' + secondTok + '" — brakuje przecinka pomiędzy "' + firstTok + '" a "' + secondTok + '".'
+            };
+          }
+        }
+      }
+
+      // Przypadek B: linia wewnątrz listy SELECT nie kończy się przecinkiem ani operatorem, a w kolejnej linii jest kolejna kolumna (a nie FROM)
+      if (!/[,(\bAS\b|\+|\-|\*|\/|AND|OR|WHEN|THEN|ELSE|CASE]$/i.test(line) && !/,$/.test(line)) {
+        // Szukamy następnej niepustej linii
+        for (var next = i + 1; next < lines.length; next++) {
+          var nextLine = lines[next].replace(/--.*$/, '').trim();
+          if (!nextLine) continue;
+          var stopsSelect = /^\b(FROM|WHERE|GROUP|ORDER|LIMIT|HAVING|UNION|INTERSECT|EXCEPT|INTO|END|WHEN|THEN|ELSE|AND|OR|ON)\b/i.test(nextLine);
+          var startsWithAs = /^\bAS\b/i.test(nextLine);
+          if (!stopsSelect && !startsWithAs && /^[a-zA-Z0-9_.*(]/.test(nextLine)) {
+            var nextFirstTok = nextLine.split(/\s+/)[0].replace(/,$/, '');
+            return {
+              line: i + 1,
+              msg: 'ERROR: syntax error at or near "' + nextFirstTok + '" (linia ' + (next + 1) + ') — brakuje przecinka `,` na końcu linii ' + (i + 1) + ' po `' + line + '`.'
+            };
+          }
+          break;
+        }
+      }
+    }
+  }
+  return null;
+}
+
 // Funkcja wyliczająca dokładną linię błędu SQL w edytorze
 function locateErrorLine(rawSql, errMsg) {
   var lines = String(rawSql || '').split('\n');
   var msg = String(errMsg || '');
 
-  // 1. Sprawdzenie niezamkniętych nawiasów
+  // 1. Błąd typu "no such column: fc.fim_id" lub "no such table: ..."
+  var colMatch = /no such column:\s*([a-zA-Z0-9_.]+)/i.exec(msg) || /no such table:\s*([a-zA-Z0-9_.]+)/i.exec(msg) || /ambiguous column name:\s*([a-zA-Z0-9_.]+)/i.exec(msg);
+  if (colMatch && colMatch[1]) {
+    var badCol = colMatch[1].trim();
+    var shortCol = badCol.indexOf('.') > -1 ? badCol.split('.').pop() : badCol;
+    for (var cIdx = 0; cIdx < lines.length; cIdx++) {
+      if (lines[cIdx].indexOf(badCol) > -1) return cIdx + 1;
+    }
+    for (var cIdx2 = 0; cIdx2 < lines.length; cIdx2++) {
+      var re = new RegExp('\\b' + shortCol.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'i');
+      if (re.test(lines[cIdx2])) return cIdx2 + 1;
+    }
+  }
+
+  // 2. Sprawdzenie niezamkniętych nawiasów
   var depth = 0, lastOpenLine = 1;
   for (var i = 0; i < lines.length; i++) {
     var lineClean = lines[i].replace(/--.*$/, '');
@@ -709,25 +787,34 @@ function locateErrorLine(rawSql, errMsg) {
   }
   if (depth > 0) return lastOpenLine;
 
-  // 2. Dopasowanie tokenu (z pominięciem uniwersalnych słów kluczowych jak AS, FROM itp.)
-  var IGNORE_KW = new Set(['AS', 'FROM', 'SELECT', 'WHERE', 'AND', 'OR', 'JOIN', 'ON', 'GROUP', 'ORDER', 'BY', 'HAVING', 'IN', 'IS', 'NOT', 'NULL']);
-  var nearMatch = /near\s+"([^"]+)"/i.exec(msg) || /column:\s*([a-zA-Z0-9_.]+)/i.exec(msg) || /table:\s*([a-zA-Z0-9_.]+)/i.exec(msg);
-  if (nearMatch && nearMatch[1]) {
-    var tok = nearMatch[1].trim();
-    if (!IGNORE_KW.has(tok.toUpperCase())) {
-      for (var j = 0; j < lines.length; j++) {
-        if (lines[j].indexOf(tok) > -1) return j + 1;
-      }
-    }
-  }
-
-  // 3. Sprawdzenie przecinka wiszącego przed FROM / WHERE / GROUP BY
+  // 3. Sprawdzenie przecinka wiszącego tuż przed FROM / WHERE / GROUP BY
   for (var k = 1; k < lines.length; k++) {
     if (/^\s*(FROM|WHERE|GROUP|ORDER|LIMIT|HAVING)\b/i.test(lines[k]) && /,\s*(--.*)?$/.test(lines[k - 1])) {
       return k;
     }
   }
+
+  // 4. Dopasowanie tokenu z near "..." (z pominięciem pojedynczej kropki i słów kluczowych)
+  var IGNORE_KW = new Set(['.', ',', 'AS', 'FROM', 'SELECT', 'WHERE', 'AND', 'OR', 'JOIN', 'ON', 'GROUP', 'ORDER', 'BY', 'HAVING', 'IN', 'IS', 'NOT', 'NULL']);
+  var nearMatch = /near\s+"([^"]+)"/i.exec(msg);
+  if (nearMatch && nearMatch[1]) {
+    var tok = nearMatch[1].trim();
+    if (!IGNORE_KW.has(tok.toUpperCase())) {
+      for (var j = lines.length - 1; j >= 0; j--) {
+        if (lines[j].indexOf(tok) > -1) return j + 1;
+      }
+    }
+  }
+
   return 1;
+}
+
+function formatPgErrorMessage(rawMsg) {
+  var m = String(rawMsg || '');
+  m = m.replace(/no such column:\s*([a-zA-Z0-9_.]+)/i, 'ERROR: column "$1" does not exist (sprawdź literówkę w nazwie kolumny)');
+  m = m.replace(/no such table:\s*([a-zA-Z0-9_.]+)/i, 'ERROR: relation "$1" does not exist (sprawdź nazwę tabeli)');
+  m = m.replace(/ambiguous column name:\s*([a-zA-Z0-9_.]+)/i, 'ERROR: column reference "$1" is ambiguous (dodaj przedrostek tabeli, np. f.$1)');
+  return m;
 }
 
 async function initDatabase() {
@@ -751,6 +838,18 @@ function runQuery(sql) {
   if (!dbReady || !db) return { error: 'Silnik bazy danych jeszcze się ładuje.' };
   var raw = String(sql || '').trim();
   if (!raw) return { error: 'Wpisz zapytanie SQL.', errorLine: 1 };
+
+  // Ścisła walidacja PostgreSQL (wykrywa brak przecinka po kolumnie w SELECT jak w DBeaverze)
+  var strictErr = validatePgStrict(raw);
+  if (strictErr) {
+    var strictLineTxt = (raw.split('\n')[strictErr.line - 1] || '').trim();
+    return {
+      error: strictErr.msg,
+      errorLine: strictErr.line,
+      errorSnippet: strictLineTxt
+    };
+  }
+
   var clean = pgToSqlite(raw);
   try {
     var res = db.exec(clean);
@@ -761,7 +860,7 @@ function runQuery(sql) {
     var ln = locateErrorLine(raw, rawMsg);
     var lineTxt = (raw.split('\n')[ln - 1] || '').trim();
     return {
-      error: rawMsg,
+      error: formatPgErrorMessage(rawMsg),
       errorLine: ln,
       errorSnippet: lineTxt
     };

@@ -34,7 +34,7 @@ Do sprawdzenia w prototypie (Twoje testy w VS Code + Live Server)
 
 [x] TEST 4 (Tryb Offline): Pełne działanie przełączania zadań, losowania 5 wariantów i wykonywania zapytań SQL bez internetu.
 
-[ ] TEST 3 (Składnia PostgreSQL w Sandboxie – po naprawie parsera replacePgCasts): Wejdź w Baza dvdrental, kliknij przycisk ⚡ Wklej test składni PG (lub uruchom zapytanie z ::numeric, ILIKE, DATE_TRUNC, FILTER, INTERVAL i generate_series) i sprawdź, czy zwraca tabelę 5 wierszy (dni 2026-05-01 do 2026-05-05) bez błędu syntax error.
+[x] TEST 3 (Składnia PostgreSQL w Sandboxie – po naprawie parsera replacePgCasts): Wejdź w Baza dvdrental, kliknij przycisk ⚡ Wklej test składni PG (lub uruchom zapytanie z ::numeric, ILIKE, DATE_TRUNC, FILTER, INTERVAL i generate_series) i sprawdź, czy zwraca tabelę 5 wierszy (dni 2026-05-01 do 2026-05-05) bez błędu syntax error.
 
 [ ] TEST 5 (Pionowa numeracja linii i wskazanie linii błędu): Sprawdź, czy numery linii 1, 2, 3... po lewej stronie edytora układają się pionowo, a po wpisaniu celowego błędu w 3. linii (np. SELECT title\nFROM film\nWHERE rating = ;) numer linii 3 podświetla się na czerwono i pojawia się komunikat Błąd SQL w linii 3.
 
