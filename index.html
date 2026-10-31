@@ -582,26 +582,82 @@ var SCHEMA_META = [
    2. ROZBUDOWANY TRANSPILER POSTGRESQL -> SQLITE WASM
    Obsługuje: ::numeric, ::int, ::date, ::text, ILIKE, DATE_TRUNC, INTERVAL, generate_series
    ========================================================================== */
+function replacePgCasts(sql) {
+  var s = String(sql || '');
+  var typeMap = {
+    'numeric': 'REAL', 'decimal': 'REAL', 'float': 'REAL', 'real': 'REAL',
+    'int': 'INTEGER', 'integer': 'INTEGER', 'bigint': 'INTEGER',
+    'text': 'TEXT', 'varchar': 'TEXT',
+    'date': 'NONE', 'timestamp': 'NONE'
+  };
+
+  var guard = 0;
+  while (guard++ < 50) {
+    var match = /::\s*([a-zA-Z_]\w*)/.exec(s);
+    if (!match) break;
+    var typeRaw = match[1].toLowerCase();
+    var targetType = typeMap[typeRaw] || 'REAL';
+    var colonIdx = match.index;
+    var matchEnd = colonIdx + match[0].length;
+
+    var i = colonIdx - 1;
+    while (i >= 0 && /\s/.test(s[i])) i--;
+    if (i < 0) break;
+
+    var startIdx = 0;
+    if (s[i] === "'") {
+      i--;
+      while (i >= 0 && s[i] !== "'") i--;
+      startIdx = Math.max(0, i);
+    } else if (s[i] === ')') {
+      var depth = 1;
+      i--;
+      while (i >= 0 && depth > 0) {
+        if (s[i] === ')') depth++;
+        else if (s[i] === '(') depth--;
+        i--;
+      }
+      var beforeParen = i;
+      while (beforeParen >= 0 && /\s/.test(s[beforeParen])) beforeParen--;
+      var idEnd = beforeParen;
+      while (beforeParen >= 0 && /[a-zA-Z0-9_.]/.test(s[beforeParen])) beforeParen--;
+      if (idEnd > beforeParen) {
+        startIdx = beforeParen + 1;
+      } else {
+        startIdx = i + 1;
+      }
+    } else {
+      while (i >= 0 && /[a-zA-Z0-9_.]/.test(s[i])) i--;
+      startIdx = i + 1;
+    }
+
+    var expr = s.slice(startIdx, colonIdx).trim();
+    var replacement = (targetType === 'NONE') ? expr : ('CAST(' + expr + ' AS ' + targetType + ')');
+    s = s.slice(0, startIdx) + replacement + s.slice(matchEnd);
+  }
+  return s;
+}
+
 function pgToSqlite(sql) {
   var s = String(sql || '').trim();
   var ctePrefix = '';
 
-  // 1. Obsługa generate_series dla dat -> bezpieczne CTE _gs_cal na początku zapytania
-  var gsDateRe = /generate_series\s*\(\s*'([^']+)'(?:\s*::\s*\w+)?\s*,\s*'([^']+)'(?:\s*::\s*\w+)?\s*,\s*'1\s+day'\s*\)(?:\s+AS)?\s+([a-zA-Z_]\w*)/i;
+  // 1. Obsługa generate_series dla dat
+  var gsDateRe = /generate_series\s*\(\s*'([^']+)'(?:\s*::\s*\w+)?\s*,\s*'([^']+)'(?:\s*::\s*\w+)?(?:\s*,\s*'1\s+day')?\s*\)(?:\s+(?:AS\s+)?([a-zA-Z_]\w*))?/i;
   var mDate = gsDateRe.exec(s);
   if (mDate) {
-    var dStart = mDate[1], dEnd = mDate[2], alias = mDate[3];
+    var dStart = mDate[1], dEnd = mDate[2], alias = mDate[3] || 'd';
     ctePrefix = "WITH RECURSIVE _gs_cal(" + alias + ") AS (SELECT '" + dStart + "' UNION ALL SELECT date(" + alias + ", '+1 day') FROM _gs_cal WHERE " + alias + " < '" + dEnd + "') ";
-    s = s.replace(gsDateRe, "_gs_cal");
+    s = s.replace(gsDateRe, "_gs_cal " + alias);
   }
 
-  // 2. Obsługa generate_series dla liczb -> bezpieczne CTE _gs_num
-  var gsNumRe = /generate_series\s*\(\s*(\d+)\s*,\s*(\d+)\s*\)(?:\s+AS)?\s+([a-zA-Z_]\w*)/i;
+  // 2. Obsługa generate_series dla liczb
+  var gsNumRe = /generate_series\s*\(\s*(\d+)\s*,\s*(\d+)\s*\)(?:\s+(?:AS\s+)?([a-zA-Z_]\w*))?/i;
   var mNum = gsNumRe.exec(s);
   if (mNum) {
-    var nStart = mNum[1], nEnd = mNum[2], nAlias = mNum[3];
+    var nStart = mNum[1], nEnd = mNum[2], nAlias = mNum[3] || 's';
     ctePrefix = "WITH RECURSIVE _gs_num(" + nAlias + ") AS (SELECT " + nStart + " UNION ALL SELECT " + nAlias + " + 1 FROM _gs_num WHERE " + nAlias + " < " + nEnd + ") ";
-    s = s.replace(gsNumRe, "_gs_num");
+    s = s.replace(gsNumRe, "_gs_num " + nAlias);
   }
 
   if (ctePrefix) {
@@ -612,33 +668,22 @@ function pgToSqlite(sql) {
     }
   }
 
-  // 3. Rzutowania na literałach stringowych: '2026-05-01'::date -> '2026-05-01'
-  s = s.replace(/'([^']*)'\s*::\s*(date|text|varchar|timestamp)/gi, "'$1'");
-  s = s.replace(/'([^']*)'\s*::\s*(numeric|decimal|float|real)/gi, "CAST('$1' AS REAL)");
-  s = s.replace(/'([^']*)'\s*::\s*(int|integer|bigint)/gi, "CAST('$1' AS INTEGER)");
+  // 3. Precyzyjna translacja rzutowań ::type bez niszczenia funkcji zagnieżdżonych
+  s = replacePgCasts(s);
 
-  // 4. Wielokrotne rzutowania na nawiasach i kolumnach, np. (COUNT(r.rental_id)::numeric / 2)::numeric
-  for (var pass = 0; pass < 3; pass++) {
-    s = s.replace(/\(([^()]+)\)\s*::\s*(numeric|decimal|float|real)/gi, 'CAST(($1) AS REAL)');
-    s = s.replace(/\(([^()]+)\)\s*::\s*(int|integer|bigint)/gi, 'CAST(($1) AS INTEGER)');
-    s = s.replace(/\(([^()]+)\)\s*::\s*(text|varchar)/gi, 'CAST(($1) AS TEXT)');
-    s = s.replace(/\(([^()]+)\)\s*::\s*(date|timestamp)/gi, '($1)');
-
-    s = s.replace(/([a-zA-Z0-9_.]+(?:\([^()]*\))?)\s*::\s*(numeric|decimal|float|real)/gi, 'CAST($1 AS REAL)');
-    s = s.replace(/([a-zA-Z0-9_.]+(?:\([^()]*\))?)\s*::\s*(int|integer|bigint)/gi, 'CAST($1 AS INTEGER)');
-    s = s.replace(/([a-zA-Z0-9_.]+(?:\([^()]*\))?)\s*::\s*(text|varchar)/gi, 'CAST($1 AS TEXT)');
-    s = s.replace(/([a-zA-Z0-9_.]+(?:\([^()]*\))?)\s*::\s*(date|timestamp)/gi, '$1');
-  }
+  // 4. FILTER (WHERE ...) -> CASE WHEN
+  s = s.replace(/COUNT\s*\(\s*\*\s*\)\s+FILTER\s*\(\s*WHERE\s+([^()]+)\)/gi, 'COUNT(CASE WHEN $1 THEN 1 ELSE NULL END)');
+  s = s.replace(/([a-zA-Z_]\w*)\s*\(\s*([^()]+)\s*\)\s+FILTER\s*\(\s*WHERE\s+([^()]+)\)/gi, '$1(CASE WHEN $3 THEN $2 ELSE NULL END)');
 
   // 5. ILIKE -> LIKE
   s = s.replace(/\bILIKE\b/gi, 'LIKE');
 
-  // 6. DATE_TRUNC('month'|'day'|'year', col)
+  // 6. DATE_TRUNC
   s = s.replace(/DATE_TRUNC\s*\(\s*'month'\s*,\s*([^)]+)\)/gi, "substr($1, 1, 7)");
   s = s.replace(/DATE_TRUNC\s*\(\s*'day'\s*,\s*([^)]+)\)/gi, "substr($1, 1, 10)");
   s = s.replace(/DATE_TRUNC\s*\(\s*'year'\s*,\s*([^)]+)\)/gi, "substr($1, 1, 4)");
 
-  // 7. Dodawanie/odejmowanie INTERVAL: col + INTERVAL '3 days' -> date(col, '+3 days')
+  // 7. Dodawanie/odejmowanie INTERVAL
   s = s.replace(/([a-zA-Z0-9_.'()]+)\s*\+\s*INTERVAL\s*'([+-]?\d+\s+\w+)'/gi, "date($1, '+$2')");
   s = s.replace(/([a-zA-Z0-9_.'()]+)\s*-\s*INTERVAL\s*'([+-]?\d+\s+\w+)'/gi, "date($1, '-$2')");
 
@@ -664,12 +709,15 @@ function locateErrorLine(rawSql, errMsg) {
   }
   if (depth > 0) return lastOpenLine;
 
-  // 2. Dopasowanie tokenu z komunikatu SQLite: near "X": syntax error lub no such column: X
+  // 2. Dopasowanie tokenu (z pominięciem uniwersalnych słów kluczowych jak AS, FROM itp.)
+  var IGNORE_KW = new Set(['AS', 'FROM', 'SELECT', 'WHERE', 'AND', 'OR', 'JOIN', 'ON', 'GROUP', 'ORDER', 'BY', 'HAVING', 'IN', 'IS', 'NOT', 'NULL']);
   var nearMatch = /near\s+"([^"]+)"/i.exec(msg) || /column:\s*([a-zA-Z0-9_.]+)/i.exec(msg) || /table:\s*([a-zA-Z0-9_.]+)/i.exec(msg);
   if (nearMatch && nearMatch[1]) {
     var tok = nearMatch[1].trim();
-    for (var j = 0; j < lines.length; j++) {
-      if (lines[j].indexOf(tok) > -1) return j + 1;
+    if (!IGNORE_KW.has(tok.toUpperCase())) {
+      for (var j = 0; j < lines.length; j++) {
+        if (lines[j].indexOf(tok) > -1) return j + 1;
+      }
     }
   }
 
@@ -1098,7 +1146,7 @@ var LEMUR_TASKS = [
     cols: ['rental', 'customer_id', 'rental_date', 'INTERSECT', 'HAVING'],
     prompt: 'Znajdź `customer_id` klientów z tabeli `rental`, którzy wypożyczyli co najmniej jeden film w maju (`2026-05%`) ORAZ co najmniej jeden film w czerwcu (`2026-06%`). Posortuj rosnąco po `customer_id`.',
     sol: "SELECT customer_id FROM rental WHERE rental_date LIKE '2026-05%' INTERSECT SELECT customer_id FROM rental WHERE rental_date LIKE '2026-06%' ORDER BY customer_id;",
-    detectTrap: function(sql, userRes) {
+    detectTrap: function(sql) {
       if (/WHERE[\s\S]*2026-05[\s\S]*AND[\s\S]*2026-06/i.test(sql) && !/EXISTS/i.test(sql)) {
         return 'PUŁAPKA LOGICZNA WHERE: Napisałeś w WHERE `rental_date LIKE 2026-05% AND rental_date LIKE 2026-06%`. Pojedynczy wiersz nigdy nie ma dwóch dat naraz! Użyj INTERSECT lub GROUP BY + HAVING.';
       }
@@ -1148,11 +1196,11 @@ function defaultState() {
     unlockedStage: 1,
     diagDone: false,
     completedTasks: {},
-    completedVariants: {}, // np. 'p1_1:0': true
+    completedVariants: {},
     completedLemur: {},
-    pathMode: 'list',      // 'list' (przejrzysta mapa) lub 'solve' (tryb skupienia na zadaniu)
-    lemurMode: 'list',     // 'list' (katalog 12 zadań) lub 'solve' (tryb skupienia)
-    lemurSubTab: 'tasks',  // 'tasks' lub 'gaps'
+    pathMode: 'list',
+    lemurMode: 'list',
+    lemurSubTab: 'tasks',
     activeTaskId: 'p1_1',
     activeVariantIdx: 0,
     activeLemurId: 'dl_1',
@@ -1368,7 +1416,6 @@ function renderResultBox() {
 
 // ZAKŁADKA 1: ŚCIEŻKA (60 WARIANTÓW)
 function renderPathTab() {
-  // TRYB 1A: Rozwiązywanie wybranego zadania (czysty ekran skupienia)
   if (state.pathMode === 'solve') {
     var task = PATH_TASKS.find(function(t) { return t.id === state.activeTaskId; }) || PATH_TASKS[0];
     var vIdx = state.activeVariantIdx % task.variants.length;
@@ -1398,7 +1445,6 @@ function renderPathTab() {
     '</div>';
   }
 
-  // TRYB 1B: Przejrzysta Mapa Ścieżki
   var totalVariants = PATH_TASKS.length * 5;
   var doneVariants = Object.keys(state.completedVariants).length;
   var doneLessons = Object.keys(state.completedTasks).length;
@@ -1493,7 +1539,7 @@ function renderDiagTab() {
   '</div>';
 }
 
-// ZAKŁADKA 3: REKRUTACJA DATALEMUR (12 ZADAŃ) + REJESTR LUK (ODDZIELONE PRZEŁĄCZNIKIEM)
+// ZAKŁADKA 3: REKRUTACJA DATALEMUR (12 ZADAŃ) + REJESTR LUK
 function renderLemurTab() {
   var openGapsCnt = state.gaps.filter(function(g) { return g.lvl <= 1; }).length;
   var nav = '<div class="subnav">' +
@@ -1501,7 +1547,6 @@ function renderLemurTab() {
     '<button type="button" class="' + (state.lemurSubTab === 'gaps' ? 'active' : '') + '" data-act="lemurSub" data-sub="gaps">🧠 Twój Rejestr Luk (' + state.gaps.length + (openGapsCnt ? ' · 🔥' + openGapsCnt : '') + ')</button>' +
   '</div>';
 
-  // PODWIDOK A: REJESTR LUK
   if (state.lemurSubTab === 'gaps') {
     var gh = nav + '<div class="card">' +
       '<h2>Twój Rejestr Luk (Spaced Repetition)</h2>' +
@@ -1528,7 +1573,6 @@ function renderLemurTab() {
     return gh;
   }
 
-  // PODWIDOK B1: ROZWIĄZYWANIE ZADANIA DATALEMUR (TRYB SKUPIENIA)
   if (state.lemurMode === 'solve') {
     var task = LEMUR_TASKS.find(function(x) { return x.id === state.activeLemurId; }) || LEMUR_TASKS[0];
     var isSolved = !!state.completedLemur[task.id];
@@ -1548,7 +1592,6 @@ function renderLemurTab() {
     '</div>';
   }
 
-  // PODWIDOK B2: PRZEJRZYSTA LISTA 12 ZADAŃ REKRUTACYJNYCH
   var solvedCnt = Object.keys(state.completedLemur).length;
   var lh = nav + '<div class="card">' +
     '<h2>Zadania Rekrutacyjne z Pułapką (DataLemur Style)</h2>' +
@@ -1659,7 +1702,9 @@ function render() {
   if (code) {
     code.addEventListener('scroll', function() {
       var hl = document.getElementById('sqlhl');
+      var gut = document.getElementById('sqlgut');
       if (hl) { hl.scrollTop = code.scrollTop; hl.scrollLeft = code.scrollLeft; }
+      if (gut) { gut.scrollTop = code.scrollTop; }
     });
     sqlUpdate();
   }
@@ -1714,7 +1759,6 @@ document.addEventListener('click', async function(e) {
     lastFeedback = { type: 'warn', title: '👁 Podgląd tabeli ' + tName + ' (pierwsze 5 wierszy)', msg: 'Twój kod w edytorze pozostał bez zmian.' };
     render();
   }
-  // NAWIGACJA ŚCIEŻKI (MAPA <-> ZADANIE)
   else if (act === 'openPathTask') {
     state.activeTaskId = el.dataset.id;
     state.activeVariantIdx = 0;
@@ -1797,7 +1841,6 @@ document.addEventListener('click', async function(e) {
     lastFeedback = { type: 'warn', title: '💡 Wczytano wzorcowe rozwiązanie', msg: 'Przeanalizuj kod, a następnie przełącz się na kolejny Wariant (1..5), aby napisać podobne zapytanie samodzielnie.' };
     render();
   }
-  // DIAGNOZA
   else if (act === 'submitDiag') {
     var dq = DIAG_QUESTIONS[state.diagIdx];
     lastExecResult = runQuery(state.editorCode);
@@ -1858,7 +1901,6 @@ document.addEventListener('click', async function(e) {
     saveState();
     render();
   }
-  // NAWIGACJA REKRUTACJI DATALEMUR & LUK
   else if (act === 'lemurSub') {
     state.lemurSubTab = el.dataset.sub;
     lastExecResult = null;
@@ -1929,7 +1971,6 @@ document.addEventListener('click', async function(e) {
       toast('Poziom luki podniesiony do ' + g.lvl + '/4.');
     }
   }
-  // BAZA DVDRENTAL & TEST POSTGRESQL
   else if (act === 'previewTable') {
     var tbl = el.dataset.table;
     state.editorCode = 'SELECT * FROM ' + tbl + ' LIMIT 10;';
@@ -1974,7 +2015,7 @@ document.addEventListener('click', async function(e) {
       lastFeedback = {
         type: 'warn',
         title: '💡 Wskazówka lokalnego mentora (Offline)',
-        msg: 'Rozwiń sekcję "👁 Podejrzyj kolumny tabel w tym zadaniu" nad edytorem, aby upewnić się co do nazw kolumn i zawartości tabel.'
+        msg: 'Rozwiń sekcję "👁 Podejrzyj i kliknij kolumny tabel w tym zadaniu" nad edytorem, aby upewnić się co do nazw kolumn i zawartości tabel.'
       };
     }
     render();
