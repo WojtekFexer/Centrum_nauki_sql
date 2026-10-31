@@ -13,6 +13,7 @@
   --bg: #0B101B;
   --surface: #131B2E;
   --surface-2: #1B2640;
+  --surface-3: #233152;
   --ink: #EEF2F6;
   --muted: #94A3B8;
   --line: #263554;
@@ -20,11 +21,11 @@
   --accent-2: #8B5CF6;
   --accent-ink: #FFFFFF;
   --done: #10B981;
-  --done-soft: rgba(16, 185, 129, 0.16);
+  --done-soft: rgba(16, 185, 129, 0.15);
   --mid: #F59E0B;
-  --mid-soft: rgba(245, 158, 11, 0.16);
+  --mid-soft: rgba(245, 158, 11, 0.15);
   --open: #EF4444;
-  --open-soft: rgba(239, 68, 68, 0.16);
+  --open-soft: rgba(239, 68, 68, 0.15);
   --code-bg: #090D16;
   --kw: #7AA8FF;
   --agg: #D98CF0;
@@ -40,7 +41,8 @@
 :root[data-theme="light"] {
   --bg: #F1F5F9;
   --surface: #FFFFFF;
-  --surface-2: #E2E8F0;
+  --surface-2: #F8FAFC;
+  --surface-3: #E2E8F0;
   --ink: #0F172A;
   --muted: #475569;
   --line: #CBD5E1;
@@ -67,17 +69,17 @@ html, body {
   margin: 0; padding: 0;
   background: var(--bg);
   color: var(--ink);
-  font: 400 15px/1.5 var(--body);
+  font: 400 15px/1.55 var(--body);
   -webkit-text-size-adjust: 100%;
   overflow-x: hidden;
 }
 body {
-  background-image: radial-gradient(800px 320px at 50% -100px, rgba(79, 117, 255, 0.16), transparent);
-  padding-bottom: calc(82px + env(safe-area-inset-bottom, 0px));
+  background-image: radial-gradient(850px 320px at 50% -110px, rgba(79, 117, 255, 0.14), transparent);
+  padding-bottom: calc(86px + env(safe-area-inset-bottom, 0px));
 }
-.app { max-width: 640px; margin: 0 auto; padding: 14px 14px 32px; }
+.app { max-width: 680px; margin: 0 auto; padding: 12px 14px 36px; }
 
-/* Top Bar */
+/* Header */
 .topbar {
   display: flex; align-items: center; justify-content: space-between;
   gap: 10px; margin-bottom: 14px;
@@ -86,60 +88,98 @@ body {
 }
 .brand { display: flex; align-items: center; gap: 10px; }
 .brand-badge {
-  width: 38px; height: 38px; border-radius: 11px;
+  width: 36px; height: 36px; border-radius: 10px;
   background: linear-gradient(135deg, var(--accent), var(--accent-2));
-  color: #fff; font: 700 17px var(--head);
-  display: grid; place-items: center;
+  color: #fff; font: 700 15px var(--head);
+  display: grid; place-items: center; flex: none;
 }
-.brand-txt b { display: block; font: 700 17px/1.1 var(--head); }
-.brand-txt span { font-size: 12px; color: var(--muted); }
-.top-stats { display: flex; align-items: center; gap: 8px; }
+.brand-txt b { display: block; font: 700 16px/1.15 var(--head); }
+.brand-txt span { font-size: 11.5px; color: var(--muted); display: flex; align-items: center; gap: 5px; }
+.dot-online { width: 7px; height: 7px; border-radius: 50%; background: var(--done); display: inline-block; }
+.top-stats { display: flex; align-items: center; gap: 6px; }
 .pill-stat {
   background: var(--surface-2); border: 1px solid var(--line);
   padding: 5px 10px; border-radius: 99px; font-size: 12px; font-weight: 600;
-  display: inline-flex; align-items: center; gap: 4px;
+  white-space: nowrap;
 }
 
-/* Cards & Buttons */
+/* Base UI Elements */
 .card {
   background: var(--surface); border: 1px solid var(--line);
   border-radius: 18px; padding: 16px; margin-bottom: 14px;
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.14);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12);
 }
 .hero {
   background: linear-gradient(135deg, var(--accent), var(--accent-2));
-  color: #fff; border-radius: 20px; padding: 18px; margin-bottom: 14px;
-  box-shadow: 0 10px 26px rgba(79, 117, 255, 0.28);
+  color: #fff; border-radius: 18px; padding: 16px 18px; margin-bottom: 14px;
+  box-shadow: 0 8px 24px rgba(79, 117, 255, 0.25);
 }
-.hero h2 { margin: 0 0 6px; font: 600 13px var(--body); text-transform: uppercase; letter-spacing: .05em; opacity: .9; }
-.hero p { margin: 0 0 12px; font: 700 20px/1.25 var(--head); }
-.hero .sub-hero { font-size: 13px; opacity: .9; margin-bottom: 14px; }
+.hero h2 { margin: 0 0 4px; font: 600 12px var(--body); text-transform: uppercase; letter-spacing: .06em; opacity: .9; }
+.hero p { margin: 0 0 8px; font: 700 19px/1.25 var(--head); }
+.hero .sub-hero { font-size: 13px; opacity: .92; margin-bottom: 12px; }
 
-h2 { font: 700 18px/1.25 var(--head); margin: 0 0 10px; }
-h3 { font: 600 15px/1.3 var(--head); margin: 14px 0 6px; }
+h2 { font: 700 18px/1.25 var(--head); margin: 0 0 8px; }
+h3 { font: 600 15px/1.3 var(--head); margin: 12px 0 6px; }
 p { margin: 0 0 10px; }
-.small { font-size: 13px; }
+.small { font-size: 13.5px; }
 .muted { color: var(--muted); }
-
-.acts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
-.btn {
-  font: 600 14px var(--body); padding: 10px 14px; border-radius: 12px;
-  border: 1px solid var(--line); background: var(--surface-2); color: var(--ink);
-  cursor: pointer; min-height: 42px; display: inline-flex; align-items: center; justify-content: center; gap: 6px;
-  transition: transform .1s ease, border-color .15s ease;
+code.inline {
+  font: 500 12.5px var(--mono); background: var(--surface-2);
+  color: var(--al); padding: 2px 6px; border-radius: 6px; border: 1px solid var(--line);
 }
+
+/* Segmented Sub-navigation */
+.subnav {
+  display: flex; gap: 6px; background: var(--surface);
+  padding: 5px; border-radius: 14px; border: 1px solid var(--line);
+  margin-bottom: 14px;
+}
+.subnav button {
+  flex: 1; border: 0; background: transparent; color: var(--muted);
+  font: 600 13px var(--body); padding: 9px 10px; border-radius: 10px;
+  cursor: pointer; transition: all .15s;
+}
+.subnav button.active {
+  background: var(--accent); color: #fff;
+  box-shadow: 0 2px 10px rgba(79, 117, 255, 0.3);
+}
+
+/* Workspace Top Bar (Back button + Variant Switcher) */
+.ws-bar {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 8px; margin-bottom: 12px; flex-wrap: wrap;
+}
+.var-pills { display: flex; gap: 4px; align-items: center; }
+.var-pill {
+  width: 30px; height: 30px; border-radius: 8px; border: 1px solid var(--line);
+  background: var(--surface-2); color: var(--muted); font: 600 12px var(--mono);
+  cursor: pointer; display: grid; place-items: center;
+}
+.var-pill.active { border-color: var(--accent); background: var(--accent); color: #fff; }
+.var-pill.done { border-color: var(--done); color: var(--done); }
+.var-pill.active.done { background: var(--done); color: #fff; }
+
+/* Buttons */
+.acts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.btn {
+  font: 600 13.5px var(--body); padding: 9px 14px; border-radius: 11px;
+  border: 1px solid var(--line); background: var(--surface-2); color: var(--ink);
+  cursor: pointer; min-height: 40px; display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  transition: transform .1s ease, border-color .15s ease, background .15s ease;
+}
+.btn:hover { border-color: var(--accent); }
 .btn:active { transform: scale(.97); }
 .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
 .btn.success { background: var(--done); border-color: var(--done); color: #fff; }
 .btn.warn { background: var(--mid-soft); border-color: var(--mid); color: var(--mid); }
-.btn.ghost { background: rgba(255,255,255,0.14); border-color: rgba(255,255,255,0.3); color: #fff; }
-.btn.sm { min-height: 34px; padding: 6px 11px; font-size: 13px; border-radius: 10px; }
-.btn[disabled] { opacity: .5; pointer-events: none; }
+.btn.ghost { background: rgba(255,255,255,0.16); border-color: rgba(255,255,255,0.35); color: #fff; }
+.btn.sm { min-height: 33px; padding: 5px 11px; font-size: 12.5px; border-radius: 9px; }
 
-/* Chips & Progress */
+/* Chips & Progress Bar */
 .chip {
   display: inline-flex; align-items: center; gap: 4px;
   font-size: 11px; font-weight: 600; padding: 3px 9px; border-radius: 99px;
+  white-space: nowrap;
 }
 .chip.done { background: var(--done-soft); color: var(--done); }
 .chip.mid { background: var(--mid-soft); color: var(--mid); }
@@ -147,28 +187,52 @@ p { margin: 0 0 10px; }
 .chip.info { background: var(--surface-2); color: var(--kw); border: 1px solid var(--line); }
 
 .bar { height: 8px; border-radius: 99px; background: var(--surface-2); overflow: hidden; margin: 8px 0; }
-.bar > i { display: block; height: 100%; background: linear-gradient(90deg, var(--accent), var(--done)); transition: width .4s ease; }
+.bar > i { display: block; height: 100%; background: linear-gradient(90deg, var(--accent), var(--done)); transition: width .35s ease; }
 
-/* Path Nodes (SoloLearn / SQLBolt style) */
-.stage-card {
-  border-left: 3px solid var(--line); margin-left: 10px; padding-left: 14px; margin-bottom: 16px;
+/* Clean Curriculum & Task List Cards */
+.stage-box {
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: 16px; padding: 14px; margin-bottom: 12px;
 }
-.stage-card.unlocked { border-left-color: var(--accent); }
-.stage-card.completed { border-left-color: var(--done); }
+.stage-box.unlocked { border-left: 4px solid var(--accent); }
+.stage-box.completed { border-left: 4px solid var(--done); }
 .node-list { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
 .node-item {
-  display: flex; align-items: center; justify-content: space-between; gap: 10px;
-  padding: 12px; border-radius: 14px; background: var(--surface-2); border: 1px solid var(--line);
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 12px 14px; border-radius: 12px; background: var(--surface-2); border: 1px solid var(--line);
   cursor: pointer; text-align: left; width: 100%; color: var(--ink);
+  transition: border-color .15s, transform .1s;
 }
-.node-item:hover, .node-item.active { border-color: var(--accent); }
-.node-item.locked { opacity: .55; }
-.node-title { font-weight: 600; font-size: 14px; display: block; }
-.node-meta { font-size: 12px; color: var(--muted); }
+.node-item:hover { border-color: var(--accent); }
+.node-item:active { transform: scale(.99); }
+.node-title { font-weight: 600; font-size: 14px; display: block; margin-bottom: 2px; }
+.node-meta { font-size: 12px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 
-/* Mobile SQL Quick-Bar & Schema Pills */
+/* Prompt Box inside Workspace */
+.prompt-box {
+  background: var(--surface-2); border: 1px solid var(--line);
+  border-left: 4px solid var(--accent);
+  border-radius: 12px; padding: 12px 14px; margin: 10px 0;
+  font-size: 14px; line-height: 1.55;
+}
+
+/* Collapsible Table Helper */
+details.helper-fold {
+  background: var(--surface-2); border: 1px solid var(--line);
+  border-radius: 11px; padding: 8px 12px; margin-bottom: 10px; font-size: 12.5px;
+}
+details.helper-fold summary {
+  cursor: pointer; font-weight: 600; color: var(--kw); list-style: none;
+  display: flex; align-items: center; justify-content: space-between;
+}
+details.helper-fold summary::-webkit-details-marker { display: none; }
+details.helper-fold summary::after { content: "▼"; font-size: 10px; color: var(--muted); }
+details.helper-fold[open] summary::after { content: "▲"; }
+
+/* Mobile SQL Quick-Bar */
+.quickbar-label { font-size: 11px; color: var(--muted); margin: 6px 0 2px; display: block; }
 .quickbar {
-  display: flex; gap: 6px; overflow-x: auto; padding: 6px 2px 8px;
+  display: flex; gap: 6px; overflow-x: auto; padding: 4px 2px 6px;
   scrollbar-width: none; -webkit-overflow-scrolling: touch;
 }
 .quickbar::-webkit-scrollbar { display: none; }
@@ -177,10 +241,10 @@ p { margin: 0 0 10px; }
   border-radius: 8px; background: var(--surface-2); color: var(--kw);
   border: 1px solid var(--line); cursor: pointer;
 }
-.qbtn.col { color: var(--al); }
+.qbtn.col { color: var(--al); background: rgba(240, 164, 93, 0.08); }
 .qbtn:active { background: var(--accent); color: #fff; }
 
-/* Dual-layer SQL Editor (iOS Ergonomic) */
+/* Dual-layer SQL Editor (iOS Safe) */
 .ed {
   display: flex; border: 1px solid var(--line); border-radius: 12px;
   background: var(--code-bg); overflow: hidden; margin-top: 4px;
@@ -198,7 +262,7 @@ p { margin: 0 0 10px; }
 #sqlhl, #answer { margin: 0; padding: 12px; border: 0; white-space: pre; tab-size: 2; }
 #sqlhl { position: absolute; inset: 0; overflow: hidden; pointer-events: none; color: var(--ink); }
 #answer {
-  position: relative; display: block; width: 100%; min-height: 135px;
+  position: relative; display: block; width: 100%; min-height: 130px;
   outline: 0; resize: none; background: transparent; color: transparent;
   caret-color: var(--ink); overflow-x: auto; overflow-y: hidden;
   -webkit-appearance: none;
@@ -216,9 +280,9 @@ p { margin: 0 0 10px; }
 /* Result Tables */
 .tblwrap {
   overflow-x: auto; margin: 8px 0; border: 1px solid var(--line);
-  border-radius: 10px; background: var(--code-bg); max-height: 240px;
+  border-radius: 10px; background: var(--code-bg); max-height: 260px;
 }
-.tblwrap table { border-collapse: collapse; width: 100%; font: 12.5px/1.4 var(--mono); }
+.tblwrap table { border-collapse: collapse; width: 100%; font: 12.5px/1.45 var(--mono); }
 .tblwrap th, .tblwrap td {
   padding: 6px 10px; text-align: left; white-space: nowrap;
   border-bottom: 1px solid var(--line);
@@ -241,10 +305,10 @@ p { margin: 0 0 10px; }
   background: var(--surface); border-top: 1px solid var(--line);
   padding-bottom: env(safe-area-inset-bottom, 0px); z-index: 20;
 }
-.tabs nav { max-width: 640px; margin: 0 auto; display: flex; }
+.tabs nav { max-width: 680px; margin: 0 auto; display: flex; }
 .tab {
   flex: 1; background: none; border: 0; border-top: 3px solid transparent;
-  color: var(--muted); font: 600 11px var(--body); padding: 9px 2px 10px;
+  color: var(--muted); font: 600 11px var(--body); padding: 8px 2px 10px;
   cursor: pointer; text-align: center;
 }
 .tab[aria-current="page"] { color: var(--accent); border-top-color: var(--accent); }
@@ -254,8 +318,7 @@ p { margin: 0 0 10px; }
   background: var(--open); color: #fff; font-size: 10px; margin-left: 3px;
 }
 
-/* Inputs */
-input[type=text], input[type=password], select, textarea.std {
+input[type=text], input[type=password], select {
   width: 100%; font: 400 14px var(--body); padding: 9px 12px;
   border-radius: 10px; border: 1px solid var(--line);
   background: var(--code-bg); color: var(--ink); margin-top: 4px;
@@ -266,6 +329,7 @@ input[type=text], input[type=password], select, textarea.std {
   background: var(--ink); color: var(--bg); font-weight: 600;
   padding: 10px 16px; border-radius: 12px; font-size: 13px;
   z-index: 50; opacity: 0; pointer-events: none; transition: opacity .2s;
+  box-shadow: 0 6px 20px rgba(0,0,0,0.3);
 }
 #toast.show { opacity: 1; }
 </style>
@@ -277,12 +341,12 @@ input[type=text], input[type=password], select, textarea.std {
       <div class="brand-badge">SQL</div>
       <div class="brand-txt">
         <b>SQL Master · dvdrental</b>
-        <span id="dbStatus">Ładowanie silnika SQL…</span>
+        <span><i class="dot-online"></i> <span id="dbStatus">Ładowanie silnika SQL…</span></span>
       </div>
     </div>
     <div class="top-stats">
-      <span class="pill-stat" id="xpPill">⚡ 0 XP</span>
-      <span class="pill-stat" id="streakPill">🔥 1d</span>
+      <span class="pill-stat" id="xpPill">⚡ 1202 XP</span>
+      <span class="pill-stat" id="streakPill">🔥 4d</span>
       <button class="btn sm" data-act="theme" title="Zmień motyw">🌓</button>
     </div>
   </header>
@@ -294,11 +358,11 @@ input[type=text], input[type=password], select, textarea.std {
   <nav aria-label="Główna nawigacja">
     <button class="tab" data-act="tab" data-tab="path" aria-current="page">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
-      Ścieżka
+      Ścieżka (60)
     </button>
     <button class="tab" data-act="tab" data-tab="diag">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
-      Diagnoza
+      Diagnoza (10)
     </button>
     <button class="tab" data-act="tab" data-tab="lemur">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg>
@@ -322,7 +386,7 @@ input[type=text], input[type=password], select, textarea.std {
 'use strict';
 
 /* ==========================================================================
-   1. BAZA DANYCH DVDRENTAL (SQL.js WebAssembly + Transpiler PostgreSQL)
+   1. BAZA DANYCH DVDRENTAL (10 TABEL Z PRZYPADKAMI BRZEGOWYMI)
    ========================================================================== */
 var db = null;
 var dbReady = false;
@@ -391,7 +455,6 @@ CREATE TABLE film_actor (
 INSERT INTO film_actor VALUES
   (1,1), (1,4), (1,12), (2,2), (2,6), (2,7), (2,16), (3,3), (3,9), (4,5), (4,10),
   (5,8), (5,13), (5,17), (5,20), (6,11), (6,19), (7,14), (7,15);
--- Uwaga: Aktor 8 (MATTHEW JOHANSSON) celowo nie ma żadnego filmu (test na LEFT JOIN / Anti-join!)
 
 CREATE TABLE store (
   store_id INTEGER PRIMARY KEY,
@@ -427,7 +490,6 @@ INSERT INTO customer VALUES
   (8, 2, 'SUSAN', 'WILSON', 'susan.w@sakilacustomer.org', 1, '2026-02-14'),
   (9, 1, 'MARGARET', 'MOORE', 'margaret.m@sakilacustomer.org', 1, '2026-03-01'),
   (10, 2, 'DOROTHY', 'TAYLOR', 'dorothy.t@sakilacustomer.org', 0, '2026-03-05');
--- Uwaga: Klientki 9 (MARGARET) i 10 (DOROTHY) nie mają żadnych wypożyczeń (pułapka LEFT JOIN!)
 
 CREATE TABLE rental (
   rental_id INTEGER PRIMARY KEY,
@@ -453,7 +515,6 @@ INSERT INTO rental VALUES
   (113, '2026-06-12', 20, 8, NULL, 1),
   (114, '2026-06-15', 12, 1, '2026-06-19', 1),
   (115, '2026-06-18', 19, 4, '2026-06-21', 2);
--- Uwaga: Wypożyczenia 104, 108, 113 mają return_date IS NULL (jeszcze nie zwrócone!)
 
 CREATE TABLE payment (
   payment_id INTEGER PRIMARY KEY,
@@ -485,43 +546,70 @@ var SCHEMA_META = [
   { table: 'film', desc: 'Katalog 20 filmów DVD', cols: ['film_id', 'title', 'rating', 'rental_rate', 'length', 'replacement_cost', 'release_year'] },
   { table: 'category', desc: 'Kategorie filmowe (Action, Sci-Fi...)', cols: ['category_id', 'name'] },
   { table: 'film_category', desc: 'Tabela łącząca film z kategorią', cols: ['film_id', 'category_id'] },
-  { table: 'actor', desc: 'Aktorzy (uwaga: aktor 8 nie grał w żadnym filmie)', cols: ['actor_id', 'first_name', 'last_name'] },
+  { table: 'actor', desc: 'Aktorzy (aktor 8 nie grał w żadnym filmie)', cols: ['actor_id', 'first_name', 'last_name'] },
   { table: 'film_actor', desc: 'Obsada filmów (relacja wiele-do-wielu)', cols: ['actor_id', 'film_id'] },
-  { table: 'customer', desc: 'Klienci wypożyczalni (klienci 9 i 10 bez wypożyczeń)', cols: ['customer_id', 'store_id', 'first_name', 'last_name', 'email', 'active', 'create_date'] },
-  { table: 'rental', desc: 'Historia wypożyczeń (return_date bywa NULL)', cols: ['rental_id', 'rental_date', 'film_id', 'customer_id', 'return_date', 'staff_id'] },
-  { table: 'payment', desc: 'Transakcje płatności za wypożyczenia', cols: ['payment_id', 'customer_id', 'staff_id', 'rental_id', 'amount', 'payment_date'] },
+  { table: 'customer', desc: 'Klienci (klientki 9 i 10 bez wypożyczeń)', cols: ['customer_id', 'store_id', 'first_name', 'last_name', 'email', 'active', 'create_date'] },
+  { table: 'rental', desc: 'Wypożyczenia (3 rekordy z return_date IS NULL)', cols: ['rental_id', 'rental_date', 'film_id', 'customer_id', 'return_date', 'staff_id'] },
+  { table: 'payment', desc: 'Płatności za wypożyczenia', cols: ['payment_id', 'customer_id', 'staff_id', 'rental_id', 'amount', 'payment_date'] },
   { table: 'staff', desc: 'Pracownicy (Mike i Jon)', cols: ['staff_id', 'first_name', 'last_name', 'store_id'] },
-  { table: 'store', desc: 'Oddziały wypożyczalni (1 i 2)', cols: ['store_id', 'city'] }
+  { table: 'store', desc: 'Oddziały wypożyczalni (Lethbridge, Woodridge)', cols: ['store_id', 'city'] }
 ];
 
-// Transpiler pozwalający pisać składnią PostgreSQL w silniku SQLite (WASM)
+/* ==========================================================================
+   2. ROZBUDOWANY TRANSPILER POSTGRESQL -> SQLITE WASM
+   Obsługuje: ::numeric, ::int, ::date, ::text, ILIKE, DATE_TRUNC, INTERVAL, generate_series
+   ========================================================================== */
 function pgToSqlite(sql) {
   var s = String(sql || '').trim();
-  // ::numeric / ::float / ::real -> CAST
-  s = s.replace(/\b([a-zA-Z0-9_.)]+)\s*::\s*(numeric|decimal|float|real)/gi, 'CAST($1 AS REAL)');
-  s = s.replace(/\b([a-zA-Z0-9_.)]+)\s*::\s*(int|integer|bigint)/gi, 'CAST($1 AS INTEGER)');
-  s = s.replace(/\b([a-zA-Z0-9_.)]+)\s*::\s*(text|varchar|date)/gi, 'CAST($1 AS TEXT)');
-  // ILIKE -> LIKE (w SQLite LIKE dla ASCII jest domyślnie case-insensitive)
+
+  // 1. Obsługa generate_series dla dat: generate_series('2026-05-01'::date, '2026-05-07'::date, '1 day') [AS] alias
+  s = s.replace(/generate_series\s*\(\s*'([^']+)'(?:\s*::\s*\w+)?\s*,\s*'([^']+)'(?:\s*::\s*\w+)?\s*,\s*'1\s+day'\s*\)(?:\s+AS)?\s+([a-zA-Z_]\w*)/gi,
+    "(WITH RECURSIVE _gs($3) AS (SELECT '$1' UNION ALL SELECT date($3, '+1 day') FROM _gs WHERE $3 < '$2') SELECT $3 FROM _gs) AS $3");
+
+  // 2. Obsługa generate_series dla liczb: generate_series(1, 10) [AS] alias
+  s = s.replace(/generate_series\s*\(\s*(\d+)\s*,\s*(\d+)\s*\)(?:\s+AS)?\s+([a-zA-Z_]\w*)/gi,
+    "(WITH RECURSIVE _gs($3) AS (SELECT $1 UNION ALL SELECT $3 + 1 FROM _gs WHERE $3 < $2) SELECT $3 FROM _gs) AS $3");
+
+  // 3. Rzutowania na literałach stringowych: '2026-05-01'::date -> '2026-05-01'
+  s = s.replace(/'([^']*)'\s*::\s*(date|text|varchar|timestamp)/gi, "'$1'");
+  s = s.replace(/'([^']*)'\s*::\s*(numeric|decimal|float|real)/gi, "CAST('$1' AS REAL)");
+  s = s.replace(/'([^']*)'\s*::\s*(int|integer|bigint)/gi, "CAST('$1' AS INTEGER)");
+
+  // 4. Rzutowania na wyrażeniach i kolumnach: col::numeric, (a/b)::numeric, d::date
+  s = s.replace(/([a-zA-Z0-9_.)]+)\s*::\s*(numeric|decimal|float|real)/gi, 'CAST($1 AS REAL)');
+  s = s.replace(/([a-zA-Z0-9_.)]+)\s*::\s*(int|integer|bigint)/gi, 'CAST($1 AS INTEGER)');
+  s = s.replace(/([a-zA-Z0-9_.)]+)\s*::\s*(text|varchar)/gi, 'CAST($1 AS TEXT)');
+  s = s.replace(/([a-zA-Z0-9_.)]+)\s*::\s*(date|timestamp)/gi, '$1');
+
+  // 5. ILIKE -> LIKE
   s = s.replace(/\bILIKE\b/gi, 'LIKE');
-  // DATE_TRUNC('month', col) -> substr(col, 1, 7)
+
+  // 6. DATE_TRUNC('month'|'day'|'year', col)
   s = s.replace(/DATE_TRUNC\s*\(\s*'month'\s*,\s*([^)]+)\)/gi, "substr($1, 1, 7)");
+  s = s.replace(/DATE_TRUNC\s*\(\s*'day'\s*,\s*([^)]+)\)/gi, "substr($1, 1, 10)");
+  s = s.replace(/DATE_TRUNC\s*\(\s*'year'\s*,\s*([^)]+)\)/gi, "substr($1, 1, 4)");
+
+  // 7. Dodawanie/odejmowanie INTERVAL: col + INTERVAL '3 days' -> date(col, '+3 days')
+  s = s.replace(/([a-zA-Z0-9_.'()]+)\s*\+\s*INTERVAL\s*'([+-]?\d+\s+\w+)'/gi, "date($1, '+$2')");
+  s = s.replace(/([a-zA-Z0-9_.'()]+)\s*-\s*INTERVAL\s*'([+-]?\d+\s+\w+)'/gi, "date($1, '-$2')");
+
   return s;
 }
 
 async function initDatabase() {
   var statusEl = document.getElementById('dbStatus');
   try {
-    if (typeof initSqlJs === 'undefined') throw new Error('Brak biblioteki SQL.js');
+    if (typeof initSqlJs === 'undefined') throw new Error('Brak SQL.js');
     var SQL = await initSqlJs({
       locateFile: function(file) { return 'https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/' + file; }
     });
     db = new SQL.Database();
     db.run(DVDRENTAL_SEED_SQL);
     dbReady = true;
-    if (statusEl) statusEl.textContent = 'Silnik dvdrental (WASM) gotowy · Offline OK';
+    if (statusEl) statusEl.textContent = 'Silnik dvdrental gotowy · 100% Offline';
     render();
   } catch (err) {
-    if (statusEl) statusEl.textContent = 'Tryb zapasowy (sprawdź połączenie z CDN)';
+    if (statusEl) statusEl.textContent = 'Błąd ładowania WASM';
   }
 }
 
@@ -538,22 +626,21 @@ function runQuery(sql) {
   }
 }
 
-// Porównywarka tabel wynikowych (Grader porównujący wynik ucznia z zapytaniem wzorcowym)
 function compareResults(userRes, expRes, checkOrder) {
-  if (userRes.error) return { ok: false, reason: 'error', msg: 'Błąd składni SQL: ' + userRes.error };
+  if (userRes.error) return { ok: false, reason: 'error', msg: 'Błąd wykonania SQL: ' + userRes.error };
   var uRows = userRes.values || [], eRows = expRes.values || [];
   var uCols = userRes.columns || [], eCols = expRes.columns || [];
 
   if (uCols.length !== eCols.length) {
     return {
       ok: false, reason: 'cols',
-      msg: 'Zwrócono ' + uCols.length + ' kolumn (' + uCols.join(', ') + '), a oczekiwano ' + eCols.length + ' kolumn (' + eCols.join(', ') + ').'
+      msg: 'Liczba kolumn się nie zgadza: zwróciłeś ' + uCols.length + ' (' + uCols.join(', ') + '), a oczekiwano ' + eCols.length + ' (' + eCols.join(', ') + ').'
     };
   }
   if (uRows.length !== eRows.length) {
     return {
       ok: false, reason: 'rows',
-      msg: 'Twoje zapytanie zwróciło ' + uRows.length + ' wierszy, a poprawny wynik na bazie dvdrental ma ' + eRows.length + ' wierszy.'
+      msg: 'Liczba wierszy się nie zgadza: Twoje zapytanie zwróciło ' + uRows.length + ' wierszy, a wzorcowy wynik ma ' + eRows.length + ' wierszy.'
     };
   }
   function normCell(v) {
@@ -575,286 +662,400 @@ function compareResults(userRes, expRes, checkOrder) {
     if (uNorm[i] !== eNorm[i]) {
       return {
         ok: false, reason: 'values',
-        msg: 'Wartości w wierszu #' + (i + 1) + ' różnią się od wzorca. Twój wiersz: [' + uRows[i].join(', ') + '], oczekiwano: [' + eRows[i].join(', ') + '].'
+        msg: 'Różnica w wierszu #' + (i + 1) + '. Twój wynik: [' + uRows[i].join(', ') + '], oczekiwano: [' + eRows[i].join(', ') + '].'
       };
     }
   }
-  return { ok: true, msg: 'Idealnie! Wynik zapytania w 100% zgadza się z bazą dvdrental.' };
+  return { ok: true, msg: 'Brawo! Wynik Twojego zapytania w 100% pokrywa się z wzorcem na bazie dvdrental.' };
 }
 
 /* ==========================================================================
-   2. DYNAMICZNE SZABLONY ZADAŃ (ŚCIEŻKA OD 0 DO ZAAWANSOWANEGO)
-   Każde zadanie ma funkcję gen(v), która zmienia parametry, tabele i warunki!
+   3. ŚCIEŻKA NAUKI: 12 LEKCJI × 5 WARIANTÓW = 60 DYNAMICZNYCH ZADAŃ
    ========================================================================== */
 var STAGES = [
-  { id: 1, name: 'Etap 1: Fundament SELECT i WHERE', desc: 'Filtrowanie wierszy, operatory logiczne, sortowanie i LIMIT na tabelach film oraz customer.' },
-  { id: 2, name: 'Etap 2: Agregacje, NULL i GROUP BY', desc: 'COUNT(*) vs COUNT(kolumna), SUM, AVG, grupowanie i filtrowanie grup przez HAVING.' },
-  { id: 3, name: 'Etap 3: Złączenia (INNER, LEFT, Anti-Join)', desc: 'Łączenie wielu tabel dvdrental, pułapki warunku w ON vs WHERE oraz szukanie braków.' },
-  { id: 4, name: 'Etap 4: CASE WHEN, COALESCE i Rzutowanie', desc: 'Segmentacja danych, obsługa NULL-i oraz dzielenie zmiennoprzecinkowe (* 100.0).' },
-  { id: 5, name: 'Etap 5: CTE (WITH) i Funkcje Okna', desc: 'Czytelne zapytania wieloetapowe, rankingi DENSE_RANK/ROW_NUMBER i narastające sumy.' }
+  { id: 1, name: 'Etap 1: Fundament SELECT i WHERE', desc: 'Filtrowanie wierszy, operatory IN/BETWEEN/ILIKE, sortowanie i LIMIT.' },
+  { id: 2, name: 'Etap 2: Agregacje, NULL i GROUP BY', desc: 'COUNT(*) vs COUNT(col), SUM, AVG, grupowanie i filtrowanie grup przez HAVING.' },
+  { id: 3, name: 'Etap 3: Złączenia (INNER, LEFT, Anti-Join)', desc: 'Łączenie tabel dvdrental, relacje wiele-do-wielu i szukanie brakujących powiązań.' },
+  { id: 4, name: 'Etap 4: CASE WHEN, COALESCE i Rzutowanie', desc: 'Segmentacja danych, FILTER (WHERE ...), obsługa NULL-i oraz procenty (* 100.0).' },
+  { id: 5, name: 'Etap 5: CTE, Funkcje Okna i Kalendarze', desc: 'Zapytania WITH, ROW_NUMBER, DENSE_RANK, LAG, sumy narastające i generate_series.' }
 ];
 
 var PATH_TASKS = [
   {
-    id: 'p1_1', stage: 1, title: '1.1 Filtrowanie po kategorii i cenie',
-    cols: ['title', 'rental_rate', 'rating', 'film', 'amount', 'payment_date', 'payment'],
+    id: 'p1_1', stage: 1, title: '1.1 Filtrowanie WHERE, AND i sortowanie ORDER BY',
+    tables: ['film', 'payment', 'customer', 'rental'],
+    cols: ['title', 'rental_rate', 'rating', 'length', 'film', 'payment', 'customer', 'amount', 'staff_id', 'store_id'],
     variants: [
-      {
-        prompt: 'Z tabeli `film` wybierz kolumny `title` oraz `rental_rate` dla filmów o kategorii wiekowej (`rating`) równej `\'PG-13\'`, których cena wypożyczenia (`rental_rate`) wynosi dokładnie `4.99`. Posortuj alfabetycznie po `title`.',
-        sol: "SELECT title, rental_rate FROM film WHERE rating = 'PG-13' AND rental_rate = 4.99 ORDER BY title;",
-        order: true
-      },
-      {
-        prompt: 'Z tabeli `film` wybierz kolumny `title` oraz `length` dla filmów o ratingu `\'R\'`, które trwają krócej niż `80` minut (`length < 80`). Posortuj rosnąco po `length`.',
-        sol: "SELECT title, length FROM film WHERE rating = 'R' AND length < 80 ORDER BY length ASC;",
-        order: true
-      },
-      {
-        prompt: 'Z tabeli `payment` wybierz kolumny `payment_id`, `customer_id` oraz `amount` dla płatności powyżej `5.00` (`amount > 5.00`) obsłużonych przez pracownika `staff_id = 2`. Posortuj malejąco po `amount`.',
-        sol: "SELECT payment_id, customer_id, amount FROM payment WHERE amount > 5.00 AND staff_id = 2 ORDER BY amount DESC;",
-        order: true
-      }
+      { prompt: 'Z tabeli `film` wybierz `title` oraz `rental_rate` dla filmów o ratingu `\'PG-13\'` i cenie `rental_rate = 4.99`. Posortuj alfabetycznie po `title`.', sol: "SELECT title, rental_rate FROM film WHERE rating = 'PG-13' AND rental_rate = 4.99 ORDER BY title;", order: true },
+      { prompt: 'Z tabeli `film` wybierz `title` oraz `length` dla filmów o ratingu `\'R\'`, które trwają krócej niż `80` minut (`length < 80`). Posortuj rosnąco po `length`.', sol: "SELECT title, length FROM film WHERE rating = 'R' AND length < 80 ORDER BY length ASC;", order: true },
+      { prompt: 'Z tabeli `payment` wybierz `payment_id`, `customer_id` oraz `amount` dla płatności powyżej `5.00` (`amount > 5.00`) obsłużonych przez pracownika `staff_id = 2`. Posortuj malejąco po `amount`.', sol: "SELECT payment_id, customer_id, amount FROM payment WHERE amount > 5.00 AND staff_id = 2 ORDER BY amount DESC;", order: true },
+      { prompt: 'Z tabeli `customer` wybierz `customer_id`, `first_name` oraz `email` dla aktywnych klientów (`active = 1`) przypisanych do sklepu `store_id = 2`. Posortuj po `customer_id`.', sol: "SELECT customer_id, first_name, email FROM customer WHERE active = 1 AND store_id = 2 ORDER BY customer_id;", order: true },
+      { prompt: 'Z tabeli `rental` wybierz `rental_id`, `customer_id` oraz `rental_date` dla wypożyczeń obsłużonych przez pracownika `staff_id = 1` w czerwcu (`rental_date >= \'2026-06-01\'`). Posortuj po `rental_id`.', sol: "SELECT rental_id, customer_id, rental_date FROM rental WHERE staff_id = 1 AND rental_date >= '2026-06-01' ORDER BY rental_id;", order: true }
     ]
   },
   {
-    id: 'p1_2', stage: 1, title: '1.2 Zakresy IN, BETWEEN oraz LIMIT',
-    cols: ['title', 'rating', 'length', 'replacement_cost', 'film'],
+    id: 'p1_2', stage: 1, title: '1.2 Zakresy IN, BETWEEN, ILIKE oraz LIMIT',
+    tables: ['film', 'customer', 'actor', 'payment'],
+    cols: ['title', 'rating', 'length', 'replacement_cost', 'film', 'customer', 'actor', 'first_name', 'last_name', 'BETWEEN', 'IN', 'ILIKE', 'LIMIT'],
     variants: [
-      {
-        prompt: 'Z tabeli `film` wypisz `title`, `rating` oraz `length` dla filmów o ratingu `\'G\'` lub `\'PG\'`, których długość (`length`) mieści się w przedziale od `100` do `140` minut włącznie. Posortuj malejąco po `length` i ogranicz wynik do `4` wierszy.',
-        sol: "SELECT title, rating, length FROM film WHERE rating IN ('G', 'PG') AND length BETWEEN 100 AND 140 ORDER BY length DESC LIMIT 4;",
-        order: true
-      },
-      {
-        prompt: 'Z tabeli `film` wypisz `title` i `replacement_cost` dla filmów o ratingu `\'NC-17\'`, których koszt odtworzenia (`replacement_cost`) jest między `18.00` a `25.00`. Posortuj rosnąco po `title`.',
-        sol: "SELECT title, replacement_cost FROM film WHERE rating = 'NC-17' AND replacement_cost BETWEEN 18.00 AND 25.00 ORDER BY title ASC;",
-        order: true
-      }
+      { prompt: 'Z tabeli `film` wypisz `title`, `rating` oraz `length` dla filmów o ratingu `\'G\'` lub `\'PG\'`, których długość (`length`) mieści się w przedziale od `100` do `140` minut. Posortuj malejąco po `length` i ogranicz wynik do `4` wierszy.', sol: "SELECT title, rating, length FROM film WHERE rating IN ('G', 'PG') AND length BETWEEN 100 AND 140 ORDER BY length DESC LIMIT 4;", order: true },
+      { prompt: 'Z tabeli `film` wypisz `title` i `replacement_cost` dla filmów o ratingu `\'NC-17\'`, których koszt odtworzenia (`replacement_cost`) jest między `18.00` a `25.00`. Posortuj rosnąco po `title`.', sol: "SELECT title, replacement_cost FROM film WHERE rating = 'NC-17' AND replacement_cost BETWEEN 18.00 AND 25.00 ORDER BY title ASC;", order: true },
+      { prompt: 'Z tabeli `actor` wybierz `actor_id`, `first_name` i `last_name` dla aktorów, których imię zaczyna się na literę `\'J\'` lub `\'P\'` (użyj `ILIKE` lub `LIKE`). Posortuj po `actor_id`.', sol: "SELECT actor_id, first_name, last_name FROM actor WHERE first_name ILIKE 'J%' OR first_name ILIKE 'P%' ORDER BY actor_id;", order: true },
+      { prompt: 'Z tabeli `payment` wybierz 3 najwyższe płatności (`payment_id`, `amount`) dokonane w maju 2026 (`payment_date BETWEEN \'2026-05-01\' AND \'2026-05-31\'`). W razie remisu kwoty sortuj rosnąco po `payment_id`.', sol: "SELECT payment_id, amount FROM payment WHERE payment_date BETWEEN '2026-05-01' AND '2026-05-31' ORDER BY amount DESC, payment_id ASC LIMIT 3;", order: true },
+      { prompt: 'Z tabeli `customer` wybierz `customer_id`, `first_name`, `last_name` dla klientów o identyfikatorach z listy `(1, 3, 5, 7, 9)`. Posortuj alfabetycznie po `first_name`.', sol: "SELECT customer_id, first_name, last_name FROM customer WHERE customer_id IN (1, 3, 5, 7, 9) ORDER BY first_name ASC;", order: true }
     ]
   },
   {
-    id: 'p2_1', stage: 2, title: '2.1 COUNT(*) vs COUNT(return_date) – Pułapka NULL',
-    cols: ['rental', 'return_date', 'staff_id', 'customer_id'],
+    id: 'p1_3', stage: 1, title: '1.3 Unikalne wartości (DISTINCT) i wyliczenia arytmetyczne',
+    tables: ['film', 'rental', 'payment'],
+    cols: ['DISTINCT', 'film', 'rental', 'payment', 'rating', 'rental_rate', 'replacement_cost', 'customer_id'],
+    variants: [
+      { prompt: 'Z tabeli `film` wypisz unikalne kombinacje `rating` oraz `rental_rate` (użyj `DISTINCT`). Posortuj rosnąco po `rating` i `rental_rate`.', sol: "SELECT DISTINCT rating, rental_rate FROM film ORDER BY rating ASC, rental_rate ASC;", order: true },
+      { prompt: 'Z tabeli `film` wybierz `title`, `rental_rate`, `replacement_cost` oraz stosunek kosztu odtworzenia do ceny wypożyczenia (`replacement_cost / rental_rate`) dla filmów o ratingu `\'G\'`. Posortuj po `title`.', sol: "SELECT title, rental_rate, replacement_cost, replacement_cost / rental_rate AS ratio FROM film WHERE rating = 'G' ORDER BY title;", order: true },
+      { prompt: 'Z tabeli `rental` wypisz unikalne identyfikatory klientów (`DISTINCT customer_id`), którzy wypożyczyli film w czerwcu 2026 (`rental_date >= \'2026-06-01\'`). Posortuj rosnąco.', sol: "SELECT DISTINCT customer_id FROM rental WHERE rental_date >= '2026-06-01' ORDER BY customer_id ASC;", order: true },
+      { prompt: 'Z tabeli `film` wybierz `title` oraz czas trwania przeliczony na godziny zmiennoprzecinkowe (`length / 60.0`) dla 5 najdłuższych filmów.', sol: "SELECT title, length / 60.0 AS hours FROM film ORDER BY length DESC LIMIT 5;", order: true },
+      { prompt: 'Z tabeli `payment` wypisz unikalne kwoty płatności (`DISTINCT amount`) występujące w bazie, posortowane malejąco.', sol: "SELECT DISTINCT amount FROM payment ORDER BY amount DESC;", order: true }
+    ]
+  },
+  {
+    id: 'p2_1', stage: 2, title: '2.1 COUNT(*) vs COUNT(kolumna) vs COUNT(DISTINCT) – Pułapka NULL',
+    tables: ['rental', 'film', 'customer'],
+    cols: ['COUNT(*)', 'COUNT(return_date)', 'COUNT(DISTINCT', 'rental', 'return_date', 'customer_id', 'film'],
     gapId: 'g3',
     variants: [
-      {
-        prompt: 'W tabeli `rental` część filmów nie została jeszcze zwrócona (`return_date` ma wartość `NULL`). Napisz zapytanie, które zwróci w jednym wierszu 3 liczby: liczbę wszystkich wypożyczeń (`all_rentals`), liczbę zwróconych filmów (`returned_rentals`) oraz liczbę niezwróconych filmów jako ich różnicę (`unreturned`).',
-        sol: "SELECT COUNT(*) AS all_rentals, COUNT(return_date) AS returned_rentals, COUNT(*) - COUNT(return_date) AS unreturned FROM rental;",
-        order: false
-      },
-      {
-        prompt: 'Policz dla każdego pracownika (`staff_id`) w tabeli `rental`: łączną liczbę obsłużonych wypożyczeń oraz liczbę wypożyczeń już zwróconych (gdzie `return_date` nie jest NULL). Zwróć `staff_id`, `total_cnt`, `returned_cnt`.',
-        sol: "SELECT staff_id, COUNT(*) AS total_cnt, COUNT(return_date) AS returned_cnt FROM rental GROUP BY staff_id;",
-        order: false
-      }
+      { prompt: 'W tabeli `rental` część filmów nie ma daty zwrotu (`return_date` jest `NULL`). Zwróć w jednym wierszu 3 kolumny: liczbę wszystkich wypożyczeń (`COUNT(*)`), liczbę zwróconych (`COUNT(return_date)`) oraz niezwróconych (`COUNT(*) - COUNT(return_date)`).', sol: "SELECT COUNT(*) AS all_rentals, COUNT(return_date) AS returned_rentals, COUNT(*) - COUNT(return_date) AS unreturned FROM rental;", order: false },
+      { prompt: 'Dla każdego pracownika (`staff_id`) w tabeli `rental` policz: łączną liczbę wypożyczeń (`COUNT(*)`) oraz liczbę wypożyczeń już zwróconych (`COUNT(return_date)`).', sol: "SELECT staff_id, COUNT(*) AS total_cnt, COUNT(return_date) AS returned_cnt FROM rental GROUP BY staff_id;", order: false },
+      { prompt: 'Z tabeli `rental` zwróć w jednym wierszu: liczbę wszystkich wypożyczeń (`COUNT(*)`), liczbę unikalnych klientów mających wypożyczenia (`COUNT(DISTINCT customer_id)`) oraz liczbę unikalnych wypożyczonych filmów (`COUNT(DISTINCT film_id)`).', sol: "SELECT COUNT(*) AS total_rows, COUNT(DISTINCT customer_id) AS uniq_customers, COUNT(DISTINCT film_id) AS uniq_films FROM rental;", order: false },
+      { prompt: 'Z tabeli `film` policz dla każdego `rating`: liczbę filmów (`COUNT(*)`) oraz liczbę unikalnych stawek cenowych (`COUNT(DISTINCT rental_rate)`).', sol: "SELECT rating, COUNT(*) AS films_cnt, COUNT(DISTINCT rental_rate) AS rates_cnt FROM film GROUP BY rating;", order: false },
+      { prompt: 'Z tabeli `rental` policz wyłącznie te wiersze, w których film NIE został jeszcze zwrócony (`return_date IS NULL`). Zwróć jedną liczbę.', sol: "SELECT COUNT(*) AS unreturned_cnt FROM rental WHERE return_date IS NULL;", order: false }
     ]
   },
   {
-    id: 'p2_2', stage: 2, title: '2.2 GROUP BY i filtrowanie grup przez HAVING',
-    cols: ['payment', 'customer_id', 'amount', 'film', 'rating'],
+    id: 'p2_2', stage: 2, title: '2.2 GROUP BY i filtrowanie po agregacji przez HAVING',
+    tables: ['payment', 'film', 'rental', 'film_actor'],
+    cols: ['GROUP BY', 'HAVING', 'SUM(amount)', 'AVG(length)', 'COUNT(*)', 'payment', 'film', 'rental', 'customer_id', 'rating'],
     gapId: 'g7',
     variants: [
-      {
-        prompt: 'Z tabeli `payment` znajdź klientów (`customer_id`), których łączna suma płatności (`SUM(amount)`) przekracza `10.00`. Zwróć kolumny `customer_id` oraz `total_paid`, posortowane malejąco po sumie.',
-        sol: "SELECT customer_id, SUM(amount) AS total_paid FROM payment GROUP BY customer_id HAVING SUM(amount) > 10.00 ORDER BY total_paid DESC;",
-        order: true
-      },
-      {
-        prompt: 'Z tabeli `film` policz liczbę filmów (`films_cnt`) oraz średnią długość (`AVG(length)`) dla każdego `rating`, ale zostaw w wyniku tylko te grupy `rating`, które mają co najmniej `5` filmów.',
-        sol: "SELECT rating, COUNT(*) AS films_cnt, AVG(length) AS avg_len FROM film GROUP BY rating HAVING COUNT(*) >= 5;",
-        order: false
-      }
+      { prompt: 'Z tabeli `payment` znajdź klientów (`customer_id`), których łączna suma płatności (`SUM(amount)`) przekracza `10.00`. Zwróć `customer_id` oraz `total_paid`, posortowane malejąco po sumie.', sol: "SELECT customer_id, SUM(amount) AS total_paid FROM payment GROUP BY customer_id HAVING SUM(amount) > 10.00 ORDER BY total_paid DESC;", order: true },
+      { prompt: 'Z tabeli `film` policz liczbę filmów (`COUNT(*)`) oraz średnią długość (`AVG(length)`) dla każdego `rating`, zostawiając tylko te grupy `rating`, które mają co najmniej `5` filmów.', sol: "SELECT rating, COUNT(*) AS films_cnt, AVG(length) AS avg_len FROM film GROUP BY rating HAVING COUNT(*) >= 5;", order: false },
+      { prompt: 'Z tabeli `rental` znajdź klientów (`customer_id`), którzy wypożyczyli co najmniej `3` filmy (`COUNT(*) >= 3`). Zwróć `customer_id` i liczbę wypożyczeń.', sol: "SELECT customer_id, COUNT(*) AS rental_cnt FROM rental GROUP BY customer_id HAVING COUNT(*) >= 3;", order: false },
+      { prompt: 'Z tabeli `film_actor` znajdź identyfikatory aktorów (`actor_id`), którzy zagrali w co najmniej `3` filmach. Zwróć `actor_id` oraz liczbę filmów, posortowane malejąco po liczbie filmów.', sol: "SELECT actor_id, COUNT(film_id) AS film_cnt FROM film_actor GROUP BY actor_id HAVING COUNT(film_id) >= 3 ORDER BY film_cnt DESC;", order: true },
+      { prompt: 'Z tabeli `film` dla każdej stawki `rental_rate` policz maksymalny koszt odtworzenia (`MAX(replacement_cost)`) oraz średnią długość (`AVG(length)`).', sol: "SELECT rental_rate, MAX(replacement_cost) AS max_cost, AVG(length) AS avg_len FROM film GROUP BY rental_rate;", order: false }
     ]
   },
   {
-    id: 'p3_1', stage: 3, title: '3.1 INNER JOIN: Przychód per kategoria lub miasto',
-    cols: ['film', 'film_category', 'category', 'rental', 'payment', 'name', 'amount'],
+    id: 'p3_1', stage: 3, title: '3.1 INNER JOIN: Łączenie 2 i 3 tabel wymiarów i faktów',
+    tables: ['category', 'film_category', 'film', 'staff', 'store', 'payment', 'customer'],
+    cols: ['JOIN', 'ON', 'category', 'film_category', 'film', 'staff', 'store', 'payment', 'customer', 'name', 'amount'],
     variants: [
-      {
-        prompt: 'Połącz tabele `category`, `film_category` oraz `film` i policz, ile filmów należy do każdej kategorii. Zwróć nazwę kategorii (`name`) oraz liczbę filmów (`film_count`), posortowane malejąco po liczbie filmów, a przy remisie alfabetycznie po nazwie.',
-        sol: "SELECT c.name, COUNT(fc.film_id) AS film_count FROM category c JOIN film_category fc ON c.category_id = fc.category_id GROUP BY c.name ORDER BY film_count DESC, c.name ASC;",
-        order: true
-      },
-      {
-        prompt: 'Połącz tabele `staff`, `store` oraz `payment` i policz łączną kwotę płatności (`SUM(amount)`) zebraną przez każdego pracownika. Zwróć `first_name`, `city` (z tabeli `store`) oraz `total_revenue`.',
-        sol: "SELECT s.first_name, st.city, SUM(p.amount) AS total_revenue FROM staff s JOIN store st ON s.store_id = st.store_id JOIN payment p ON p.staff_id = s.staff_id GROUP BY s.first_name, st.city;",
-        order: false
-      }
+      { prompt: 'Połącz `category` i `film_category`. Policz, ile filmów należy do każdej kategorii. Zwróć `name` oraz `film_count`, posortowane malejąco po liczbie filmów, a przy remisie alfabetycznie po `name`.', sol: "SELECT c.name, COUNT(fc.film_id) AS film_count FROM category c JOIN film_category fc ON c.category_id = fc.category_id GROUP BY c.name ORDER BY film_count DESC, c.name ASC;", order: true },
+      { prompt: 'Połącz `staff`, `store` oraz `payment`. Policz łączny przychód (`SUM(amount)`) zebrany przez każdego pracownika. Zwróć `first_name`, `city` oraz `total_revenue`.', sol: "SELECT s.first_name, st.city, SUM(p.amount) AS total_revenue FROM staff s JOIN store st ON s.store_id = st.store_id JOIN payment p ON p.staff_id = s.staff_id GROUP BY s.first_name, st.city;", order: false },
+      { prompt: 'Połącz `customer` i `payment`. Dla klientów ze sklepu `store_id = 1` policz łączną kwotę płatności (`SUM(amount)`). Zwróć `first_name`, `last_name` i `total_paid`, posortowane malejąco po kwocie.', sol: "SELECT c.first_name, c.last_name, SUM(p.amount) AS total_paid FROM customer c JOIN payment p ON c.customer_id = p.customer_id WHERE c.store_id = 1 GROUP BY c.customer_id, c.first_name, c.last_name ORDER BY total_paid DESC;", order: true },
+      { prompt: 'Połącz `actor`, `film_actor` oraz `film`. Wypisz tytuły filmów (`title`), w których grała aktorka o nazwisku `\'GUINESS\'` (`last_name = \'GUINESS\'`). Posortuj po `title`.', sol: "SELECT f.title FROM actor a JOIN film_actor fa ON a.actor_id = fa.actor_id JOIN film f ON fa.film_id = f.film_id WHERE a.last_name = 'GUINESS' ORDER BY f.title;", order: true },
+      { prompt: 'Połącz `category`, `film_category` oraz `film`. Oblicz średnią długość filmu (`AVG(length)`) dla każdej kategorii `name`. Posortuj malejąco po średniej długości.', sol: "SELECT c.name, AVG(f.length) AS avg_length FROM category c JOIN film_category fc ON c.category_id = fc.category_id JOIN film f ON fc.film_id = f.film_id GROUP BY c.name ORDER BY avg_length DESC;", order: true }
     ]
   },
   {
-    id: 'p3_2', stage: 3, title: '3.2 Anti-Join: Klienci lub aktorzy bez powiązań',
-    cols: ['customer', 'rental', 'actor', 'film_actor', 'customer_id', 'actor_id', 'first_name', 'last_name'],
+    id: 'p3_2', stage: 3, title: '3.2 LEFT JOIN i Anti-Join: Szukanie rekordów bez pary',
+    tables: ['customer', 'rental', 'actor', 'film_actor', 'film', 'payment'],
+    cols: ['LEFT JOIN', 'IS NULL', 'COALESCE', 'customer', 'rental', 'actor', 'film_actor', 'film'],
     gapId: 'g2',
     variants: [
-      {
-        prompt: 'Znajdź wszystkich klientów z tabeli `customer`, którzy NIGDY nie wypożyczyli żadnego filmu (brak wpisu w `rental`). Zwróć `customer_id`, `first_name` oraz `last_name`.',
-        sol: "SELECT c.customer_id, c.first_name, c.last_name FROM customer c LEFT JOIN rental r ON c.customer_id = r.customer_id WHERE r.rental_id IS NULL;",
-        order: false
-      },
-      {
-        prompt: 'Znajdź aktorów z tabeli `actor`, którzy nie są przypisani do żadnego filmu w tabeli `film_actor`. Zwróć `actor_id`, `first_name` oraz `last_name`.',
-        sol: "SELECT a.actor_id, a.first_name, a.last_name FROM actor a LEFT JOIN film_actor fa ON a.actor_id = fa.actor_id WHERE fa.film_id IS NULL;",
-        order: false
-      }
+      { prompt: 'Znajdź wszystkich klientów z tabeli `customer`, którzy NIGDY nie wypożyczyli żadnego filmu (brak wpisu w `rental`). Zwróć `customer_id`, `first_name` oraz `last_name`.', sol: "SELECT c.customer_id, c.first_name, c.last_name FROM customer c LEFT JOIN rental r ON c.customer_id = r.customer_id WHERE r.rental_id IS NULL;", order: false },
+      { prompt: 'Znajdź aktorów z tabeli `actor`, którzy nie zagrali w żadnym filmie w `film_actor`. Zwróć `actor_id`, `first_name` oraz `last_name`.', sol: "SELECT a.actor_id, a.first_name, a.last_name FROM actor a LEFT JOIN film_actor fa ON a.actor_id = fa.actor_id WHERE fa.film_id IS NULL;", order: false },
+      { prompt: 'Znajdź filmy z tabeli `film`, które nigdy nie zostały wypożyczone (brak w `rental`). Zwróć `film_id` oraz `title`, posortowane po `film_id`.', sol: "SELECT f.film_id, f.title FROM film f LEFT JOIN rental r ON f.film_id = r.film_id WHERE r.rental_id IS NULL ORDER BY f.film_id;", order: true },
+      { prompt: 'Dla KAŻDEGO aktora z tabeli `actor` (włącznie z tymi bez filmów!) policz liczbę filmów, w których zagrał (`COUNT(fa.film_id)`). Zwróć `actor_id`, `first_name` i `films_cnt`.', sol: "SELECT a.actor_id, a.first_name, COUNT(fa.film_id) AS films_cnt FROM actor a LEFT JOIN film_actor fa ON a.actor_id = fa.actor_id GROUP BY a.actor_id, a.first_name;", order: false },
+      { prompt: 'Dla KAŻDEGO klienta z tabeli `customer` ze sklepu `store_id = 2` zwróć `customer_id`, `first_name` oraz sumę jego płatności (użyj `COALESCE(SUM(p.amount), 0)` dla klientów bez płatności).', sol: "SELECT c.customer_id, c.first_name, COALESCE(SUM(p.amount), 0) AS total_paid FROM customer c LEFT JOIN payment p ON c.customer_id = p.customer_id WHERE c.store_id = 2 GROUP BY c.customer_id, c.first_name;", order: false }
     ]
   },
   {
-    id: 'p4_1', stage: 4, title: '4.1 CASE WHEN i odsetek procentowy (* 100.0)',
-    cols: ['film', 'length', 'rental_rate', 'payment', 'amount'],
+    id: 'p4_1', stage: 4, title: '4.1 CASE WHEN, FILTER (WHERE ...) i dokładne procenty (* 100.0)',
+    tables: ['film', 'customer', 'rental', 'payment'],
+    cols: ['CASE WHEN', 'THEN', 'ELSE', 'END', 'FILTER (WHERE', '* 100.0', 'film', 'customer', 'rental'],
     gapId: 'g10',
     variants: [
-      {
-        prompt: 'Oblicz w tabeli `film`, jaki procent wszystkich filmów stanowią filmy drogie (`rental_rate = 4.99`). Zwróć jedną kolumnę z wynikiem zmiennoprzecinkowym (pamiętaj o mnożeniu przez `100.0`, aby uniknąć dzielenia całkowitego!).',
-        sol: "SELECT SUM(CASE WHEN rental_rate = 4.99 THEN 1 ELSE 0 END) * 100.0 / COUNT(*) AS expensive_pct FROM film;",
-        order: false
-      },
-      {
-        prompt: 'Podziel filmy z tabeli `film` za pomocą `CASE WHEN` na segmenty długości: `\'Krotki\'` (`length < 70`), `\'Sredni\'` (`length BETWEEN 70 AND 120`) oraz `\'Dlugi\'` (`ELSE`). Zwróć nazwę segmentu oraz liczbę filmów w każdym segmencie.',
-        sol: "SELECT CASE WHEN length < 70 THEN 'Krotki' WHEN length BETWEEN 70 AND 120 THEN 'Sredni' ELSE 'Dlugi' END AS seg, COUNT(*) AS cnt FROM film GROUP BY 1;",
-        order: false
-      }
+      { prompt: 'Oblicz w tabeli `film`, jaki procent wszystkich filmów stanowią filmy drogie (`rental_rate = 4.99`). Zwróć jedną liczbę zmiennoprzecinkową (użyj `* 100.0`).', sol: "SELECT SUM(CASE WHEN rental_rate = 4.99 THEN 1 ELSE 0 END) * 100.0 / COUNT(*) AS expensive_pct FROM film;", order: false },
+      { prompt: 'Podziel filmy z `film` przez `CASE WHEN` na segmenty: `\'Krotki\'` (`length < 70`), `\'Sredni\'` (`length BETWEEN 70 AND 120`) oraz `\'Dlugi\'` (`ELSE`). Zwróć segment i `COUNT(*)`.', sol: "SELECT CASE WHEN length < 70 THEN 'Krotki' WHEN length BETWEEN 70 AND 120 THEN 'Sredni' ELSE 'Dlugi' END AS seg, COUNT(*) AS cnt FROM film GROUP BY 1;", order: false },
+      { prompt: 'Dla każdego sklepu (`store_id`) w tabeli `customer` policz procent aktywnych klientów (`active = 1`). Zwróć `store_id` oraz `active_pct` z użyciem `* 100.0`.', sol: "SELECT store_id, SUM(CASE WHEN active = 1 THEN 1 ELSE 0 END) * 100.0 / COUNT(*) AS active_pct FROM customer GROUP BY store_id;", order: false },
+      { prompt: 'Użyj składni PostgreSQL `COUNT(*) FILTER (WHERE ...)` (lub `CASE WHEN`), aby w tabeli `rental` dla każdego `staff_id` zwrócić liczbę wypożyczeń z maja (`rental_date LIKE \'2026-05%\'`) oraz z czerwca (`rental_date LIKE \'2026-06%\'`). Zwróć `staff_id`, `may_cnt`, `june_cnt`.', sol: "SELECT staff_id, COUNT(*) FILTER (WHERE rental_date LIKE '2026-05%') AS may_cnt, COUNT(*) FILTER (WHERE rental_date LIKE '2026-06%') AS june_cnt FROM rental GROUP BY staff_id;", order: false },
+      { prompt: 'W tabeli `payment` policz w jednym wierszu sumę kwot dla płatności wysokich (`amount >= 5.00`) oraz niskich (`amount < 5.00`). Zwróć dwie kolumny: `high_sum`, `low_sum`.', sol: "SELECT SUM(CASE WHEN amount >= 5.00 THEN amount ELSE 0 END) AS high_sum, SUM(CASE WHEN amount < 5.00 THEN amount ELSE 0 END) AS low_sum FROM payment;", order: false }
     ]
   },
   {
-    id: 'p5_1', stage: 5, title: '5.1 CTE i Funkcje Okna (DENSE_RANK / Top N)',
-    cols: ['film', 'title', 'rating', 'length', 'DENSE_RANK()', 'OVER', 'PARTITION BY'],
+    id: 'p4_2', stage: 4, title: '4.2 Operatory zbiorowe: UNION, INTERSECT, EXCEPT',
+    tables: ['actor', 'customer', 'rental', 'film_category'],
+    cols: ['UNION', 'INTERSECT', 'EXCEPT', 'actor', 'customer', 'rental', 'first_name', 'customer_id'],
+    variants: [
+      { prompt: 'Za pomocą `INTERSECT` znajdź imiona (`first_name`), które występują jednocześnie w tabeli `actor` oraz w tabeli `customer`.', sol: "SELECT first_name FROM actor INTERSECT SELECT first_name FROM customer;", order: false },
+      { prompt: 'Za pomocą `INTERSECT` znajdź identyfikatory klientów (`customer_id`) z tabeli `rental`, którzy wypożyczali filmy ZARÓWNO w maju (`2026-05%`), JAK I w czerwcu (`2026-06%`).', sol: "SELECT customer_id FROM rental WHERE rental_date LIKE '2026-05%' INTERSECT SELECT customer_id FROM rental WHERE rental_date LIKE '2026-06%';", order: false },
+      { prompt: 'Za pomocą `EXCEPT` znajdź klientów (`customer_id`), którzy wypożyczali film w maju (`2026-05%`), ale NIE wypożyczyli żadnego filmu w czerwcu (`2026-06%`).', sol: "SELECT customer_id FROM rental WHERE rental_date LIKE '2026-05%' EXCEPT SELECT customer_id FROM rental WHERE rental_date LIKE '2026-06%';", order: false },
+      { prompt: 'Za pomocą `EXCEPT` znajdź wszystkie `customer_id` z tabeli `customer`, których nie ma w tabeli `payment`.', sol: "SELECT customer_id FROM customer EXCEPT SELECT customer_id FROM payment;", order: false },
+      { prompt: 'Połącz za pomocą `UNION ALL` listę pracowników (`first_name`, `\'staff\' AS role` z `staff`) oraz oddziałów (`city`, `\'store\' AS role` z `store`).', sol: "SELECT first_name, 'staff' AS role FROM staff UNION ALL SELECT city, 'store' AS role FROM store;", order: false }
+    ]
+  },
+  {
+    id: 'p5_1', stage: 5, title: '5.1 CTE i Rankingi Okna: ROW_NUMBER, RANK, DENSE_RANK',
+    tables: ['film', 'payment'],
+    cols: ['WITH', 'ROW_NUMBER()', 'DENSE_RANK()', 'OVER', 'PARTITION BY', 'ORDER BY', 'film', 'payment'],
     gapId: 't5',
     variants: [
-      {
-        prompt: 'Użyj CTE oraz funkcji okna `ROW_NUMBER()` (lub `DENSE_RANK()`), aby dla każdego `rating` w tabeli `film` znaleźć najdłuższy film (`ORDER BY length DESC`). Zwróć `rating`, `title` oraz `length` tylko dla filmów z miejscem `1` w swojej grupie.',
-        sol: "WITH ranked AS (SELECT rating, title, length, ROW_NUMBER() OVER (PARTITION BY rating ORDER BY length DESC) AS rn FROM film) SELECT rating, title, length FROM ranked WHERE rn = 1;",
-        order: false
-      }
+      { prompt: 'Użyj CTE i `ROW_NUMBER()`, aby dla każdego `rating` w tabeli `film` znaleźć najdłuższy film (`ORDER BY length DESC`). Zwróć `rating`, `title`, `length` dla `rn = 1`.', sol: "WITH ranked AS (SELECT rating, title, length, ROW_NUMBER() OVER (PARTITION BY rating ORDER BY length DESC) AS rn FROM film) SELECT rating, title, length FROM ranked WHERE rn = 1;", order: false },
+      { prompt: 'Za pomocą CTE i `ROW_NUMBER() OVER (PARTITION BY customer_id ORDER BY amount DESC, payment_id ASC)` zwróć `customer_id`, `payment_id`, `amount` dla maksymalnie 2 najwyższych płatności każdego klienta.', sol: "WITH r AS (SELECT customer_id, payment_id, amount, ROW_NUMBER() OVER (PARTITION BY customer_id ORDER BY amount DESC, payment_id ASC) AS rn FROM payment) SELECT customer_id, payment_id, amount FROM r WHERE rn <= 2;", order: false },
+      { prompt: 'Z tabeli `film` wybierz `title`, `rating`, `replacement_cost` oraz pozycję filmu pod względem najdroższego `replacement_cost` wewnątrz jego `rating` używając `DENSE_RANK() OVER (PARTITION BY rating ORDER BY replacement_cost DESC)`. Zostaw tylko miejsca `1` i `2`.', sol: "WITH r AS (SELECT title, rating, replacement_cost, DENSE_RANK() OVER (PARTITION BY rating ORDER BY replacement_cost DESC) AS dr FROM film) SELECT title, rating, replacement_cost, dr FROM r WHERE dr <= 2;", order: false },
+      { prompt: 'Dla każdego klienta w `payment` ponumeruj jego płatności chronologicznie (`ROW_NUMBER() OVER (PARTITION BY customer_id ORDER BY payment_date ASC, payment_id ASC)`). Zwróć tylko pierwszą płatność każdego klienta (`customer_id`, `payment_date`, `amount`).', sol: "WITH first_p AS (SELECT customer_id, payment_date, amount, ROW_NUMBER() OVER (PARTITION BY customer_id ORDER BY payment_date ASC, payment_id ASC) AS rn FROM payment) SELECT customer_id, payment_date, amount FROM first_p WHERE rn = 1;", order: false },
+      { prompt: 'Znajdź filmy z tabeli `film`, których długość (`length`) jest większa niż średnia długość wszystkich filmów w bazie (`> (SELECT AVG(length) FROM film)`). Zwróć `title` i `length`.', sol: "SELECT title, length FROM film WHERE length > (SELECT AVG(length) FROM film);", order: false }
+    ]
+  },
+  {
+    id: 'p5_2', stage: 5, title: '5.2 Okna analityczne: Suma narastająca, udział % i LAG()',
+    tables: ['payment', 'film'],
+    cols: ['SUM(amount) OVER', 'LAG(', 'PARTITION BY', 'ORDER BY', 'payment', 'film', 'payment_date'],
+    gapId: 'g5',
+    variants: [
+      { prompt: 'Dla płatności klienta `customer_id = 1` w tabeli `payment` wypisz `payment_id`, `payment_date`, `amount` oraz sumę narastającą jego wydatków (`SUM(amount) OVER (ORDER BY payment_date, payment_id)`).', sol: "SELECT payment_id, payment_date, amount, SUM(amount) OVER (ORDER BY payment_date, payment_id) AS running_total FROM payment WHERE customer_id = 1 ORDER BY payment_date, payment_id;", order: true },
+      { prompt: 'Dla płatności klienta `customer_id = 1` wypisz `payment_id`, `amount` oraz kwotę jego poprzedniej płatności za pomocą `LAG(amount) OVER (ORDER BY payment_date, payment_id)`.', sol: "SELECT payment_id, amount, LAG(amount) OVER (ORDER BY payment_date, payment_id) AS prev_amount FROM payment WHERE customer_id = 1 ORDER BY payment_date, payment_id;", order: true },
+      { prompt: 'Dla każdego `rating` w tabeli `film` policz liczbę filmów (`COUNT(*)`) oraz jej procentowy udział we wszystkich filmach (`COUNT(*) * 100.0 / SUM(COUNT(*)) OVER ()`). Zwróć `rating`, `cnt`, `share_pct`.', sol: "SELECT rating, COUNT(*) AS cnt, COUNT(*) * 100.0 / SUM(COUNT(*)) OVER () AS share_pct FROM film GROUP BY rating;", order: false },
+      { prompt: 'W tabeli `film` dla filmów o ratingu `\'G\'` wypisz `title`, `length` oraz średnią długość filmu w grupie `\'G\'` policzoną oknem `AVG(length) OVER ()`.', sol: "SELECT title, length, AVG(length) OVER () AS avg_g_len FROM film WHERE rating = 'G';", order: false },
+      { prompt: 'W tabeli `payment` zagreguj w CTE przychód miesięczny (`DATE_TRUNC(\'month\', payment_date) AS m, SUM(amount) AS rev`), a następnie wypisz `m`, `rev` oraz przychód z poprzedniego miesiąca (`LAG(rev) OVER (ORDER BY m)`).', sol: "WITH m_rev AS (SELECT DATE_TRUNC('month', payment_date) AS m, SUM(amount) AS rev FROM payment GROUP BY 1) SELECT m, rev, LAG(rev) OVER (ORDER BY m) AS prev_rev FROM m_rev ORDER BY m;", order: true }
+    ]
+  },
+  {
+    id: 'p5_3', stage: 5, title: '5.3 Kalendarze generate_series, DATE_TRUNC i INTERVAL',
+    tables: ['rental', 'payment'],
+    cols: ["generate_series('2026-05-01'::date, '2026-05-07'::date, '1 day') d", 'LEFT JOIN', 'COALESCE', 'DATE_TRUNC', 'INTERVAL'],
+    gapId: 'g4',
+    variants: [
+      { prompt: 'Wygeneruj kalendarz od `\'2026-05-01\'` do `\'2026-05-07\'` za pomocą `generate_series(\'2026-05-01\'::date, \'2026-05-07\'::date, \'1 day\') d` i połącz go `LEFT JOIN` z tabelą `rental` po `r.rental_date = d`. Zwróć dzień `d` oraz liczbę wypożyczeń (`COUNT(r.rental_id)`), posortowane po `d`.', sol: "SELECT d, COUNT(r.rental_id) AS rentals_cnt FROM generate_series('2026-05-01'::date, '2026-05-07'::date, '1 day') d LEFT JOIN rental r ON r.rental_date = d GROUP BY d ORDER BY d;", order: true },
+      { prompt: 'Wygeneruj kalendarz dni od `\'2026-05-01\'` do `\'2026-05-06\'` (`generate_series`) i połącz `LEFT JOIN` z `payment` (`p.payment_date = d`). Zwróć dzień `d` oraz dzienną sumę płatności z użyciem `COALESCE(SUM(p.amount), 0)`. Posortuj po `d`.', sol: "SELECT d, COALESCE(SUM(p.amount), 0) AS daily_rev FROM generate_series('2026-05-01'::date, '2026-05-06'::date, '1 day') d LEFT JOIN payment p ON p.payment_date = d GROUP BY d ORDER BY d;", order: true },
+      { prompt: 'Z tabeli `rental` dla wypożyczeń z maja (`rental_date LIKE \'2026-05%\'`) wypisz `rental_id`, `rental_date` oraz termin zwrotu wyznaczony jako 5 dni później: `rental_date + INTERVAL \'5 days\' AS due_date`.', sol: "SELECT rental_id, rental_date, rental_date + INTERVAL '5 days' AS due_date FROM rental WHERE rental_date LIKE '2026-05%';", order: false },
+      { prompt: 'Z tabeli `rental` pogrupuj wypożyczenia po miesiącu za pomocą `DATE_TRUNC(\'month\', rental_date) AS miesiac` i policz liczbę wypożyczeń (`COUNT(*)`) w każdym miesiącu.', sol: "SELECT DATE_TRUNC('month', rental_date) AS miesiac, COUNT(*) AS cnt FROM rental GROUP BY 1 ORDER BY 1;", order: true },
+      { prompt: 'Wygeneruj serię liczb od 1 do 6 za pomocą `generate_series(1, 6) s` i połącz ją z tabelą `category` (`c.category_id = s`). Zwróć `s` oraz `c.name`.', sol: "SELECT s, c.name FROM generate_series(1, 6) s JOIN category c ON c.category_id = s;", order: false }
     ]
   }
 ];
 
 /* ==========================================================================
-   3. MODUŁ „DIAGNOZA” (Placement Test z opcją „Pomiń / Nie umiem”)
+   4. DIAGNOZA: 10 PRZEKROJOWYCH ZADAŃ POZIOMUJĄCYCH (Z PRZYCISKIEM POMIŃ)
    ========================================================================== */
 var DIAG_QUESTIONS = [
-  {
-    lvl: 1, stage: 1, gap: 'g7',
-    title: 'Poziom 1: Filtrowanie podstawowe (WHERE + ORDER BY)',
-    prompt: 'Z tabeli `film` wypisz `title` oraz `rental_rate` dla wszystkich filmów o ratingu `\'PG\'`. Posortuj wynik rosnąco po `title`.',
-    sol: "SELECT title, rental_rate FROM film WHERE rating = 'PG' ORDER BY title ASC;",
-    order: true
-  },
-  {
-    lvl: 2, stage: 2, gap: 'g3',
-    title: 'Poziom 2: Agregacja i pułapka NULL w COUNT',
-    prompt: 'Z tabeli `rental` zwróć w jednym wierszu dwie kolumny: liczbę wszystkich wierszy (`COUNT(*)`) oraz liczbę wypożyczeń, które mają uzupełnioną datę zwrotu `return_date` (`COUNT(return_date)`).',
-    sol: "SELECT COUNT(*) AS all_cnt, COUNT(return_date) AS ret_cnt FROM rental;",
-    order: false
-  },
-  {
-    lvl: 3, stage: 2, gap: 'g7',
-    title: 'Poziom 3: Grupowanie i filtr po agregacji (GROUP BY + HAVING)',
-    prompt: 'Z tabeli `payment` wypisz `customer_id` oraz łączną kwotę płatności (`SUM(amount)`) tylko dla tych klientów, którzy wydali łącznie co najmniej `8.00`.',
-    sol: "SELECT customer_id, SUM(amount) AS total FROM payment GROUP BY customer_id HAVING SUM(amount) >= 8.00;",
-    order: false
-  },
-  {
-    lvl: 4, stage: 3, gap: 'g2',
-    title: 'Poziom 4: LEFT JOIN + COALESCE (wszyscy klienci, także z 0)',
-    prompt: 'Dla KAŻDEGO klienta z tabeli `customer` (również tych bez wypożyczeń!) wypisz `customer_id`, `first_name` oraz łączną kwotę z tabeli `payment` (jeśli klient nic nie płacił, wyświetl `0` zamiast `NULL`).',
-    sol: "SELECT c.customer_id, c.first_name, COALESCE(SUM(p.amount), 0) AS total_paid FROM customer c LEFT JOIN payment p ON c.customer_id = p.customer_id GROUP BY c.customer_id, c.first_name;",
-    order: false
-  },
-  {
-    lvl: 5, stage: 4, gap: 'g10',
-    title: 'Poziom 5: Agregacja warunkowa (CASE WHEN) i procenty',
-    prompt: 'Dla każdego sklepu (`store_id`) w tabeli `customer` policz procent aktywnych klientów (`active = 1`). Zwróć `store_id` oraz `active_pct` jako liczbę zmiennoprzecinkową (użyj `* 100.0`).',
-    sol: "SELECT store_id, SUM(CASE WHEN active = 1 THEN 1 ELSE 0 END) * 100.0 / COUNT(*) AS active_pct FROM customer GROUP BY store_id;",
-    order: false
-  },
-  {
-    lvl: 6, stage: 5, gap: 't5',
-    title: 'Poziom 6: CTE i funkcja okna (Top 2 płatności klienta)',
-    prompt: 'Za pomocą CTE i `ROW_NUMBER() OVER (PARTITION BY customer_id ORDER BY amount DESC, payment_id ASC)` zwróć `customer_id`, `payment_id` i `amount` dla maksymalnie 2 najwyższych płatności każdego klienta.',
-    sol: "WITH r AS (SELECT customer_id, payment_id, amount, ROW_NUMBER() OVER (PARTITION BY customer_id ORDER BY amount DESC, payment_id ASC) AS rn FROM payment) SELECT customer_id, payment_id, amount FROM r WHERE rn <= 2;",
-    order: false
-  }
+  { lvl: 1, stage: 1, gap: 'g7', title: '1/10 Filtrowanie podstawowe (WHERE + ORDER BY)', prompt: 'Z tabeli `film` wypisz `title` oraz `rental_rate` dla wszystkich filmów o ratingu `\'PG\'`. Posortuj wynik rosnąco po `title`.', sol: "SELECT title, rental_rate FROM film WHERE rating = 'PG' ORDER BY title ASC;", order: true },
+  { lvl: 1, stage: 1, gap: 'g7', title: '2/10 Zakresy IN oraz BETWEEN', prompt: 'Z tabeli `film` wypisz `title` i `length` dla filmów o ratingu `\'G\'` lub `\'R\'`, których długość mieści się między `50` a `90` minut włącznie.', sol: "SELECT title, length FROM film WHERE rating IN ('G', 'R') AND length BETWEEN 50 AND 90;", order: false },
+  { lvl: 2, stage: 2, gap: 'g3', title: '3/10 Agregacja i NULL w COUNT', prompt: 'Z tabeli `rental` zwróć w jednym wierszu dwie kolumny: liczbę wszystkich wierszy (`COUNT(*)`) oraz liczbę wypożyczeń z uzupełnioną datą zwrotu (`COUNT(return_date)`).', sol: "SELECT COUNT(*) AS all_cnt, COUNT(return_date) AS ret_cnt FROM rental;", order: false },
+  { lvl: 2, stage: 2, gap: 'g7', title: '4/10 Grupowanie i filtr po agregacji (HAVING)', prompt: 'Z tabeli `payment` wypisz `customer_id` oraz sumę płatności (`SUM(amount)`) tylko dla tych klientów, którzy wydali łącznie co najmniej `8.00`.', sol: "SELECT customer_id, SUM(amount) AS total FROM payment GROUP BY customer_id HAVING SUM(amount) >= 8.00;", order: false },
+  { lvl: 3, stage: 3, gap: 'g1', title: '5/10 INNER JOIN po 3 tabelach', prompt: 'Połącz `category`, `film_category` i `film`. Zwróć nazwę kategorii (`name`) oraz liczbę przypisanych do niej filmów (`COUNT(f.film_id)`).', sol: "SELECT c.name, COUNT(f.film_id) AS cnt FROM category c JOIN film_category fc ON c.category_id = fc.category_id JOIN film f ON fc.film_id = f.film_id GROUP BY c.name;", order: false },
+  { lvl: 3, stage: 3, gap: 'g2', title: '6/10 LEFT JOIN + COALESCE (wszyscy klienci, także z 0)', prompt: 'Dla KAŻDEGO klienta z tabeli `customer` (również tych bez płatności!) wypisz `customer_id`, `first_name` oraz sumę z tabeli `payment` (zamień `NULL` na `0`).', sol: "SELECT c.customer_id, c.first_name, COALESCE(SUM(p.amount), 0) AS total_paid FROM customer c LEFT JOIN payment p ON c.customer_id = p.customer_id GROUP BY c.customer_id, c.first_name;", order: false },
+  { lvl: 3, stage: 3, gap: 'g2', title: '7/10 Anti-Join (wiersze bez pary)', prompt: 'Znajdź `actor_id` oraz `first_name` aktorów z tabeli `actor`, którzy nie występują ani razu w tabeli `film_actor`.', sol: "SELECT a.actor_id, a.first_name FROM actor a LEFT JOIN film_actor fa ON a.actor_id = fa.actor_id WHERE fa.film_id IS NULL;", order: false },
+  { lvl: 4, stage: 4, gap: 'g10', title: '8/10 Agregacja warunkowa i procenty (* 100.0)', prompt: 'Dla każdego sklepu (`store_id`) w tabeli `customer` policz procent aktywnych klientów (`active = 1`). Zwróć `store_id` oraz dokładny procent z ułamkiem.', sol: "SELECT store_id, SUM(CASE WHEN active = 1 THEN 1 ELSE 0 END) * 100.0 / COUNT(*) AS active_pct FROM customer GROUP BY store_id;", order: false },
+  { lvl: 5, stage: 5, gap: 't5', title: '9/10 CTE i funkcja okna (Top 2 płatności klienta)', prompt: 'Za pomocą CTE i `ROW_NUMBER() OVER (PARTITION BY customer_id ORDER BY amount DESC, payment_id ASC)` zwróć `customer_id`, `payment_id` i `amount` dla maksymalnie 2 najwyższych płatności każdego klienta.', sol: "WITH r AS (SELECT customer_id, payment_id, amount, ROW_NUMBER() OVER (PARTITION BY customer_id ORDER BY amount DESC, payment_id ASC) AS rn FROM payment) SELECT customer_id, payment_id, amount FROM r WHERE rn <= 2;", order: false },
+  { lvl: 5, stage: 5, gap: 'g5', title: '10/10 Porównanie z poprzednim okresem (LAG)', prompt: 'Dla płatności klienta `customer_id = 1` w `payment` wypisz `payment_id`, `amount` oraz kwotę poprzedniej płatności (`LAG(amount) OVER (ORDER BY payment_date, payment_id)`).', sol: "SELECT payment_id, amount, LAG(amount) OVER (ORDER BY payment_date, payment_id) AS prev_amt FROM payment WHERE customer_id = 1 ORDER BY payment_date, payment_id;", order: true }
 ];
 
 /* ==========================================================================
-   4. ZADANIA REKRUTACYJNE W STYLU DATALEMUR (Z DETEKTOREM PUŁAPEK)
+   5. ZADANIA REKRUTACYJNE DATALEMUR (12 KLASYCZNYCH PUŁAPEK FAANG)
    ========================================================================== */
 var LEMUR_TASKS = [
   {
-    id: 'dl_1',
-    company: 'Netflix / DataLemur Medium',
-    title: 'Klienci bez aktywności w czerwcu (Pułapka LEFT JOIN + WHERE)',
-    gapId: 'g2',
-    gapName: 'LEFT JOIN: warunek daty w ON czy w WHERE',
-    gapHint: 'Filtrowanie prawej tabeli w WHERE (np. WHERE r.rental_date LIKE \'2026-06%\') odrzuca wiersze z NULL i zamienia LEFT JOIN w INNER JOIN! Warunek daty dla prawej tabeli musi być w klauzuli ON.',
-    cols: ['customer', 'rental', 'customer_id', 'first_name', 'rental_date', 'LEFT JOIN', 'COALESCE'],
-    prompt: 'Zarząd chce listę WSZYSTKICH klientów z tabeli `customer` (`store_id = 1`) wraz z liczbą ich wypożyczeń w czerwcu 2026 (`rental_date LIKE \'2026-06%\'`). Jeśli klient ze sklepu 1 nie miał żadnego wypożyczenia w czerwcu, ma widnieć w wyniku z liczbą `0`.\n\nZwróć kolumny: `customer_id`, `first_name`, `june_rentals`.',
+    id: 'dl_1', company: 'Netflix', diff: 'Medium',
+    title: '1. Klienci bez aktywności w czerwcu (Pułapka LEFT JOIN: ON vs WHERE)',
+    tables: ['customer', 'rental'],
+    gapId: 'g2', gapName: 'LEFT JOIN: warunek daty w ON czy w WHERE',
+    gapHint: 'Filtrowanie prawej tabeli w WHERE odrzuca wiersze z NULL i zamienia LEFT JOIN w INNER JOIN! Warunek daty dla prawej tabeli musi być w klauzuli ON.',
+    cols: ['customer', 'rental', 'customer_id', 'first_name', 'rental_date', 'LEFT JOIN', 'COUNT(r.rental_id)'],
+    prompt: 'Zarząd chce listę WSZYSTKICH klientów z tabeli `customer` należących do sklepu `store_id = 1` wraz z liczbą ich wypożyczeń w czerwcu 2026 (`rental_date LIKE \'2026-06%\'`).\n\nJeśli klient ze sklepu 1 nie miał żadnego wypożyczenia w czerwcu, MUSI widnieć w wyniku z liczbą `0`.\nZwróć: `customer_id`, `first_name`, `june_rentals`.',
     sol: "SELECT c.customer_id, c.first_name, COUNT(r.rental_id) AS june_rentals FROM customer c LEFT JOIN rental r ON c.customer_id = r.customer_id AND r.rental_date LIKE '2026-06%' WHERE c.store_id = 1 GROUP BY c.customer_id, c.first_name;",
-    detectTrap: function(sql, userRes) {
-      var up = sql.toUpperCase();
-      if (up.indexOf('LEFT JOIN') > -1 && /WHERE[\s\S]*RENTAL_DATE/i.test(sql)) {
-        return 'PUŁAPKA DATALEMUR WYKRYTA: Użyłeś `LEFT JOIN`, ale warunek na `rental_date` umieściłeś w `WHERE` zamiast w `ON`! Przez to klienci bez wypożyczeń w czerwcu (którzy mieli `NULL` w `rental_date`) zostali wycięci z wyniku.';
+    detectTrap: function(sql) {
+      if (/LEFT\s+JOIN/i.test(sql) && /WHERE[\s\S]*RENTAL_DATE/i.test(sql)) {
+        return 'PUŁAPKA DATALEMUR WYKRYTA: Użyłeś LEFT JOIN, ale filtr na `rental_date` dałeś w WHERE zamiast w ON! Przez to klienci bez wypożyczeń w czerwcu (mający NULL w rental_date) zostali wycięci.';
       }
       if (/COUNT\s*\(\s*\*\s*\)/i.test(sql)) {
-        return 'PUŁAPKA COUNT(*): Przy `LEFT JOIN` użycie `COUNT(*)` policzy 1 zamiast 0 dla klienta bez wypożyczeń (bo sam wiersz klienta istnieje!). Użyj `COUNT(r.rental_id)`.';
+        return 'PUŁAPKA COUNT(*): Przy LEFT JOIN użycie COUNT(*) policzy wiersz klienta jako 1 zamiast 0! Użyj COUNT(r.rental_id).';
       }
       return null;
     }
   },
   {
-    id: 'dl_2',
-    company: 'Stripe / DataLemur Easy-Tricky',
-    title: 'Odsetek niezwróconych filmów (Pułapka Dzielenia Całkowitego i NULL)',
-    gapId: 'g10',
-    gapName: 'Dzielenie całkowite i IS NULL',
-    gapHint: 'W PostgreSQL / SQLite dzielenie dwóch liczb całkowitych (COUNT / COUNT) obcina część ułamkową do 0. Zawsze mnóż licznik przez 100.0, a brak wartości sprawdzaj przez IS NULL, nigdy = NULL.',
-    cols: ['rental', 'return_date', 'staff_id', 'CASE WHEN', 'IS NULL', '100.0'],
-    prompt: 'Dla każdego pracownika (`staff_id`) w tabeli `rental` oblicz odsetek wypożyczeń, które NIE zostały jeszcze zwrócone (`return_date IS NULL`).\n\nZwróć: `staff_id` oraz `unreturned_pct` (jako dokładny procent z ułamkiem, np. `25.0`).',
+    id: 'dl_2', company: 'Stripe', diff: 'Easy-Tricky',
+    title: '2. Odsetek niezwróconych filmów (Pułapka Dzielenia Całkowitego i NULL)',
+    tables: ['rental'],
+    gapId: 'g10', gapName: 'Dzielenie całkowite (* 100.0) i IS NULL',
+    gapHint: 'Dzielenie dwóch liczb całkowitych obcina ułamki. Zawsze mnóż przez 100.0, a brak wartości sprawdzaj przez IS NULL, nigdy = NULL.',
+    cols: ['rental', 'return_date', 'staff_id', 'CASE WHEN', 'IS NULL', '* 100.0'],
+    prompt: 'Dla każdego pracownika (`staff_id`) w tabeli `rental` oblicz odsetek wypożyczeń, które NIE zostały jeszcze zwrócone (`return_date IS NULL`).\n\nZwróć: `staff_id` oraz `unreturned_pct` (jako dokładny procent zmiennoprzecinkowy).',
     sol: "SELECT staff_id, SUM(CASE WHEN return_date IS NULL THEN 1 ELSE 0 END) * 100.0 / COUNT(*) AS unreturned_pct FROM rental GROUP BY staff_id;",
-    detectTrap: function(sql, userRes) {
-      if (/=\s*NULL/i.test(sql)) {
-        return 'PUŁAPKA SQL: Napisałeś `= NULL`. W SQL porównanie z NULL przez znak `=` zawsze daje UNKNOWN! Użyj `return_date IS NULL`.';
-      }
-      if (sql.indexOf('100.0') < 0 && sql.indexOf('CAST') < 0 && sql.indexOf('::') < 0) {
-        return 'PUŁAPKA DZIELENIA CAŁKOWITEGO: Dzielisz dwie liczby całkowite bez `* 100.0` (lub `::numeric`), przez co ułamki mogą zostać obcięte!';
+    detectTrap: function(sql) {
+      if (/=\s*NULL/i.test(sql)) return 'PUŁAPKA SQL: Napisałeś `= NULL`. W SQL porównanie przez `=` z NULL daje UNKNOWN. Użyj `return_date IS NULL`.';
+      if (sql.indexOf('100.0') < 0 && !/numeric|float|real/i.test(sql)) return 'PUŁAPKA DZIELENIA CAŁKOWITEGO: Brakuje `* 100.0` lub `::numeric` przy dzieleniu liczby wierszy!';
+      return null;
+    }
+  },
+  {
+    id: 'dl_3', company: 'Amazon', diff: 'Hard',
+    title: '3. Rozdmuchanie wierszy po JOIN dwóch tabel faktów (Fan-out Trap)',
+    tables: ['film', 'film_category', 'film_actor'],
+    gapId: 'g1', gapName: 'Ziarno wyniku i mnożenie wierszy po JOIN',
+    gapHint: 'Łączenie bezpośrednio dwóch tabel 1-do-wielu mnoży wiersze przez siebie. Użyj COUNT(DISTINCT ...) lub zagreguj tabele w osobnych CTE przed złączeniem.',
+    cols: ['film', 'film_actor', 'film_category', 'film_id', 'title', 'COUNT(DISTINCT'],
+    prompt: 'Dla filmów o `film_id` z listy `(1, 2, 6)` wypisz: `film_id`, `title`, liczbę przypisanych kategorii (`cat_cnt` z `film_category`) oraz liczbę przypisanych aktorów (`actor_cnt` z `film_actor`).\n\nUważaj na pomnożenie liczby kategorii przez liczbę aktorów!',
+    sol: "SELECT f.film_id, f.title, COUNT(DISTINCT fc.category_id) AS cat_cnt, COUNT(DISTINCT fa.actor_id) AS actor_cnt FROM film f LEFT JOIN film_category fc ON f.film_id = fc.film_id LEFT JOIN film_actor fa ON f.film_id = fa.film_id WHERE f.film_id IN (1, 2, 6) GROUP BY f.film_id, f.title;",
+    detectTrap: function(sql) {
+      if (!/DISTINCT/i.test(sql) && !/WITH/i.test(sql)) {
+        return 'PUŁAPKA ZIARNA (Fan-out): Łączysz dwie tabele podrzędne naraz używając zwykłego COUNT() bez DISTINCT ani osobnych CTE! Przez to każda kategoria mnoży się przez każdego aktora.';
       }
       return null;
     }
   },
   {
-    id: 'dl_3',
-    company: 'Amazon / DataLemur Hard',
-    title: 'Mnożenie wierszy przy łączeniu dwóch tabel faktów (Pułapka Ziarna)',
-    gapId: 'g1',
-    gapName: 'Ziarno wyniku i rozdmuchanie wierszy po JOIN',
-    gapHint: 'Jeśli łączysz bezpośrednio dwie tabele relacji 1-do-wielu (np. film_actor i film_category), wiersze mnożą się przez siebie (iloczyn kartezjański wewnątrz klucza). Najpierw zagreguj w osobnych CTE do tego samego ziarna!',
-    cols: ['film', 'film_actor', 'film_category', 'film_id', 'title', 'COUNT(DISTINCT ...)'],
-    prompt: 'Dla filmów o `film_id` równym `1`, `2` oraz `6` wypisz: `film_id`, `title`, liczbę przypisanych kategorii (`cat_cnt` z `film_category`) oraz liczbę przypisanych aktorów (`actor_cnt` z `film_actor`).\n\nUwaga na ziarno i mnożenie wierszy przy łączeniu dwóch tabel naraz!',
-    sol: "SELECT f.film_id, f.title, COUNT(DISTINCT fc.category_id) AS cat_cnt, COUNT(DISTINCT fa.actor_id) AS actor_cnt FROM film f LEFT JOIN film_category fc ON f.film_id = fc.film_id LEFT JOIN film_actor fa ON f.film_id = fa.film_id WHERE f.film_id IN (1, 2, 6) GROUP BY f.film_id, f.title;",
+    id: 'dl_4', company: 'Spotify', diff: 'Medium',
+    title: '4. Top 2 ceny wypożyczenia w grupie z remisami (DENSE_RANK vs ROW_NUMBER)',
+    tables: ['film'],
+    gapId: 't5', gapName: 'DENSE_RANK vs RANK vs ROW_NUMBER przy remisach',
+    gapHint: 'ROW_NUMBER ucina remisy losowo, a RANK zostawia dziury w numeracji (1, 1, 3). Gdy pytanie prosi o Top N unikalnych wartości z remisami, użyj DENSE_RANK().',
+    cols: ['film', 'title', 'rating', 'replacement_cost', 'DENSE_RANK()', 'OVER', 'PARTITION BY'],
+    prompt: 'W kategorii wiekowej `rating = \'PG\'` znajdź filmy mające 2 najwyższe wartości kosztu odtworzenia (`replacement_cost`). Jeśli dwa filmy mają ten sam koszt (np. `20.99`), oba mają się znaleźć na tym samym miejscu bez pomijania kolejnych numerów miejsc!\n\nZwróć: `title`, `replacement_cost`, `rnk` (dla miejsc `<= 2`).',
+    sol: "WITH r AS (SELECT title, replacement_cost, DENSE_RANK() OVER (ORDER BY replacement_cost DESC) AS rnk FROM film WHERE rating = 'PG') SELECT title, replacement_cost, rnk FROM r WHERE rnk <= 2;",
+    detectTrap: function(sql) {
+      if (/ROW_NUMBER/i.test(sql)) return 'PUŁAPKA REMISÓW: Użyłeś ROW_NUMBER(), który przy remisie `20.99` nadał różne numery wierszy zamiast tego samego miejsca!';
+      if (/\bRANK\s*\(/i.test(sql) && !/DENSE_RANK/i.test(sql)) return 'PUŁAPKA RANK(): Zwykły RANK() po remisie przeskakuje oczko numeracji (1, 2, 2, 4). Użyj DENSE_RANK().';
+      return null;
+    }
+  },
+  {
+    id: 'dl_5', company: 'Uber', diff: 'Medium',
+    title: '5. Trzecia transakcja każdego klienta (Window Filtering Trap)',
+    tables: ['payment'],
+    gapId: 't5', gapName: 'Filtrowanie funkcji okna wymaga CTE / podzapytania',
+    gapHint: 'Funkcji okna nie wolno używać bezpośrednio w klauzuli WHERE tego samego zapytania. Najpierw wylicz ROW_NUMBER() w CTE, a w zewnętrznym SELECT daj WHERE rn = 3.',
+    cols: ['payment', 'customer_id', 'payment_id', 'amount', 'payment_date', 'ROW_NUMBER()', 'WITH'],
+    prompt: 'Znajdź dokładnie TRZECIĄ chronologicznie płatność każdego klienta w tabeli `payment` (sortując po `payment_date ASC, payment_id ASC`).\n\nZwróć: `customer_id`, `payment_id`, `amount`, `payment_date`.',
+    sol: "WITH r AS (SELECT customer_id, payment_id, amount, payment_date, ROW_NUMBER() OVER (PARTITION BY customer_id ORDER BY payment_date ASC, payment_id ASC) AS rn FROM payment) SELECT customer_id, payment_id, amount, payment_date FROM r WHERE rn = 3;",
+    detectTrap: function(sql) {
+      if (!/WITH/i.test(sql) && !/FROM\s*\(\s*SELECT/i.test(sql)) return 'PUŁAPKA KOLEJNOŚCI SQL: Próbujesz filtrować wynik funkcji okna bez CTE lub podzapytania!';
+      return null;
+    }
+  },
+  {
+    id: 'dl_6', company: 'Airbnb', diff: 'Hard',
+    title: '6. Pułapka NOT IN z wartościami NULL (Zwraca 0 wierszy!)',
+    tables: ['film', 'rental'],
+    gapId: 'g2', gapName: 'NOT IN z NULL w podzapytaniu zwraca pusty wynik',
+    gapHint: 'Jeśli podzapytanie wewnątrz NOT IN zawiera chociaż jeden NULL, całe wyrażenie przyjmuje wartość UNKNOWN i zwraca 0 wierszy! Zawsze używaj LEFT JOIN ... IS NULL, NOT EXISTS lub odfiltruj NULL w podzapytaniu.',
+    cols: ['customer', 'rental', 'return_date', 'NOT EXISTS', 'LEFT JOIN', 'IS NULL'],
+    prompt: 'W tabeli `rental` kolumna `return_date` zawiera wartości `NULL`. Ktoś próbował znaleźć wypożyczenia, których data wypożyczenia (`rental_date`) NIE pokrywa się z żadną datą zwrotu (`return_date`) w bazie, pisząc:\n`SELECT rental_id, rental_date FROM rental WHERE rental_date NOT IN (SELECT return_date FROM rental);`\nAle zapytanie zwróciło 0 wierszy przez `NULL` w `return_date`!\n\nNapisz poprawne zapytanie zwracające `rental_id` oraz `rental_date` dla wypożyczeń, których `rental_date` nie występuje wśród niepustych wartości `return_date`.',
+    sol: "SELECT rental_id, rental_date FROM rental WHERE rental_date NOT IN (SELECT return_date FROM rental WHERE return_date IS NOT NULL);",
     detectTrap: function(sql, userRes) {
-      if (sql.toUpperCase().indexOf('DISTINCT') < 0 && sql.toUpperCase().indexOf('WITH') < 0) {
-        return 'PUŁAPKA ZIARNA (Fan-out trap): Łączysz `film` jednocześnie z `film_category` i `film_actor` używając zwykłego `COUNT()` bez `DISTINCT` lub osobnych CTE. Gdyby film miał 2 kategorie i 3 aktorów, zwykły COUNT pokazałby 6 zamiast 2 i 3!';
+      if (/NOT\s+IN/i.test(sql) && !/IS\s+NOT\s+NULL/i.test(sql) && userRes && userRes.values && userRes.values.length === 0) {
+        return 'PUŁAPKA NOT IN + NULL: Twoje podzapytanie w NOT IN zwraca NULL-e! W logice trójwartościowej SQL `x NOT IN (..., NULL)` zawsze daje UNKNOWN i zwraca 0 wierszy.';
       }
+      return null;
+    }
+  },
+  {
+    id: 'dl_7', company: 'Meta', diff: 'Hard',
+    title: '7. Zmiana przychodu Miesiąc do Miesiąca (MoM % Change z LAG)',
+    tables: ['payment'],
+    gapId: 'g5', gapName: 'LAG i zmiana procentowa MoM po agregacji',
+    gapHint: 'Najpierw zagreguj dane do ziarna miesiąca w CTE, a dopiero potem użyj LAG() OVER (ORDER BY miesiac).',
+    cols: ['payment', 'payment_date', 'amount', 'DATE_TRUNC', 'LAG(', 'WITH'],
+    prompt: 'Policz przychód miesięczny w tabeli `payment` (`DATE_TRUNC(\'month\', payment_date) AS m`) oraz kwotę zmiany przychodu względem poprzedniego miesiąca (`rev - LAG(rev) OVER (ORDER BY m)`).\n\nZwróć: `m`, `rev`, `diff_from_prev`.',
+    sol: "WITH m_rev AS (SELECT DATE_TRUNC('month', payment_date) AS m, SUM(amount) AS rev FROM payment GROUP BY 1) SELECT m, rev, rev - LAG(rev) OVER (ORDER BY m) AS diff_from_prev FROM m_rev ORDER BY m;",
+    detectTrap: function(sql) {
+      if (!/GROUP\s+BY/i.test(sql)) return 'PUŁAPKA ZIARNA OKNA: Używasz LAG() na surowych wierszach płatności zamiast najpierw zagregować przychód do poziomu miesiąca!';
+      return null;
+    }
+  },
+  {
+    id: 'dl_8', company: 'Microsoft', diff: 'Hard',
+    title: '8. Super-Klient: Różnorodność kategorii (Relational Division)',
+    tables: ['rental', 'film', 'film_category'],
+    gapId: 'g7', gapName: 'COUNT(DISTINCT ...) w HAVING',
+    gapHint: 'Aby sprawdzić, czy klient miał styczność z N różnymi kategoriami, użyj HAVING COUNT(DISTINCT category_id) >= N (zwykły COUNT policzy wielokrotne wypożyczenia z tej samej kategorii!).',
+    cols: ['rental', 'film_category', 'customer_id', 'category_id', 'HAVING', 'COUNT(DISTINCT'],
+    prompt: 'Połącz `rental` oraz `film_category` (po `film_id`). Znajdź klientów (`customer_id`), którzy wypożyczyli filmy z co najmniej `3` RÓŻNYCH kategorii (`category_id`).\n\nZwróć: `customer_id` oraz liczbę unikalnych kategorii (`uniq_cats`).',
+    sol: "SELECT r.customer_id, COUNT(DISTINCT fc.category_id) AS uniq_cats FROM rental r JOIN film_category fc ON r.film_id = fc.film_id GROUP BY r.customer_id HAVING COUNT(DISTINCT fc.category_id) >= 3;",
+    detectTrap: function(sql) {
+      if (!/DISTINCT/i.test(sql)) return 'PUŁAPKA DUPLIKATÓW: Klient mógł wypożyczyć 3 filmy z tej samej kategorii! Musisz użyć COUNT(DISTINCT fc.category_id), a nie zwykłego COUNT.';
+      return null;
+    }
+  },
+  {
+    id: 'dl_9', company: 'Google', diff: 'Medium',
+    title: '9. Średnia kwota na WSZYSTKICH klientów vs tylko płacących (AVG vs NULL)',
+    tables: ['customer', 'payment'],
+    gapId: 'g8', gapName: 'AVG pomija NULL-e (COALESCE przed agregacją)',
+    gapHint: 'Funkcja AVG(x) całkowicie ignoruje wiersze z NULL. Jeśli chcesz policzyć średnią uwzględniającą klientów z wynikiem 0, użyj AVG(COALESCE(x, 0)) na poziomie klienta.',
+    cols: ['customer', 'payment', 'COALESCE', 'AVG(', 'LEFT JOIN'],
+    prompt: 'W sklepie `store_id = 1` jest 5 klientów, ale jedna klientka (`MARGARET`) nigdy nic nie kupiła. Policz w jednym wierszu dwie liczby dla klientów ze `store_id = 1`:\n1) Średnią łączną kwotę wydatków na klienta liczoną po WSZYSTKICH 5 klientach ze sklepu 1 (`avg_all_customers`, gdzie brak wpłat to `0`).\n2) Liczbę wszystkich klientów w `store_id = 1`.',
+    sol: "WITH cust_totals AS (SELECT c.customer_id, COALESCE(SUM(p.amount), 0) AS tot FROM customer c LEFT JOIN payment p ON c.customer_id = p.customer_id WHERE c.store_id = 1 GROUP BY c.customer_id) SELECT AVG(tot) AS avg_all_customers, COUNT(*) AS cust_cnt FROM cust_totals;",
+    detectTrap: function(sql) {
+      if (!/LEFT\s+JOIN/i.test(sql)) return 'PUŁAPKA INNER JOIN: Bez LEFT JOIN klientka z kwotą 0 wypada z mianownika średniej!';
+      if (!/COALESCE/i.test(sql)) return 'PUŁAPKA AVG i NULL: Funkcja AVG() pomija wartości NULL! Musisz zamienić NULL na 0 przez COALESCE.';
+      return null;
+    }
+  },
+  {
+    id: 'dl_10', company: 'LinkedIn', diff: 'Medium',
+    title: '10. Klienci aktywni w obu miesiącach (Both Months Trap)',
+    tables: ['rental'],
+    gapId: 'g7', gapName: 'Warunek A AND B na tym samym wierszu vs na grupie',
+    gapHint: 'Jeden wiersz nie może mieć jednocześnie daty z maja ORAZ z czerwca. Aby znaleźć klientów mających wiersze w obu miesiącach, użyj INTERSECT lub HAVING z dwoma warunkami COUNT/FILTER.',
+    cols: ['rental', 'customer_id', 'rental_date', 'INTERSECT', 'HAVING'],
+    prompt: 'Znajdź `customer_id` klientów z tabeli `rental`, którzy wypożyczyli co najmniej jeden film w maju (`2026-05%`) ORAZ co najmniej jeden film w czerwcu (`2026-06%`). Posortuj rosnąco po `customer_id`.',
+    sol: "SELECT customer_id FROM rental WHERE rental_date LIKE '2026-05%' INTERSECT SELECT customer_id FROM rental WHERE rental_date LIKE '2026-06%' ORDER BY customer_id;",
+    detectTrap: function(sql, userRes) {
+      if (/WHERE[\s\S]*2026-05[\s\S]*AND[\s\S]*2026-06/i.test(sql) && !/EXISTS/i.test(sql)) {
+        return 'PUŁAPKA LOGICZNA WHERE: Napisałeś w WHERE `rental_date LIKE 2026-05% AND rental_date LIKE 2026-06%`. Pojedynczy wiersz nigdy nie ma dwóch dat naraz! Użyj INTERSECT lub GROUP BY + HAVING.';
+      }
+      return null;
+    }
+  },
+  {
+    id: 'dl_11', company: 'PayPal', diff: 'Medium',
+    title: '11. Udział każdej płatności w całkowitych wydatkach klienta (Window Share)',
+    tables: ['payment'],
+    gapId: 't5', gapName: 'SUM(x) OVER (PARTITION BY ...) bez zwijania wierszy',
+    gapHint: 'GROUP BY zwija wiersze do jednego na grupę. Jeśli potrzebujesz zachować pojedyncze transakcje i obok pokazać sumę grupy, użyj SUM(amount) OVER (PARTITION BY customer_id).',
+    cols: ['payment', 'payment_id', 'customer_id', 'amount', 'SUM(amount) OVER (PARTITION BY'],
+    prompt: 'Dla płatności klientów `customer_id IN (1, 2)` wypisz każdy pojedynczy wiersz płatności: `payment_id`, `customer_id`, `amount` oraz łączną sumę wszystkich wydatków tego klienta (`cust_total`) wyliczoną funkcją okna. Posortuj po `payment_id`.',
+    sol: "SELECT payment_id, customer_id, amount, SUM(amount) OVER (PARTITION BY customer_id) AS cust_total FROM payment WHERE customer_id IN (1, 2) ORDER BY payment_id;",
+    detectTrap: function(sql) {
+      if (/GROUP\s+BY/i.test(sql) && !/OVER/i.test(sql)) return 'PUŁAPKA GROUP BY: Użyłeś GROUP BY zamiast funkcji okna SUM(amount) OVER (PARTITION BY customer_id), przez co zwinąłeś wiersze lub rozbiłeś sumę po payment_id!';
+      return null;
+    }
+  },
+  {
+    id: 'dl_12', company: 'TikTok', diff: 'Hard',
+    title: '12. Szybkie zwroty w ciągu 3 dni (Date Interval Join Trap)',
+    tables: ['rental'],
+    gapId: 'g4', gapName: 'Operacje na datach i INTERVAL',
+    gapHint: 'Pamiętaj, że niezwrócone wypożyczenia mają return_date IS NULL, a różnicę dat w SQL możesz zapisać przez return_date <= rental_date + INTERVAL \'3 days\'.',
+    cols: ['rental', 'rental_id', 'customer_id', 'rental_date', 'return_date', "INTERVAL '3 days'"],
+    prompt: 'Z tabeli `rental` znajdź wypożyczenia, które zostały zwrócone najpóźniej w ciągu `3` dni od daty wypożyczenia (`return_date <= rental_date + INTERVAL \'3 days\'`).\n\nZwróć: `rental_id`, `customer_id`, `rental_date`, `return_date`, posortowane po `rental_id`.',
+    sol: "SELECT rental_id, customer_id, rental_date, return_date FROM rental WHERE return_date IS NOT NULL AND return_date <= rental_date + INTERVAL '3 days' ORDER BY rental_id;",
+    detectTrap: function(sql) {
+      if (!/return_date/i.test(sql)) return 'Sprawdź porównanie kolumny `return_date` z `rental_date + INTERVAL \'3 days\'`.';
       return null;
     }
   }
 ];
 
 /* ==========================================================================
-   5. STAN APLIKACJI (Kompatybilny z localStorage + Chmura)
+   6. STAN APLIKACJI I NAWIGACJI (CZYSTY PODZIAŁ LISTA <-> WORKSPACE)
    ========================================================================== */
 var STORAGE_KEY = 'sqlmaster_dvd_v1';
 
 function defaultState() {
   return {
-    xp: 1202, // zachowujemy ciągłość z Twoim wypracowanym XP na start!
+    xp: 1202,
     streak: 4,
     theme: 'dark',
     unlockedStage: 1,
     diagDone: false,
     completedTasks: {},
+    completedVariants: {}, // np. 'p1_1:0': true
+    completedLemur: {},
+    pathMode: 'list',      // 'list' (przejrzysta mapa) lub 'solve' (tryb skupienia na zadaniu)
+    lemurMode: 'list',     // 'list' (katalog 12 zadań) lub 'solve' (tryb skupienia)
+    lemurSubTab: 'tasks',  // 'tasks' lub 'gaps'
     activeTaskId: 'p1_1',
     activeVariantIdx: 0,
     activeLemurId: 'dl_1',
@@ -862,13 +1063,16 @@ function defaultState() {
     diagIdx: 0,
     diagScore: 0,
     diagSkipped: [],
-    diagFailed: [],
     gaps: [
-      { id: 'g1', name: 'Ziarno wyniku i mnożenie wierszy po JOIN', hint: 'Przed JOIN sprawdź, co jest jednym wierszem w obu tabelach.', lvl: 2, hits: 1 },
-      { id: 'g2', name: 'LEFT JOIN: warunek w ON czy w WHERE', hint: 'Filtr na prawej tabeli w WHERE zamienia LEFT JOIN w INNER JOIN.', lvl: 2, hits: 1 },
+      { id: 'g1', name: 'Ziarno wyniku i mnożenie wierszy po JOIN', hint: 'Przed JOIN sprawdź, co jest jednym wierszem w obu tabelach. Przy łączeniu dwóch tabel faktów użyj COUNT(DISTINCT) lub osobnych CTE.', lvl: 2, hits: 1 },
+      { id: 'g2', name: 'LEFT JOIN: warunek w ON czy w WHERE + NOT IN z NULL', hint: 'Filtr na prawej tabeli w WHERE zamienia LEFT JOIN w INNER JOIN. Unikaj też NOT IN na kolumnach z NULL.', lvl: 2, hits: 1 },
       { id: 'g3', name: 'NULL w agregatach (COUNT(*) vs COUNT(col))', hint: 'COUNT(*) liczy wszystkie wiersze, COUNT(col) pomija NULL-e.', lvl: 3, hits: 0 },
-      { id: 'g7', name: 'GROUP BY i filtrowanie grup w HAVING', hint: 'WHERE filtruje wiersze przed grupowaniem, HAVING po agregacji.', lvl: 2, hits: 0 },
-      { id: 'g10', name: 'Dzielenie całkowite (* 100.0)', hint: 'Mnożenie przez 100.0 wymusza wynik zmiennoprzecinkowy.', lvl: 1, hits: 2 }
+      { id: 'g4', name: 'Daty: DATE_TRUNC, INTERVAL i generate_series', hint: 'Kalendarz z generate_series musi być po lewej stronie LEFT JOIN.', lvl: 2, hits: 0 },
+      { id: 'g5', name: 'LAG() i porównania okresowe MoM', hint: 'Najpierw zagreguj dane do poziomu miesiąca w CTE, a dopiero potem użyj LAG() OVER (ORDER BY miesiac).', lvl: 2, hits: 0 },
+      { id: 'g7', name: 'GROUP BY i filtrowanie grup w HAVING', hint: 'WHERE filtruje pojedyncze wiersze przed grupowaniem, HAVING filtruje grupy po agregacji.', lvl: 2, hits: 0 },
+      { id: 'g8', name: 'AVG vs SUM/COUNT przy wartościach NULL', hint: 'AVG pomija NULL-e. Jeśli brak aktywności ma oznaczać 0, użyj COALESCE przed policzeniem średniej.', lvl: 1, hits: 0 },
+      { id: 'g10', name: 'Dzielenie całkowite (* 100.0)', hint: 'Mnożenie przez 100.0 (lub ::numeric) wymusza wynik zmiennoprzecinkowy.', lvl: 1, hits: 2 },
+      { id: 't5', name: 'Funkcje okna: ROW_NUMBER vs DENSE_RANK i CTE', hint: 'Przy remisach używaj DENSE_RANK(). Wynik okna filtruj w zewnętrznym zapytaniu z użyciem WITH.', lvl: 2, hits: 0 }
     ],
     aiProvider: 'gemini',
     apiKey: '',
@@ -879,7 +1083,12 @@ function defaultState() {
 var state = defaultState();
 try {
   var saved = localStorage.getItem(STORAGE_KEY);
-  if (saved) state = Object.assign(defaultState(), JSON.parse(saved));
+  if (saved) {
+    var parsed = JSON.parse(saved);
+    state = Object.assign(defaultState(), parsed);
+    if (!state.completedVariants) state.completedVariants = {};
+    if (!state.completedLemur) state.completedLemur = {};
+  }
 } catch (e) {}
 
 function saveState() {
@@ -897,6 +1106,10 @@ function esc(s) {
   });
 }
 
+function formatPrompt(txt) {
+  return esc(txt).replace(/`([^`]+)`/g, '<code class="inline">$1</code>').replace(/\n/g, '<br>');
+}
+
 function toast(msg) {
   var t = document.getElementById('toast');
   if (!t) return;
@@ -911,16 +1124,16 @@ function registerGapTrap(gapId, name, hint) {
   if (g) {
     g.lvl = Math.max(0, g.lvl - 1);
     g.hits = (g.hits || 0) + 1;
-  } else {
+  } else if (gapId) {
     state.gaps.unshift({ id: gapId, name: name, hint: hint, lvl: 0, hits: 1 });
   }
   saveState();
 }
 
 /* ==========================================================================
-   6. DWUWARSTWOWY EDYTOR SQL + MOBILNY PASEK KLAWISZY
+   7. DWUWARSTWOWY EDYTOR SQL + POMOCNIK TABEL ZADANIA
    ========================================================================== */
-var SQL_KW = new Set('select from where join left right inner outer on group by order having with as and or not null in is case when then else end over partition desc asc distinct limit between like ilike union all exists coalesce cast row_number rank dense_rank'.split(' '));
+var SQL_KW = new Set('select from where join left right inner outer on group by order having with as and or not null in is case when then else end over partition desc asc distinct limit between like ilike union all exists coalesce cast row_number rank dense_rank filter interval date_trunc generate_series intersect except'.split(' '));
 var SQL_AGG = new Set(['sum','count','avg','min','max']);
 var SQL_TOK = /(--[^\n]*|\/\*[\s\S]*?(?:\*\/|$))|('(?:[^']|'')*(?:'|$))|(\b\d+(?:\.\d+)?\b)|([A-Za-z_]\w*)|([\u2018\u2019\u201A\u201B\u201C\u201D])|([\s\S])/g;
 
@@ -932,7 +1145,7 @@ function sqlUpdate() {
   for (var i = 1; i <= n; i++) s += i + (i < n ? '\n' : '');
   gut.textContent = s;
   code.style.height = 'auto';
-  code.style.height = Math.max(135, code.scrollHeight + 4) + 'px';
+  code.style.height = Math.max(130, code.scrollHeight + 4) + 'px';
 
   var out = '', m;
   SQL_TOK.lastIndex = 0;
@@ -960,7 +1173,7 @@ function insertAtCursor(snippet) {
   if (!ta) return;
   var start = ta.selectionStart || 0, end = ta.selectionEnd || 0;
   var val = ta.value;
-  var pad = (start > 0 && !/[\s(.]/.test(val[start - 1]) && !/^[,);']/.test(snippet)) ? ' ' : '';
+  var pad = (start > 0 && !/[\s(.]/.test(val[start - 1]) && !/^[,);':]/.test(snippet)) ? ' ' : '';
   ta.value = val.slice(0, start) + pad + snippet + val.slice(end);
   var pos = start + pad.length + snippet.length;
   ta.focus();
@@ -970,14 +1183,33 @@ function insertAtCursor(snippet) {
   saveState();
 }
 
+function renderTablesHelper(tableNames) {
+  if (!tableNames || !tableNames.length) return '';
+  var metas = SCHEMA_META.filter(function(m) { return tableNames.indexOf(m.table) > -1; });
+  if (!metas.length) return '';
+  return '<details class="helper-fold">' +
+    '<summary>👁 Podejrzyj kolumny tabel w tym zadaniu (' + metas.map(function(m){return m.table;}).join(', ') + ')</summary>' +
+    '<div style="margin-top:8px;display:flex;flex-direction:column;gap:6px">' +
+      metas.map(function(m) {
+        return '<div><strong>📦 ' + esc(m.table) + ':</strong> ' +
+          m.cols.map(function(c) { return '<code class="inline" style="margin-right:4px">' + esc(c) + '</code>'; }).join(' ') +
+          ' <button type="button" class="btn sm" style="min-height:24px;padding:2px 8px;font-size:11px" data-act="peekTable" data-table="' + esc(m.table) + '">Podgląd 5 wierszy</button>' +
+        '</div>';
+      }).join('') +
+    '</div>' +
+  '</details>';
+}
+
 function renderEditorWidget(extraCols, actionType) {
-  var kwPills = ['SELECT', 'FROM', 'WHERE', 'JOIN', 'LEFT JOIN', 'ON', 'GROUP BY', 'ORDER BY', 'COUNT(*)', 'SUM(', 'CASE WHEN', "'", '=', '(', ')'];
+  var kwPills = ['SELECT', 'FROM', 'WHERE', 'JOIN', 'LEFT JOIN', 'ON', 'GROUP BY', 'HAVING', 'ORDER BY', 'COUNT(*)', 'SUM(', 'CASE WHEN', 'WITH', "'", '=', '*', '100.0', '::numeric'];
   var colPills = extraCols || ['film', 'customer', 'rental', 'payment', 'title', 'customer_id', 'amount'];
   return '' +
-    '<div class="quickbar" aria-label="Pigułki kolumn i tabel">' +
+    '<span class="quickbar-label">Dotknij, aby wstawić tabelę lub kolumnę:</span>' +
+    '<div class="quickbar">' +
       colPills.map(function(c) { return '<button type="button" class="qbtn col" data-act="ins" data-val="' + esc(c) + '">' + esc(c) + '</button>'; }).join('') +
     '</div>' +
-    '<div class="quickbar" aria-label="Szybkie słowa kluczowe SQL">' +
+    '<span class="quickbar-label">Słowa kluczowe i operatory SQL:</span>' +
+    '<div class="quickbar">' +
       kwPills.map(function(k) { return '<button type="button" class="qbtn" data-act="ins" data-val="' + esc(k) + '">' + esc(k) + '</button>'; }).join('') +
     '</div>' +
     '<div class="ed">' +
@@ -988,8 +1220,8 @@ function renderEditorWidget(extraCols, actionType) {
       '</div>' +
     '</div>' +
     '<div class="acts">' +
-      '<button class="btn primary" data-act="' + (actionType || 'runCheck') + '">▶ Uruchom i sprawdź wynik</button>' +
-      '<button class="btn sm" data-act="runOnly">Tylko podgląd tabeli</button>' +
+      '<button class="btn primary" data-act="' + (actionType || 'runOnly') + '">▶ Uruchom i sprawdź wynik</button>' +
+      '<button class="btn sm" data-act="runOnly">Tylko uruchom (SELECT)</button>' +
       '<button class="btn sm" data-act="clearEd">Wyczyść</button>' +
     '</div>' +
     renderResultBox();
@@ -1000,213 +1232,294 @@ function renderResultBox() {
   if (lastFeedback) {
     h += '<div class="fb-box ' + lastFeedback.type + '">' +
       '<strong>' + esc(lastFeedback.title) + '</strong>' +
-      '<p class="small" style="margin:4px 0 0">' + esc(lastFeedback.msg) + '</p>' +
+      '<p class="small" style="margin:4px 0 0;white-space:pre-wrap">' + esc(lastFeedback.msg) + '</p>' +
     '</div>';
   }
   if (lastExecResult) {
     if (lastExecResult.error) {
       h += '<div class="fb-box trap"><strong>Błąd SQL:</strong> <span class="small">' + esc(lastExecResult.error) + '</span></div>';
     } else if (lastExecResult.columns && lastExecResult.columns.length) {
-      h += '<p class="small muted" style="margin:10px 0 4px">Wynik Twojego zapytania (' + lastExecResult.values.length + ' wierszy):</p>' +
+      h += '<p class="small muted" style="margin:10px 0 4px">Wynik zapytania (' + lastExecResult.values.length + ' wierszy):</p>' +
         '<div class="tblwrap"><table><thead><tr>' +
         lastExecResult.columns.map(function(c) { return '<th>' + esc(c) + '</th>'; }).join('') +
         '</tr></thead><tbody>' +
-        lastExecResult.values.slice(0, 25).map(function(r) {
+        lastExecResult.values.slice(0, 30).map(function(r) {
           return '<tr>' + r.map(function(v) { return '<td>' + (v === null ? '<em class="muted">NULL</em>' : esc(v)) + '</td>'; }).join('') + '</tr>';
         }).join('') +
         '</tbody></table></div>';
     } else {
-      h += '<p class="small muted" style="margin-top:8px">Zapytanie wykonało się, ale zwróciło 0 wierszy.</p>';
+      h += '<p class="small muted" style="margin-top:8px">Zapytanie wykonało się poprawnie, ale zwróciło 0 wierszy.</p>';
     }
   }
   return h;
 }
 
 /* ==========================================================================
-   7. WIDOKI ZAKŁADEK
+   8. WIDOKI ZAKŁADEK (PRZEJRZYSTY PODZIAŁ: MAPA vs TRYB ZADANIA)
    ========================================================================== */
 
-// ZAKŁADKA 1: ŚCIEŻKA NAUKI (Z GENERATOREM WARIANTÓW)
+// ZAKŁADKA 1: ŚCIEŻKA (60 WARIANTÓW)
 function renderPathTab() {
-  var task = PATH_TASKS.find(function(t) { return t.id === state.activeTaskId; }) || PATH_TASKS[0];
-  var vIdx = state.activeVariantIdx % task.variants.length;
-  var variant = task.variants[vIdx];
-  var doneCount = Object.keys(state.completedTasks).length;
+  // TRYB 1A: Rozwiązywanie wybranego zadania (czysty ekran skupienia)
+  if (state.pathMode === 'solve') {
+    var task = PATH_TASKS.find(function(t) { return t.id === state.activeTaskId; }) || PATH_TASKS[0];
+    var vIdx = state.activeVariantIdx % task.variants.length;
+    var variant = task.variants[vIdx];
+
+    var varPills = '';
+    for (var i = 0; i < task.variants.length; i++) {
+      var vDone = !!state.completedVariants[task.id + ':' + i];
+      varPills += '<button type="button" class="var-pill ' + (i === vIdx ? 'active ' : '') + (vDone ? 'done' : '') + '" data-act="pickVariant" data-idx="' + i + '" title="Wariant ' + (i + 1) + '">' + (i + 1) + '</button>';
+    }
+
+    return '<div class="card">' +
+      '<div class="ws-bar">' +
+        '<button class="btn sm" data-act="backToPathList">← Wróć do Mapy Ścieżki</button>' +
+        '<div class="var-pills"><span class="small muted" style="margin-right:4px">Wariant:</span>' + varPills + '</div>' +
+        '<button class="btn sm" data-act="shuffleVariant">🎲 Losuj wariant</button>' +
+      '</div>' +
+      '<span class="chip info">Etap ' + task.stage + ' · Wariant ' + (vIdx + 1) + ' z ' + task.variants.length + '</span>' +
+      '<h2 style="margin-top:8px">' + esc(task.title) + '</h2>' +
+      '<div class="prompt-box">' + formatPrompt(variant.prompt) + '</div>' +
+      renderTablesHelper(task.tables) +
+      renderEditorWidget(task.cols, 'checkPathTask') +
+      '<div class="acts" style="margin-top:12px;border-top:1px solid var(--line);padding-top:10px">' +
+        '<button class="btn sm" data-act="showSolution">💡 Pokaż wzorcowy kod</button>' +
+        '<button class="btn sm" data-act="aiHint">🤖 Podpowiedź AI</button>' +
+      '</div>' +
+    '</div>';
+  }
+
+  // TRYB 1B: Przejrzysta Mapa Ścieżki
+  var totalVariants = PATH_TASKS.length * 5;
+  var doneVariants = Object.keys(state.completedVariants).length;
+  var doneLessons = Object.keys(state.completedTasks).length;
 
   var h = '';
   if (!state.diagDone) {
     h += '<section class="hero">' +
-      '<h2>Nie zaczynasz od zera?</h2>' +
-      '<p>Zrób 5-minutową Diagnozę SQL na bazie dvdrental</p>' +
-      '<div class="sub-hero">Rozwiąż lub pomiń 6 przekrojowych zadań. Aplikacja sama odblokuje odpowiedni etap ścieżki i wykryje Twoje luki.</div>' +
-      '<button class="btn ghost" data-act="tab" data-tab="diag">🎯 Rozpocznij Diagnozę poziomującą</button>' +
+      '<h2>Znasz już podstawy SQL?</h2>' +
+      '<p>Rozwiąż 10-pytaniową Diagnozę i przeskocz podstawy</p>' +
+      '<div class="sub-hero">Możesz rozwiązywać lub pomijać zadania, których jeszcze nie znasz. Aplikacja odblokuje Twój poziom i zapisze luki.</div>' +
+      '<button class="btn ghost" data-act="tab" data-tab="diag">🎯 Uruchom Diagnozę (10 pytań)</button>' +
     '</section>';
   }
 
-  // Aktywne zadanie z wariantami
   h += '<div class="card">' +
-    '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">' +
-      '<span class="chip info">Etap ' + task.stage + ' · Wariant ' + (vIdx + 1) + '/' + task.variants.length + '</span>' +
-      '<button class="btn sm" data-act="shuffleVariant">🎲 Wylosuj inny wariant (zmień dane/tabele)</button>' +
+    '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">' +
+      '<div><h2 style="margin:0">Mapa Ścieżki SQL (dvdrental)</h2>' +
+      '<p class="small muted" style="margin:2px 0 0">Ukończone lekcje: <strong>' + doneLessons + '/' + PATH_TASKS.length + '</strong> · Rozwiązane warianty: <strong>' + doneVariants + '/' + totalVariants + '</strong></p></div>' +
+      '<button class="btn primary sm" data-act="continuePath">▶ Kontynuuj naukę</button>' +
     '</div>' +
-    '<h2 style="margin-top:8px">' + esc(task.title) + '</h2>' +
-    '<p class="small">' + esc(variant.prompt) + '</p>' +
-    renderEditorWidget(task.cols, 'checkPathTask') +
-    '<div class="acts" style="margin-top:10px">' +
-      '<button class="btn sm" data-act="showSolution">💡 Pokaż wzorcowe zapytanie</button>' +
-      '<button class="btn sm" data-act="aiHint">🤖 Podpowiedź AI (bez gotowca)</button>' +
-    '</div>' +
+    '<div class="bar"><i style="width:' + Math.round((doneLessons / PATH_TASKS.length) * 100) + '%"></i></div>' +
   '</div>';
-
-  // Mapa etapów ścieżki
-  h += '<div class="card">' +
-    '<h2>Mapa Ścieżki SQL (' + doneCount + '/' + PATH_TASKS.length + ' ukończonych)</h2>' +
-    '<div class="bar"><i style="width:' + Math.round(doneCount / PATH_TASKS.length * 100) + '%"></i></div>';
 
   STAGES.forEach(function(st) {
     var unlocked = st.id <= state.unlockedStage;
     var tasksInStage = PATH_TASKS.filter(function(t) { return t.stage === st.id; });
     var allDone = tasksInStage.every(function(t) { return state.completedTasks[t.id]; });
-    h += '<div class="stage-card ' + (allDone ? 'completed' : unlocked ? 'unlocked' : '') + '">' +
-      '<div style="display:flex;justify-content:space-between;align-items:center">' +
+
+    h += '<div class="stage-box ' + (allDone ? 'completed' : unlocked ? 'unlocked' : '') + '">' +
+      '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px">' +
         '<strong>' + esc(st.name) + '</strong>' +
-        '<span class="chip ' + (allDone ? 'done' : unlocked ? 'mid' : 'open') + '">' + (allDone ? 'Opanowany' : unlocked ? 'Odblokowany' : 'Zablokowany') + '</span>' +
+        '<span class="chip ' + (allDone ? 'done' : unlocked ? 'mid' : 'info') + '">' + (allDone ? 'Opanowany' : unlocked ? 'Aktywny' : 'Dostępny') + '</span>' +
       '</div>' +
-      '<p class="small muted" style="margin:2px 0 8px">' + esc(st.desc) + '</p>' +
+      '<p class="small muted" style="margin:4px 0 10px">' + esc(st.desc) + '</p>' +
       '<div class="node-list">';
+
     tasksInStage.forEach(function(t) {
+      var vSolved = 0;
+      for (var k = 0; k < t.variants.length; k++) {
+        if (state.completedVariants[t.id + ':' + k]) vSolved++;
+      }
       var isDone = !!state.completedTasks[t.id];
-      var isActive = t.id === task.id;
-      h += '<button type="button" class="node-item ' + (isActive ? 'active' : '') + '" data-act="pickPathTask" data-id="' + t.id + '">' +
-        '<div><span class="node-title">' + (isDone ? '✅ ' : '📝 ') + esc(t.title) + '</span>' +
-        '<span class="node-meta">' + t.variants.length + ' dynamiczne warianty zadań na bazie dvdrental</span></div>' +
-        '<span class="chip ' + (isDone ? 'done' : 'info') + '">' + (isDone ? '+25 XP' : 'Ćwicz') + '</span>' +
+      h += '<button type="button" class="node-item" data-act="openPathTask" data-id="' + t.id + '">' +
+        '<div>' +
+          '<span class="node-title">' + (isDone ? '✅ ' : '📘 ') + esc(t.title) + '</span>' +
+          '<div class="node-meta">' +
+            '<span>Warianty: <strong>' + vSolved + '/' + t.variants.length + '</strong></span>' +
+            '<span>· Tabele: ' + t.tables.slice(0, 3).join(', ') + '</span>' +
+          '</div>' +
+        '</div>' +
+        '<span class="chip ' + (isDone ? 'done' : 'info') + '">' + (isDone ? 'Ćwicz warianty' : 'Rozwiąż →') + '</span>' +
       '</button>';
     });
     h += '</div></div>';
   });
-  h += '</div>';
+
   return h;
 }
 
-// ZAKŁADKA 2: DIAGNOZA (PLACEMENT TEST Z PRZYCISKIEM „POMIŃ”)
+// ZAKŁADKA 2: DIAGNOZA (10 ZADAŃ Z PRZYCISKIEM POMIŃ)
 function renderDiagTab() {
   if (state.diagIdx >= DIAG_QUESTIONS.length) {
-    var targetStage = Math.max(1, Math.min(5, state.diagScore + 1));
+    var targetStage = Math.max(1, Math.min(5, Math.floor(state.diagScore / 2) + 1));
     return '<section class="hero">' +
-      '<h2>Diagnoza zakończona!</h2>' +
-      '<p>Twój rekomendowany start: Etap ' + targetStage + ' (' + esc(STAGES[targetStage - 1].name) + ')</p>' +
-      '<div class="sub-hero">Poprawne zadania: ' + state.diagScore + ' z ' + DIAG_QUESTIONS.length + ' · Pominięte: ' + state.diagSkipped.length + '</div>' +
-      '<button class="btn ghost" data-act="applyDiag" data-stage="' + targetStage + '">🚀 Przejdź do wyznaczonego miejsca w Ścieżce</button>' +
+      '<h2>Diagnoza ukończona!</h2>' +
+      '<p>Twój wyznaczony poziom: Etap ' + targetStage + ' (' + esc(STAGES[targetStage - 1].name) + ')</p>' +
+      '<div class="sub-hero">Poprawne odpowiedzi: ' + state.diagScore + '/10 · Pominięte zadania: ' + state.diagSkipped.length + '</div>' +
+      '<button class="btn ghost" data-act="applyDiag" data-stage="' + targetStage + '">🚀 Odblokuj Etap ' + targetStage + ' i przejdź do Ścieżki</button>' +
     '</section>' +
     '<div class="card">' +
-      '<h2>Wykryte luki dodane do Twojego Rejestru</h2>' +
-      '<p class="small muted">Zadania, które pominąłeś lub w których pojawił się błąd, zostały automatycznie oznaczone do powtórki w zakładce Rekrutacja & Luki.</p>' +
-      '<div class="acts"><button class="btn sm" data-act="resetDiag">Powtórz diagnozę od nowa</button></div>' +
+      '<h2>Co zaktualizowaliśmy w Twoim profilu?</h2>' +
+      '<p class="small muted">Wszystkie zagadnienia, które pominąłeś lub w których pojawił się błąd, trafiły automatycznie do Twojego <strong>Rejestru Luk</strong> w zakładce Rekrutacja.</p>' +
+      '<div class="acts"><button class="btn sm" data-act="resetDiag">🔄 Rozwiąż Diagnozę od początku</button></div>' +
     '</div>';
   }
 
   var q = DIAG_QUESTIONS[state.diagIdx];
   return '<div class="card">' +
-    '<div style="display:flex;justify-content:space-between;align-items:center">' +
-      '<span class="chip mid">Pytanie ' + (state.diagIdx + 1) + ' z ' + DIAG_QUESTIONS.length + '</span>' +
-      '<span class="small muted">Poziom trudności: ' + q.lvl + '/6</span>' +
+    '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px">' +
+      '<span class="chip mid">Diagnoza · Pytanie ' + (state.diagIdx + 1) + ' z ' + DIAG_QUESTIONS.length + '</span>' +
+      '<span class="chip info">Sprawdza: Etap ' + q.stage + '</span>' +
     '</div>' +
     '<div class="bar"><i style="width:' + Math.round((state.diagIdx / DIAG_QUESTIONS.length) * 100) + '%"></i></div>' +
     '<h2>' + esc(q.title) + '</h2>' +
-    '<p class="small">' + esc(q.prompt) + '</p>' +
-    renderEditorWidget(['film', 'rental', 'payment', 'customer', 'store_id', 'rating', 'amount', 'return_date'], 'submitDiag') +
-    '<div class="acts" style="margin-top:12px;border-top:1px solid var(--line);padding-top:12px">' +
+    '<div class="prompt-box">' + formatPrompt(q.prompt) + '</div>' +
+    renderTablesHelper(['film', 'rental', 'payment', 'customer', 'category', 'film_category', 'actor', 'film_actor']) +
+    renderEditorWidget(['film', 'rental', 'payment', 'customer', 'actor', 'film_actor', 'store_id', 'rating', 'amount', 'return_date'], 'submitDiag') +
+    '<div class="acts" style="margin-top:12px;border-top:1px solid var(--line);padding-top:12px;justify-content:space-between">' +
       '<button class="btn warn" data-act="skipDiag">⏭ Pomiń zadanie (Nie umiem jeszcze)</button>' +
+      '<button class="btn sm" data-act="resetDiag">Restart</button>' +
     '</div>' +
   '</div>';
 }
 
-// ZAKŁADKA 3: ZADANIA REKRUTACYJNE (DATALEMUR TRAPS) + REJESTR LUK
+// ZAKŁADKA 3: REKRUTACJA DATALEMUR (12 ZADAŃ) + REJESTR LUK (ODDZIELONE PRZEŁĄCZNIKIEM)
 function renderLemurTab() {
-  var task = LEMUR_TASKS.find(function(x) { return x.id === state.activeLemurId; }) || LEMUR_TASKS[0];
-  var h = '<div class="card">' +
-    '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px">' +
-      '<span class="chip open">🔥 Zadanie z pułapką · ' + esc(task.company) + '</span>' +
-      '<div class="acts" style="margin:0">' +
-        LEMUR_TASKS.map(function(t, idx) {
-          return '<button class="btn sm ' + (t.id === task.id ? 'primary' : '') + '" data-act="pickLemur" data-id="' + t.id + '">#' + (idx + 1) + '</button>';
-        }).join('') +
-      '</div>' +
-    '</div>' +
-    '<h2 style="margin-top:10px">' + esc(task.title) + '</h2>' +
-    '<p class="small" style="white-space:pre-wrap">' + esc(task.prompt) + '</p>' +
-    renderEditorWidget(task.cols, 'checkLemurTask') +
+  var openGapsCnt = state.gaps.filter(function(g) { return g.lvl <= 1; }).length;
+  var nav = '<div class="subnav">' +
+    '<button type="button" class="' + (state.lemurSubTab === 'tasks' ? 'active' : '') + '" data-act="lemurSub" data-sub="tasks">🎯 Zadania DataLemur (12)</button>' +
+    '<button type="button" class="' + (state.lemurSubTab === 'gaps' ? 'active' : '') + '" data-act="lemurSub" data-sub="gaps">🧠 Twój Rejestr Luk (' + state.gaps.length + (openGapsCnt ? ' · 🔥' + openGapsCnt : '') + ')</button>' +
   '</div>';
 
-  // Rejestr Luk zasilany przez pułapki
-  h += '<div class="card">' +
-    '<h2>Twój Rejestr Luk (Spaced Repetition)</h2>' +
-    '<p class="small muted">Gdy wpadniesz w pułapkę w zadaniu rekrutacyjnym lub podczas Diagnozy, luka automatycznie trafia na szczyt listy.</p>';
-  state.gaps.forEach(function(g) {
-    var badgeCls = g.lvl === 0 ? 'open' : g.lvl < 3 ? 'mid' : 'done';
-    h += '<div style="padding:10px 0;border-bottom:1px solid var(--line)">' +
-      '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px">' +
-        '<strong>' + esc(g.name) + '</strong>' +
-        '<span class="chip ' + badgeCls + '">Poziom ' + g.lvl + '/4 · Pułapki: ' + (g.hits || 0) + '</span>' +
+  // PODWIDOK A: REJESTR LUK
+  if (state.lemurSubTab === 'gaps') {
+    var gh = nav + '<div class="card">' +
+      '<h2>Twój Rejestr Luk (Spaced Repetition)</h2>' +
+      '<p class="small muted">Każda wpadka na pułapce w zadaniach DataLemur lub pominięcie pytania w Diagnozie podbija licznik pułapek i obniża poziom luki, przesuwając ją na górę listy.</p>';
+
+    var sortedGaps = state.gaps.slice().sort(function(a, b) {
+      return (a.lvl - b.lvl) || ((b.hits || 0) - (a.hits || 0));
+    });
+
+    sortedGaps.forEach(function(g) {
+      var badgeCls = g.lvl === 0 ? 'open' : g.lvl < 3 ? 'mid' : 'done';
+      gh += '<div style="padding:12px 0;border-bottom:1px solid var(--line)">' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">' +
+          '<strong>' + esc(g.name) + '</strong>' +
+          '<div style="display:flex;gap:6px;align-items:center">' +
+            '<span class="chip ' + badgeCls + '">Poziom ' + g.lvl + '/4 · Wpadki: ' + (g.hits || 0) + '</span>' +
+            '<button class="btn sm" data-act="bumpGap" data-id="' + g.id + '">✓ Umiem (+1)</button>' +
+          '</div>' +
+        '</div>' +
+        '<p class="small muted" style="margin:5px 0 0">' + esc(g.hint) + '</p>' +
+      '</div>';
+    });
+    gh += '</div>';
+    return gh;
+  }
+
+  // PODWIDOK B1: ROZWIĄZYWANIE ZADANIA DATALEMUR (TRYB SKUPIENIA)
+  if (state.lemurMode === 'solve') {
+    var task = LEMUR_TASKS.find(function(x) { return x.id === state.activeLemurId; }) || LEMUR_TASKS[0];
+    var isSolved = !!state.completedLemur[task.id];
+    return nav + '<div class="card">' +
+      '<div class="ws-bar">' +
+        '<button class="btn sm" data-act="backToLemurList">← Wróć do listy 12 zadań</button>' +
+        '<span class="chip open">🔥 ' + esc(task.company) + ' · ' + esc(task.diff) + '</span>' +
       '</div>' +
-      '<p class="small muted" style="margin:4px 0 0">' + esc(g.hint) + '</p>' +
+      '<h2>' + (isSolved ? '✅ ' : '') + esc(task.title) + '</h2>' +
+      '<div class="prompt-box">' + formatPrompt(task.prompt) + '</div>' +
+      renderTablesHelper(task.tables) +
+      renderEditorWidget(task.cols, 'checkLemurTask') +
+      '<div class="acts" style="margin-top:12px;border-top:1px solid var(--line);padding-top:10px">' +
+        '<button class="btn sm" data-act="showLemurSol">💡 Pokaż wzorcowe rozwiązanie</button>' +
+        '<button class="btn sm" data-act="lemurTrapHint">🛡️ Jaka tu jest pułapka?</button>' +
+      '</div>' +
     '</div>';
+  }
+
+  // PODWIDOK B2: PRZEJRZYSTA LISTA 12 ZADAŃ REKRUTACYJNYCH
+  var solvedCnt = Object.keys(state.completedLemur).length;
+  var lh = nav + '<div class="card">' +
+    '<h2>Zadania Rekrutacyjne z Pułapką (DataLemur Style)</h2>' +
+    '<p class="small muted">12 klasycznych problemów rekrutacyjnych z firm technologicznych przeniesionych na bazę <code>dvdrental</code>. Ukończone: <strong>' + solvedCnt + '/' + LEMUR_TASKS.length + '</strong>.</p>' +
+    '<div class="bar"><i style="width:' + Math.round((solvedCnt / LEMUR_TASKS.length) * 100) + '%"></i></div>' +
+    '<div class="node-list">';
+
+  LEMUR_TASKS.forEach(function(lt) {
+    var done = !!state.completedLemur[lt.id];
+    var diffCls = lt.diff === 'Hard' ? 'open' : lt.diff === 'Medium' ? 'mid' : 'info';
+    lh += '<button type="button" class="node-item" data-act="openLemurTask" data-id="' + lt.id + '">' +
+      '<div>' +
+        '<span class="node-title">' + (done ? '✅ ' : '🎯 ') + esc(lt.title) + '</span>' +
+        '<div class="node-meta">' +
+          '<span class="chip ' + diffCls + '">' + esc(lt.company) + ' · ' + esc(lt.diff) + '</span>' +
+          '<span>Testuje lukę: <strong>' + esc(lt.gapName) + '</strong></span>' +
+        '</div>' +
+      '</div>' +
+      '<span class="chip ' + (done ? 'done' : 'info') + '">' + (done ? 'Rozwiązane' : 'Zmierz się →') + '</span>' +
+    '</button>';
   });
-  h += '</div>';
-  return h;
+
+  lh += '</div></div>';
+  return lh;
 }
 
-// ZAKŁADKA 4: SCHEMAT BAZY DVDRENTAL + SANDBOX
+// ZAKŁADKA 4: BAZA DVDRENTAL + SANDBOX Z TESTEM SKŁADNI POSTGRESQL
 function renderSchemaTab() {
   var h = '<div class="card">' +
-    '<h2>Eksplorator bazy dvdrental (10 tabel)</h2>' +
-    '<p class="small muted">Dotknij dowolnej tabeli poniżej, aby natychmiast podejrzeć jej pierwsze 5 wierszy w edytorze SQL.</p>' +
+    '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">' +
+      '<div><h2 style="margin:0">Sandbox SQL & Test Składni PostgreSQL</h2>' +
+      '<p class="small muted" style="margin:2px 0 0">Przetestuj dowolne zapytanie na bazie <code>dvdrental</code> albo sprawdź działanie naszego transpilera PostgreSQL.</p></div>' +
+      '<button class="btn warn sm" data-act="loadPgTest">⚡ Wklej test składni PG (::numeric, ILIKE, DATE_TRUNC, INTERVAL, generate_series)</button>' +
+    '</div>' +
+    renderEditorWidget(['film', 'category', 'actor', 'customer', 'rental', 'payment', '::numeric', 'ILIKE', 'DATE_TRUNC', 'INTERVAL', 'generate_series'], 'runOnly') +
+  '</div>';
+
+  h += '<div class="card">' +
+    '<h2>Schemat bazy danych dvdrental (10 tabel)</h2>' +
+    '<p class="small muted">Dotknij dowolnej tabeli poniżej, aby natychmiast wyświetlić jej zawartość w edytorze powyżej.</p>' +
     '<div class="node-list">';
   SCHEMA_META.forEach(function(m) {
     h += '<div class="node-item" data-act="previewTable" data-table="' + m.table + '">' +
       '<div><span class="node-title">📦 ' + esc(m.table) + '</span>' +
       '<span class="node-meta">' + esc(m.desc) + '</span>' +
-      '<div style="margin-top:4px">' + m.cols.map(function(c) { return '<code style="font-size:11px;color:var(--al);margin-right:6px">' + esc(c) + '</code>'; }).join('') + '</div></div>' +
+      '<div style="margin-top:5px">' + m.cols.map(function(c) { return '<code class="inline" style="margin-right:4px">' + esc(c) + '</code>'; }).join('') + '</div></div>' +
       '<span class="chip info">SELECT *</span>' +
     '</div>';
   });
-  h += '</div></div>' +
-    '<div class="card"><h2>Sandbox SQL (Swobodne zapytania)</h2>' +
-    renderEditorWidget(['film', 'category', 'actor', 'customer', 'rental', 'payment'], 'runOnly') +
-    '</div>';
+  h += '</div></div>';
   return h;
 }
 
-// ZAKŁADKA 5: KONTO, KLUCZ API (GEMINI / CLAUDE) & RANKING
+// ZAKŁADKA 5: KONTO, KLUCZ API & BACKUP
 function renderProfileTab() {
   return '<div class="card">' +
-    '<h2>Silnik AI (Hybrydowy: Offline dvdrental + AI)</h2>' +
-    '<p class="small muted">Ścieżka <code>dvdrental</code>, Diagnoza i Zadania Rekrutacyjne działają w 100% offline. Jeśli chcesz korzystać z podpowiedzi mentora AI lub generować dodatkowe zadania, wybierz tryb poniżej:</p>' +
+    '<h2>Konfiguracja Silnika AI (Tryb Hybrydowy)</h2>' +
+    '<p class="small muted">Wszystkie 82 zadania na bazie <code>dvdrental</code> działają w 100% lokalnie i offline. Jeśli chcesz korzystać z podpowiedzi mentora AI, wybierz dostawcę:</p>' +
     '<label class="small">Dostawca AI</label>' +
     '<select id="aiProvSel">' +
-      '<option value="gemini" ' + (state.aiProvider === 'gemini' ? 'selected' : '') + '>Google Gemini API (Darmowy klucz z AI Studio)</option>' +
+      '<option value="gemini" ' + (state.aiProvider === 'gemini' ? 'selected' : '') + '>Google Gemini API (Darmowy klucz z Google AI Studio)</option>' +
       '<option value="claude" ' + (state.aiProvider === 'claude' ? 'selected' : '') + '>Claude Artifacts (Zalogowane konto Claude)</option>' +
       '<option value="offline" ' + (state.aiProvider === 'offline' ? 'selected' : '') + '>Tylko lokalny silnik SQL (100% Offline)</option>' +
     '</select>' +
-    '<label class="small" style="display:block;margin-top:10px">Twój darmowy klucz API (zapisywany wyłącznie lokalnie w Twoim telefonie)</label>' +
+    '<label class="small" style="display:block;margin-top:10px">Twój klucz API (zapisywany wyłącznie w pamięci Twojej przeglądarki)</label>' +
     '<input type="password" id="apiKeyInp" placeholder="AIzaSy..." value="' + esc(state.apiKey) + '">' +
-    '<div class="acts"><button class="btn primary sm" data-act="saveConfig">Zapisz ustawienia AI</button></div>' +
+    '<div class="acts"><button class="btn primary sm" data-act="saveConfig">Zapisz konfigurację</button></div>' +
   '</div>' +
   '<div class="card">' +
-    '<h2>🏆 Ranking Graczy (Podgląd modułu chmurowego)</h2>' +
-    '<p class="small muted">Po podpięciu darmowej bazy Supabase w kolejnym etapie, Twoje punkty XP z zadań dvdrental i DataLemur będą synchronizowane z globalną tablicą wyników:</p>' +
-    '<div class="tblwrap"><table><thead><tr><th>#</th><th>Użytkownik</th><th>Etap</th><th>XP</th><th>Seria</th></tr></thead><tbody>' +
-      '<tr><td>1</td><td><strong>Anna_Data</strong></td><td>Etap 5</td><td>1 540 XP</td><td>🔥 9d</td></tr>' +
-      '<tr style="background:var(--done-soft)"><td>2</td><td><strong>' + esc(state.nickname) + ' (Ty)</strong></td><td>Etap ' + state.unlockedStage + '</td><td><strong>' + state.xp + ' XP</strong></td><td>🔥 ' + state.streak + 'd</td></tr>' +
-      '<tr><td>3</td><td><strong>Marek_BI</strong></td><td>Etap 3</td><td>980 XP</td><td>🔥 3d</td></tr>' +
-    '</tbody></table></div>' +
-    '<div class="acts"><button class="btn sm" data-act="exportJson">⬇ Eksportuj pełny stan (.json)</button></div>' +
+    '<h2>Kopia zapasowa postępów (.json)</h2>' +
+    '<p class="small muted">Twój obecny stan: <strong>' + state.xp + ' XP</strong> · Rozwiązane warianty Ścieżki: <strong>' + Object.keys(state.completedVariants).length + '/60</strong> · Zadania DataLemur: <strong>' + Object.keys(state.completedLemur).length + '/12</strong>.</p>' +
+    '<div class="acts">' +
+      '<button class="btn sm primary" data-act="exportJson">⬇ Pobierz pełny backup (.json)</button>' +
+    '</div>' +
   '</div>';
 }
 
 /* ==========================================================================
-   8. OBSŁUGA ZDARZEŃ I AKCJI
+   9. OBSŁUGA ZDARZEŃ I AKCJI
    ========================================================================== */
 function updateHeader() {
   var xpEl = document.getElementById('xpPill');
@@ -1260,6 +1573,7 @@ document.addEventListener('click', async function(e) {
   if (act === 'tab') {
     currentTab = el.dataset.tab;
     lastFeedback = null;
+    lastExecResult = null;
     if (currentTab === 'diag' && state.diagIdx < DIAG_QUESTIONS.length) {
       state.editorCode = '-- Zadanie diagnostyczne #' + (state.diagIdx + 1) + '\nSELECT ';
     }
@@ -1285,45 +1599,84 @@ document.addEventListener('click', async function(e) {
     lastFeedback = null;
     render();
   }
-  else if (act === 'pickPathTask') {
+  else if (act === 'peekTable') {
+    var tName = el.dataset.table;
+    lastExecResult = runQuery('SELECT * FROM ' + tName + ' LIMIT 5;');
+    lastFeedback = { type: 'warn', title: '👁 Podgląd tabeli ' + tName + ' (pierwsze 5 wierszy)', msg: 'Twój kod w edytorze pozostał bez zmian.' };
+    render();
+  }
+  // NAWIGACJA ŚCIEŻKI (MAPA <-> ZADANIE)
+  else if (act === 'openPathTask') {
     state.activeTaskId = el.dataset.id;
     state.activeVariantIdx = 0;
+    state.pathMode = 'solve';
     var t = PATH_TASKS.find(function(x) { return x.id === state.activeTaskId; });
-    if (t) state.editorCode = '-- ' + t.title + '\nSELECT ';
+    if (t) state.editorCode = '-- ' + t.title + ' (Wariant 1)\nSELECT ';
     lastExecResult = null;
     lastFeedback = null;
     saveState();
     render();
     window.scrollTo(0, 0);
   }
-  else if (act === 'shuffleVariant') {
-    state.activeVariantIdx++;
+  else if (act === 'continuePath') {
+    state.pathMode = 'solve';
     lastExecResult = null;
-    lastFeedback = { type: 'warn', title: 'Wylosowano nowy wariant zadania!', msg: 'Zmieniliśmy warunki lub tabelę docelową. Napisz zapytanie dla nowej treści.' };
+    lastFeedback = null;
+    saveState();
+    render();
+    window.scrollTo(0, 0);
+  }
+  else if (act === 'backToPathList') {
+    state.pathMode = 'list';
+    lastExecResult = null;
+    lastFeedback = null;
+    saveState();
+    render();
+    window.scrollTo(0, 0);
+  }
+  else if (act === 'pickVariant') {
+    state.activeVariantIdx = Number(el.dataset.idx) || 0;
+    var tVar = PATH_TASKS.find(function(x) { return x.id === state.activeTaskId; });
+    if (tVar) state.editorCode = '-- ' + tVar.title + ' (Wariant ' + (state.activeVariantIdx + 1) + ')\nSELECT ';
+    lastExecResult = null;
+    lastFeedback = null;
+    saveState();
+    render();
+  }
+  else if (act === 'shuffleVariant') {
+    var curTask = PATH_TASKS.find(function(x) { return x.id === state.activeTaskId; }) || PATH_TASKS[0];
+    state.activeVariantIdx = (state.activeVariantIdx + 1) % curTask.variants.length;
+    state.editorCode = '-- ' + curTask.title + ' (Wariant ' + (state.activeVariantIdx + 1) + ')\nSELECT ';
+    lastExecResult = null;
+    lastFeedback = { type: 'warn', title: '🎲 Wylosowano Wariant #' + (state.activeVariantIdx + 1) + ' z ' + curTask.variants.length, msg: 'Zmieniliśmy tabelę lub warunki zadania. Napisz nowe zapytanie!' };
     saveState();
     render();
   }
   else if (act === 'checkPathTask') {
     var task = PATH_TASKS.find(function(t) { return t.id === state.activeTaskId; }) || PATH_TASKS[0];
-    var variant = task.variants[state.activeVariantIdx % task.variants.length];
+    var vIdx = state.activeVariantIdx % task.variants.length;
+    var variant = task.variants[vIdx];
     lastExecResult = runQuery(state.editorCode);
     var expRes = runQuery(variant.sol);
     var cmp = compareResults(lastExecResult, expRes, variant.order);
     if (cmp.ok) {
+      var vKey = task.id + ':' + vIdx;
+      if (!state.completedVariants[vKey]) {
+        state.completedVariants[vKey] = true;
+        state.xp += 15;
+      }
       if (!state.completedTasks[task.id]) {
         state.completedTasks[task.id] = true;
-        state.xp += 25;
-      } else {
-        state.xp += 5;
+        state.xp += 15;
       }
       if (task.stage >= state.unlockedStage && state.unlockedStage < 5) {
         state.unlockedStage = task.stage + 1;
       }
-      lastFeedback = { type: 'ok', title: '✅ Zadanie zaliczone! (+XP)', msg: cmp.msg };
+      lastFeedback = { type: 'ok', title: '✅ Wariant #' + (vIdx + 1) + ' zaliczony! (+XP)', msg: cmp.msg + ' Możesz kliknąć kolejny numer wariantu u góry karty, aby przećwiczyć inne tabele!' };
       saveState();
     } else {
       if (task.gapId) registerGapTrap(task.gapId, task.title, cmp.msg);
-      lastFeedback = { type: 'trap', title: '❌ Wynik różni się od oczekiwanego', msg: cmp.msg };
+      lastFeedback = { type: 'trap', title: '❌ Wynik różni się od wzorca', msg: cmp.msg };
     }
     render();
   }
@@ -1332,9 +1685,10 @@ document.addEventListener('click', async function(e) {
     var variant2 = task2.variants[state.activeVariantIdx % task2.variants.length];
     state.editorCode = variant2.sol;
     lastExecResult = runQuery(variant2.sol);
-    lastFeedback = { type: 'warn', title: 'Wzorcowe rozwiązanie wczytane do edytora', msg: 'Przeanalizuj zapytanie, a następnie kliknij "Wylosuj inny wariant", aby rozwiązać podobny przypadek samodzielnie!' };
+    lastFeedback = { type: 'warn', title: '💡 Wczytano wzorcowe rozwiązanie', msg: 'Przeanalizuj kod, a następnie przełącz się na kolejny Wariant (1..5), aby napisać podobne zapytanie samodzielnie.' };
     render();
   }
+  // DIAGNOZA
   else if (act === 'submitDiag') {
     var dq = DIAG_QUESTIONS[state.diagIdx];
     lastExecResult = runQuery(state.editorCode);
@@ -1343,7 +1697,7 @@ document.addEventListener('click', async function(e) {
     if (dCmp.ok) {
       state.diagScore++;
       state.xp += 15;
-      toast('Dobrze! Przechodzisz do kolejnego pytania Diagnozy.');
+      toast('Dobrze! Pytanie ' + (state.diagIdx + 1) + '/10 zaliczone.');
       state.diagIdx++;
       lastExecResult = null;
       lastFeedback = null;
@@ -1353,14 +1707,14 @@ document.addEventListener('click', async function(e) {
       saveState();
       render();
     } else {
-      lastFeedback = { type: 'trap', title: 'Wynik jeszcze niepoprawny', msg: dCmp.msg + ' Możesz poprawić kod lub kliknąć "Pomiń zadanie".' };
+      lastFeedback = { type: 'trap', title: 'Wynik niepoprawny', msg: dCmp.msg + ' Popraw zapytanie lub kliknij "Pomiń zadanie".' };
       render();
     }
   }
   else if (act === 'skipDiag') {
     var sq = DIAG_QUESTIONS[state.diagIdx];
     state.diagSkipped.push(sq.lvl);
-    registerGapTrap(sq.gap, sq.title, 'Zadanie pominięte podczas Diagnozy poziomującej.');
+    registerGapTrap(sq.gap, sq.title, 'Zagadnienie pominięte podczas Diagnozy.');
     state.diagIdx++;
     lastExecResult = null;
     lastFeedback = null;
@@ -1379,7 +1733,7 @@ document.addEventListener('click', async function(e) {
     });
     var firstInStage = PATH_TASKS.find(function(pt) { return pt.stage === st; }) || PATH_TASKS[0];
     state.activeTaskId = firstInStage.id;
-    state.editorCode = '-- Start od Etapu ' + st + '\nSELECT ';
+    state.pathMode = 'list';
     currentTab = 'path';
     saveState();
     render();
@@ -1390,16 +1744,37 @@ document.addEventListener('click', async function(e) {
     state.diagScore = 0;
     state.diagSkipped = [];
     state.editorCode = '-- Zadanie diagnostyczne #1\nSELECT ';
-    saveState();
-    render();
-  }
-  else if (act === 'pickLemur') {
-    state.activeLemurId = el.dataset.id;
-    state.editorCode = '-- Zadanie rekrutacyjne DataLemur\nSELECT ';
     lastExecResult = null;
     lastFeedback = null;
     saveState();
     render();
+  }
+  // NAWIGACJA REKRUTACJI DATALEMUR & LUK
+  else if (act === 'lemurSub') {
+    state.lemurSubTab = el.dataset.sub;
+    lastExecResult = null;
+    lastFeedback = null;
+    saveState();
+    render();
+  }
+  else if (act === 'openLemurTask') {
+    state.activeLemurId = el.dataset.id;
+    state.lemurMode = 'solve';
+    var ltOpen = LEMUR_TASKS.find(function(x) { return x.id === state.activeLemurId; });
+    state.editorCode = '-- ' + (ltOpen ? ltOpen.company + ': ' + ltOpen.title : 'DataLemur') + '\nSELECT ';
+    lastExecResult = null;
+    lastFeedback = null;
+    saveState();
+    render();
+    window.scrollTo(0, 0);
+  }
+  else if (act === 'backToLemurList') {
+    state.lemurMode = 'list';
+    lastExecResult = null;
+    lastFeedback = null;
+    saveState();
+    render();
+    window.scrollTo(0, 0);
   }
   else if (act === 'checkLemurTask') {
     var lt = LEMUR_TASKS.find(function(x) { return x.id === state.activeLemurId; }) || LEMUR_TASKS[0];
@@ -1407,25 +1782,58 @@ document.addEventListener('click', async function(e) {
     var lExp = runQuery(lt.sol);
     var lCmp = compareResults(lastExecResult, lExp, false);
     if (lCmp.ok) {
-      state.xp += 40;
-      lastFeedback = { type: 'ok', title: '🏆 Brawo! Ominąłeś pułapkę rekrutacyjną (+40 XP)', msg: lCmp.msg };
+      if (!state.completedLemur[lt.id]) {
+        state.completedLemur[lt.id] = true;
+        state.xp += 40;
+      }
+      lastFeedback = { type: 'ok', title: '🏆 Brawo! Ominąłeś pułapkę rekrutacyjną ' + lt.company + ' (+40 XP)', msg: lCmp.msg };
       saveState();
     } else {
       var trapMsg = lt.detectTrap ? lt.detectTrap(state.editorCode, lastExecResult) : null;
       registerGapTrap(lt.gapId, lt.gapName, lt.gapHint);
       lastFeedback = {
         type: 'trap',
-        title: trapMsg ? '⚠️ Wpadłeś w pułapkę rekrutacyjną!' : '❌ Wynik niezgodny z wzorcem',
-        msg: (trapMsg ? trapMsg + '\n\n' : '') + lCmp.msg + ' (Luka "' + lt.gapName + '" została zaktualizowana w Twoim Rejestrze Luk).'
+        title: trapMsg ? '⚠️ Wpadłeś w pułapkę rekrutacyjną (' + lt.company + ')!' : '❌ Wynik niezgodny z wzorcem',
+        msg: (trapMsg ? trapMsg + '\n\n' : '') + lCmp.msg + '\n👉 Luka [' + lt.gapName + '] została zaktualizowana w Twoim Rejestrze Luk.'
       };
     }
     render();
   }
+  else if (act === 'showLemurSol') {
+    var lt2 = LEMUR_TASKS.find(function(x) { return x.id === state.activeLemurId; }) || LEMUR_TASKS[0];
+    state.editorCode = lt2.sol;
+    lastExecResult = runQuery(lt2.sol);
+    lastFeedback = { type: 'warn', title: '💡 Wzorcowe rozwiązanie (' + lt2.company + ')', msg: lt2.gapHint };
+    render();
+  }
+  else if (act === 'lemurTrapHint') {
+    var lt3 = LEMUR_TASKS.find(function(x) { return x.id === state.activeLemurId; }) || LEMUR_TASKS[0];
+    lastFeedback = { type: 'warn', title: '🛡️ Wskazówka dotycząca pułapki (' + lt3.gapName + ')', msg: lt3.gapHint };
+    render();
+  }
+  else if (act === 'bumpGap') {
+    var g = state.gaps.find(function(x) { return x.id === el.dataset.id; });
+    if (g) {
+      g.lvl = Math.min(4, g.lvl + 1);
+      saveState();
+      render();
+      toast('Poziom luki podniesiony do ' + g.lvl + '/4.');
+    }
+  }
+  // BAZA DVDRENTAL & TEST POSTGRESQL
   else if (act === 'previewTable') {
     var tbl = el.dataset.table;
     state.editorCode = 'SELECT * FROM ' + tbl + ' LIMIT 10;';
     lastExecResult = runQuery(state.editorCode);
     lastFeedback = null;
+    render();
+    window.scrollTo(0, 0);
+  }
+  else if (act === 'loadPgTest') {
+    state.editorCode = "-- Test 5 konstrukcji PostgreSQL (::numeric, ILIKE, DATE_TRUNC, INTERVAL, generate_series):\nSELECT\n  d AS dzien_kalendarza,\n  DATE_TRUNC('month', d) AS miesiac,\n  d + INTERVAL '7 days' AS tydzien_pozniej,\n  COUNT(r.rental_id) FILTER (WHERE r.return_date IS NOT NULL) AS zwrocone,\n  (COUNT(r.rental_id)::numeric / 2)::numeric AS test_numeric\nFROM generate_series('2026-05-01'::date, '2026-05-05'::date, '1 day') d\nLEFT JOIN rental r ON r.rental_date ILIKE d\nGROUP BY d\nORDER BY d;";
+    lastExecResult = runQuery(state.editorCode);
+    lastFeedback = { type: 'ok', title: '⚡ Test składni PostgreSQL wykonany!', msg: 'Wszystkie konstrukcje (::numeric, ::date, ILIKE, DATE_TRUNC, FILTER, INTERVAL oraz generate_series) zadziałały poprawnie.' };
+    saveState();
     render();
   }
   else if (act === 'saveConfig') {
@@ -1434,11 +1842,11 @@ document.addEventListener('click', async function(e) {
     if (prov) state.aiProvider = prov.value;
     if (key) state.apiKey = key.value.trim();
     saveState();
-    toast('Zapisano konfigurację AI.');
+    toast('Zapisano ustawienia AI.');
   }
   else if (act === 'aiHint') {
     if (state.aiProvider === 'gemini' && state.apiKey) {
-      toast('Wysyłam zapytanie do Gemini API…');
+      toast('Pytam Gemini AI…');
       try {
         var resp = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=' + encodeURIComponent(state.apiKey), {
           method: 'POST',
@@ -1457,7 +1865,7 @@ document.addEventListener('click', async function(e) {
       lastFeedback = {
         type: 'warn',
         title: '💡 Wskazówka lokalnego mentora (Offline)',
-        msg: 'Sprawdź pigułki kolumn nad edytorem. Upewnij się, że zwracasz dokładnie te kolumny, o które prosi treść zadania, a przy dzieleniu procentowym używasz * 100.0.'
+        msg: 'Rozwiń sekcję "👁 Podejrzyj kolumny tabel w tym zadaniu" nad edytorem, aby upewnić się co do nazw kolumn i zawartości tabel.'
       };
     }
     render();
