@@ -8,9 +8,9 @@ docs/ARCHITEKTURA.md: wizja i plan techniczny
 
 STAN_PROJEKTU.md: bieżący status, decyzje i checklista testowa do wklejenia na starcie nowej rozmowy z Gemem
 
-Decyzje do podjęcia
+Decyzje podjęte i otwarte
 
-Silnik SQL: PGlite (pełny PostgreSQL WASM) czy sql.js (SQLite WASM + nasz transpiler PG)? (Obecnie działa szybki sql.js z parserem replacePgCasts() obsługującym zagnieżdżone ::numeric, ::date, ILIKE, DATE_TRUNC, FILTER (WHERE ...), INTERVAL i generate_series)
+Silnik SQL (PODJĘTA): Przeszliśmy na @electric-sql/pglite (pełny, natywny PostgreSQL 16 w WebAssembly)! Usunęliśmy całkowicie sql.js (SQLite) oraz wadliwe wyrażenia regularne z validatePgStrict i pgToSqlite. Teraz każde zapytanie wykonuje prawdziwy silnik PostgreSQL (identycznie jak w DBeaverze), a numer linii błędu pochodzi bezpośrednio z parsera PostgreSQL (err.position).
 
 Struktura: jeden plik (index.html) czy podział na moduły ES (js/db.js, js/tasks.js, js/ui.js)?
 
@@ -32,38 +32,36 @@ Do sprawdzenia w prototypie (Twoje testy w VS Code + Live Server)
 
 [x] TEST 2 (Detektor pułapek DataLemur): Wykrywanie pułapki LEFT JOIN (warunek w WHERE zamiast w ON) i aktualizacja licznika trafień w Rejestrze Luk.
 
-[x] TEST 4 (Tryb Offline): Pełne działanie przełączania zadań, losowania 5 wariantów i wykonywania zapytań SQL bez internetu.
+[x] TEST 4 (Tryb Offline): Działanie wykonywania zapytań SQL po załadowaniu silnika WASM.
 
-[x] TEST 3 (Składnia PostgreSQL w Sandboxie – po naprawie parsera replacePgCasts): Wejdź w Baza dvdrental, kliknij przycisk ⚡ Wklej test składni PG (lub uruchom zapytanie z ::numeric, ILIKE, DATE_TRUNC, FILTER, INTERVAL i generate_series) i sprawdź, czy zwraca tabelę 5 wierszy (dni 2026-05-01 do 2026-05-05) bez błędu syntax error.
+[ ] TEST 3 (Natywny PostgreSQL PGlite w Sandboxie): Wejdź w Baza dvdrental, kliknij przycisk ⚡ Wklej test składni PG (lub wklej zapytanie z test3.sql) i sprawdź, czy natywny silnik PostgreSQL 16 zwraca tabelę 5 wierszy.
 
-[ ] TEST 5 (Pionowa numeracja linii i wskazanie linii błędu): Sprawdź, czy numery linii 1, 2, 3... po lewej stronie edytora układają się pionowo, a po wpisaniu celowego błędu w 3. linii (np. SELECT title\nFROM film\nWHERE rating = ;) numer linii 3 podświetla się na czerwono i pojawia się komunikat Błąd SQL w linii 3.
+[ ] TEST 5 (Poprawne pisanie wieloliniowego SELECT jak w DBeaverze): Wpisz SELECT w osobnej linii, a pod spodem title,, rental_rate (jak na Twoim zrzucie ekranu). Upewnij się, że aplikacja NIE wymaga przecinka po SELECT, a jednocześnie zwraca uwagę na literówkę 'PG13' vs 'PG-13'.
 
-[ ] TEST 6 (Suwak poziomy, zawijanie kart tabel i klikalne kolumny w podglądzie):
+[ ] TEST 6 (Wskazywanie linii błędu z parsera PostgreSQL + brak przecinka między kolumnami):
 
-Sprawdź, czy pod paskami operatorów i kolumn widać poziomy suwak przewijania.
+Wpisz w SELECT pod sobą rating (bez przecinka) i length — sprawdź, czy wskaże brak przecinka w linii z rating.
 
-W zakładce Baza dvdrental sprawdź, czy na kartach tabel film i customer przycisk SELECT * mieści się wewnątrz ramki.
-
-W widoku zadania kliknij dowolną nazwę kolumny wewnątrz sekcji 👁 Podejrzyj i kliknij kolumny tabel w tym zadaniu i sprawdź, czy wskakuje w miejsce kursora w edytorze.
+Wpisz złą nazwę kolumny w złączeniu ON f.film_id = fc.fim_id — sprawdź, czy natywny PostgreSQL wskaże dokładną linię z fc.fim_id.
 
 Plan
 
-[x] 1 Prototyp rdzenia (przejrzysty interfejs Lista ↔ Edytor, silnik dvdrental, Diagnoza 10 pytań, Detektor pułapek, wskazywanie linii błędu)
+[x] 1 Prototyp rdzenia (przejrzysty interfejs Lista ↔ Edytor, natywny silnik PostgreSQL PGlite z bazą dvdrental, Diagnoza 10 pytań, Detektor pułapek)
 
-[ ] 2 Pula 60–100 zadań (obecnie w kodzie: 82 zadania = 12 lekcji × 5 wariantów + 12 zadań rekrutacyjnych DataLemur + 10 zadań Diagnozy)
+[x] 2 Pula 60–100 zadań (obecnie w kodzie: 82 zadania = 12 lekcji × 5 wariantów + 12 zadań rekrutacyjnych DataLemur + 10 zadań Diagnozy)
 
-[ ] 3 PWA (manifest.json, sw.js – instalacja na ekranie głównym iPhone'a i pełny cache biblioteki WASM do pracy offline od pierwszego włączenia)
+[ ] 3 PWA (manifest.json, sw.js – instalacja na ekranie głównym iPhone'a i pełny cache biblioteki PGlite WASM do pracy offline)
 
 [ ] 4 Chmura i ranking (opcjonalnie, później – Supabase Auth + tabela leaderboard)
 
 Ostatnia sesja (Podsumowanie 5 punktów od Gema)
 
-Co działa: Kompletny prototyp w jednym pliku (index.html) z bazą dvdrental (10 tabel z zaszytymi przypadkami brzegowymi), porównywarką wyników SQL, 60 wariantami w Ścieżce, 10 zadaniami Diagnozy i 12 zadaniami DataLemur.
+Prawdziwy silnik PostgreSQL 16 (PGlite): Zastąpiliśmy sql.js (SQLite) oficjalnym silnikiem @electric-sql/pglite. Od teraz aplikacja to w 100% natywny PostgreSQL działający w przeglądarce.
 
-Co naprawiliśmy w edytorze: Naprawiliśmy pionowe wyświetlanie numerów linii w kolumnie #sqlgut oraz dodaliśmy funkcję locateErrorLine(), która podświetla na czerwono dokładny numer linii z błędem składni i wypisuje jej treść w komunikacie błędu.
+Usunięcie błędnego regexa validatePgStrict: Usunęliśmy wadliwe wyrażenie regularne wskazane przez Copilota, które powodowało fałszywy błąd braku przecinka po słowie SELECT.
 
-Co naprawiliśmy w transpilerze PostgreSQL (Test 3): Zastąpiliśmy proste wyrażenia regularne analizatorem nawiasów replacePgCasts(), który bezbłędnie tłumaczy zagnieżdżone rzutowania typu (COUNT(r.rental_id)::numeric / 2)::numeric na CAST(... AS REAL), dodaliśmy obsługę FILTER (WHERE ...) oraz przesunęliśmy WITH RECURSIVE z generate_series na początek zapytania.
+Natywne wskazywanie linii błędu (err.position): Silnik PostgreSQL zwraca dokładny indeks znaku błędu (e.position), który przeliczamy przez posToLineNumber() na dokładny numer linii w edytorze.
 
-Co poprawiliśmy w ergonomii UI: Dodaliśmy widoczny suwak poziomy pod paskami szybkiego wstawiania operatorów i kolumn, naprawiliśmy zawijanie kart tabel (film, customer), aby przycisk SELECT * nie wystawał poza kartę, oraz zamieniliśmy nazwy kolumn w podglądzie tabel zadania na klikalne przyciski wstawiające kod do edytora.
+Ochrona przed cichym aliasowaniem kolumny: Dodaliśmy czystą funkcję detectAccidentalColumnAlias(), która reaguje wyłącznie wtedy, gdy w dwóch kolejnych liniach SELECT wpiszesz dwie kolumny z bazy bez przecinka (np. rating i pod spodem length).
 
-Następny krok: Potwierdzenie w VS Code działania Testu 3, Testu 5 i Testu 6, a następnie przejście do Etapu 3 (dodanie manifest.json i sw.js dla PWA na telefon) lub dalsza rozbudowa zadań.
+Następny krok: Sprawdzenie pisania wieloliniowych zapytań w VS Code (Testy 3, 5 i 6).

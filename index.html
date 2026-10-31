@@ -7,7 +7,6 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.js"></script>
 <style>
 :root {
   --bg: #0B101B;
@@ -579,171 +578,75 @@ var SCHEMA_META = [
 ];
 
 /* ==========================================================================
-   2. ROZBUDOWANY TRANSPILER POSTGRESQL -> SQLITE WASM
-   Obsługuje: ::numeric, ::int, ::date, ::text, ILIKE, DATE_TRUNC, INTERVAL, generate_series
+   2. NATYWNY SILNIK POSTGRESQL (PGlite WASM) + PRECYZYJNA DETEKCJA LINII BŁĘDU
+   Zero sztucznej transpilacji regex - 100% prawdziwy PostgreSQL jak w DBeaverze!
    ========================================================================== */
-function replacePgCasts(sql) {
-  var s = String(sql || '');
-  var typeMap = {
-    'numeric': 'REAL', 'decimal': 'REAL', 'float': 'REAL', 'real': 'REAL',
-    'int': 'INTEGER', 'integer': 'INTEGER', 'bigint': 'INTEGER',
-    'text': 'TEXT', 'varchar': 'TEXT',
-    'date': 'NONE', 'timestamp': 'NONE'
-  };
-
-  var guard = 0;
-  while (guard++ < 50) {
-    var match = /::\s*([a-zA-Z_]\w*)/.exec(s);
-    if (!match) break;
-    var typeRaw = match[1].toLowerCase();
-    var targetType = typeMap[typeRaw] || 'REAL';
-    var colonIdx = match.index;
-    var matchEnd = colonIdx + match[0].length;
-
-    var i = colonIdx - 1;
-    while (i >= 0 && /\s/.test(s[i])) i--;
-    if (i < 0) break;
-
-    var startIdx = 0;
-    if (s[i] === "'") {
-      i--;
-      while (i >= 0 && s[i] !== "'") i--;
-      startIdx = Math.max(0, i);
-    } else if (s[i] === ')') {
-      var depth = 1;
-      i--;
-      while (i >= 0 && depth > 0) {
-        if (s[i] === ')') depth++;
-        else if (s[i] === '(') depth--;
-        i--;
-      }
-      var beforeParen = i;
-      while (beforeParen >= 0 && /\s/.test(s[beforeParen])) beforeParen--;
-      var idEnd = beforeParen;
-      while (beforeParen >= 0 && /[a-zA-Z0-9_.]/.test(s[beforeParen])) beforeParen--;
-      if (idEnd > beforeParen) {
-        startIdx = beforeParen + 1;
-      } else {
-        startIdx = i + 1;
-      }
-    } else {
-      while (i >= 0 && /[a-zA-Z0-9_.]/.test(s[i])) i--;
-      startIdx = i + 1;
-    }
-
-    var expr = s.slice(startIdx, colonIdx).trim();
-    var replacement = (targetType === 'NONE') ? expr : ('CAST(' + expr + ' AS ' + targetType + ')');
-    s = s.slice(0, startIdx) + replacement + s.slice(matchEnd);
-  }
-  return s;
-}
-
-function pgToSqlite(sql) {
-  var s = String(sql || '').trim();
-  var ctePrefix = '';
-
-  // 1. Obsługa generate_series dla dat
-  var gsDateRe = /generate_series\s*\(\s*'([^']+)'(?:\s*::\s*\w+)?\s*,\s*'([^']+)'(?:\s*::\s*\w+)?(?:\s*,\s*'1\s+day')?\s*\)(?:\s+(?:AS\s+)?([a-zA-Z_]\w*))?/i;
-  var mDate = gsDateRe.exec(s);
-  if (mDate) {
-    var dStart = mDate[1], dEnd = mDate[2], alias = mDate[3] || 'd';
-    ctePrefix = "WITH RECURSIVE _gs_cal(" + alias + ") AS (SELECT '" + dStart + "' UNION ALL SELECT date(" + alias + ", '+1 day') FROM _gs_cal WHERE " + alias + " < '" + dEnd + "') ";
-    s = s.replace(gsDateRe, "_gs_cal " + alias);
-  }
-
-  // 2. Obsługa generate_series dla liczb
-  var gsNumRe = /generate_series\s*\(\s*(\d+)\s*,\s*(\d+)\s*\)(?:\s+(?:AS\s+)?([a-zA-Z_]\w*))?/i;
-  var mNum = gsNumRe.exec(s);
-  if (mNum) {
-    var nStart = mNum[1], nEnd = mNum[2], nAlias = mNum[3] || 's';
-    ctePrefix = "WITH RECURSIVE _gs_num(" + nAlias + ") AS (SELECT " + nStart + " UNION ALL SELECT " + nAlias + " + 1 FROM _gs_num WHERE " + nAlias + " < " + nEnd + ") ";
-    s = s.replace(gsNumRe, "_gs_num " + nAlias);
-  }
-
-  if (ctePrefix) {
-    if (/^\s*WITH\b/i.test(s)) {
-      s = s.replace(/^\s*WITH\s+(?:RECURSIVE\s+)?/i, ctePrefix + ", ");
-    } else {
-      s = ctePrefix + s;
-    }
-  }
-
-  // 3. Precyzyjna translacja rzutowań ::type bez niszczenia funkcji zagnieżdżonych
-  s = replacePgCasts(s);
-
-  // 4. FILTER (WHERE ...) -> CASE WHEN
-  s = s.replace(/COUNT\s*\(\s*\*\s*\)\s+FILTER\s*\(\s*WHERE\s+([^()]+)\)/gi, 'COUNT(CASE WHEN $1 THEN 1 ELSE NULL END)');
-  s = s.replace(/([a-zA-Z_]\w*)\s*\(\s*([^()]+)\s*\)\s+FILTER\s*\(\s*WHERE\s+([^()]+)\)/gi, '$1(CASE WHEN $3 THEN $2 ELSE NULL END)');
-
-  // 5. ILIKE -> LIKE
-  s = s.replace(/\bILIKE\b/gi, 'LIKE');
-
-  // 6. DATE_TRUNC
-  s = s.replace(/DATE_TRUNC\s*\(\s*'month'\s*,\s*([^)]+)\)/gi, "substr($1, 1, 7)");
-  s = s.replace(/DATE_TRUNC\s*\(\s*'day'\s*,\s*([^)]+)\)/gi, "substr($1, 1, 10)");
-  s = s.replace(/DATE_TRUNC\s*\(\s*'year'\s*,\s*([^)]+)\)/gi, "substr($1, 1, 4)");
-
-  // 7. Dodawanie/odejmowanie INTERVAL
-  s = s.replace(/([a-zA-Z0-9_.'()]+)\s*\+\s*INTERVAL\s*'([+-]?\d+\s+\w+)'/gi, "date($1, '+$2')");
-  s = s.replace(/([a-zA-Z0-9_.'()]+)\s*-\s*INTERVAL\s*'([+-]?\d+\s+\w+)'/gi, "date($1, '-$2')");
-
-  return s;
-}
-
-// Zbiór wszystkich nazw kolumn i tabel w dvdrental (do wykrywania przypadkowego aliasowania przy braku przecinka)
 var ALL_SCHEMA_COLS = new Set();
-var ALL_SCHEMA_TABLES = new Set();
 SCHEMA_META.forEach(function(m) {
-  ALL_SCHEMA_TABLES.add(m.table.toLowerCase());
   m.cols.forEach(function(c) { ALL_SCHEMA_COLS.add(c.toLowerCase()); });
 });
 
-// Walidator ścisłej składni PostgreSQL (DBeaver mode) - wykrywa brakujące przecinki w SELECT
-function validatePgStrict(rawSql) {
+// Przelicza oficjalną pozycję znaku (err.position z silnika PostgreSQL) na numer linii w edytorze
+function posToLineNumber(sql, charPos) {
+  var pos = Number(charPos);
+  if (!pos || isNaN(pos) || pos < 1) return null;
+  var prefix = String(sql || '').slice(0, pos);
+  return prefix.split('\n').length;
+}
+
+// Rezerwowe wyszukanie linii błędu, jeśli PGlite nie zwróci pola err.position
+function fallbackErrorLine(rawSql, errMsg) {
+  var lines = String(rawSql || '').split('\n');
+  var msg = String(errMsg || '');
+
+  var qMatch = /"([^"]+)"/.exec(msg);
+  if (qMatch && qMatch[1]) {
+    var tok = qMatch[1].trim();
+    for (var i = 0; i < lines.length; i++) {
+      var cleanLine = lines[i].replace(/--.*$/, '');
+      if (cleanLine.indexOf(tok) > -1) return i + 1;
+    }
+  }
+  for (var j = 0; j < lines.length; j++) {
+    if (lines[j].replace(/--.*$/, '').trim().length > 0) return j + 1;
+  }
+  return 1;
+}
+
+// Lekki strażnik tylko na przypadek, gdy ktoś w SELECT napisze pod sobą dwie kolumny z bazy bez przecinka i bez AS
+// (np. w linii 4: "rating", a w linii 5: "length" - co każdy SQL interpretuje po cichu jako "rating AS length")
+function detectAccidentalColumnAlias(rawSql) {
   var lines = String(rawSql || '').split('\n');
   var inSelect = false;
 
   for (var i = 0; i < lines.length; i++) {
-    var line = lines[i].replace(/--.*$/, '').trim();
-    if (!line) continue;
+    var clean = lines[i].replace(/--.*$/, '').trim();
+    if (!clean) continue;
 
-    if (/^\bSELECT\b/i.test(line)) {
+    if (/^SELECT\b/i.test(clean)) {
       inSelect = true;
-      line = line.replace(/^\bSELECT\b(\s+DISTINCT(\s+ON\s*\([^)]+\))?)?/i, '').trim();
+      clean = clean.replace(/^SELECT(?:\s+DISTINCT(?:\s+ON\s*\([^)]+\))?)?\b/i, '').trim();
+      if (!clean) continue; // Samo słowo SELECT w linii jest w 100% poprawne!
     }
-    if (inSelect && /^\b(FROM|WHERE|GROUP|ORDER|LIMIT|HAVING|UNION|INTERSECT|EXCEPT)\b/i.test(line)) {
+    if (inSelect && /^(FROM|WHERE|GROUP|ORDER|LIMIT|HAVING|UNION|INTERSECT|EXCEPT|WINDOW|FETCH)\b/i.test(clean)) {
       inSelect = false;
+      continue;
     }
 
     if (inSelect) {
-      // Przypadek A: w jednej linii wpisano dwie kolumny bez przecinka i bez AS (np. "rating length" albo "fc.category_id f.length")
-      var sameLineMatch = /^([a-zA-Z_][\w.]*)\s+([a-zA-Z_][\w.]*)\s*,?$/.exec(line);
-      if (sameLineMatch) {
-        var firstTok = sameLineMatch[1], secondTok = sameLineMatch[2];
-        var kwAllow = /^(AS|ASC|DESC|NULLS|FIRST|LAST|FROM| distinct)$/i;
-        if (!kwAllow.test(firstTok) && !kwAllow.test(secondTok)) {
-          if (secondTok.indexOf('.') > -1 || ALL_SCHEMA_COLS.has(secondTok.toLowerCase())) {
-            return {
-              line: i + 1,
-              msg: 'ERROR: syntax error at or near "' + secondTok + '" — brakuje przecinka pomiędzy "' + firstTok + '" a "' + secondTok + '".'
-            };
-          }
-        }
-      }
+      // Jeśli bieżąca linia kończy się pojedynczą nazwą kolumny BEZ przecinka na końcu...
+      if (/^[a-zA-Z_][\w.]*$/.test(clean)) {
+        // ...sprawdźmy następną niepustą linię:
+        for (var n = i + 1; n < lines.length; n++) {
+          var nextClean = lines[n].replace(/--.*$/, '').trim();
+          if (!nextClean) continue;
+          if (/^(FROM|WHERE|GROUP|ORDER|LIMIT|HAVING|UNION|INTERSECT|EXCEPT|AS|ASC|DESC)\b/i.test(nextClean)) break;
 
-      // Przypadek B: linia wewnątrz listy SELECT nie kończy się przecinkiem ani operatorem, a w kolejnej linii jest kolejna kolumna (a nie FROM)
-      if (!/[,(\bAS\b|\+|\-|\*|\/|AND|OR|WHEN|THEN|ELSE|CASE]$/i.test(line) && !/,$/.test(line)) {
-        // Szukamy następnej niepustej linii
-        for (var next = i + 1; next < lines.length; next++) {
-          var nextLine = lines[next].replace(/--.*$/, '').trim();
-          if (!nextLine) continue;
-          var stopsSelect = /^\b(FROM|WHERE|GROUP|ORDER|LIMIT|HAVING|UNION|INTERSECT|EXCEPT|INTO|END|WHEN|THEN|ELSE|AND|OR|ON)\b/i.test(nextLine);
-          var startsWithAs = /^\bAS\b/i.test(nextLine);
-          if (!stopsSelect && !startsWithAs && /^[a-zA-Z0-9_.*(]/.test(nextLine)) {
-            var nextFirstTok = nextLine.split(/\s+/)[0].replace(/,$/, '');
+          var nextFirstWord = nextClean.split(/[\s,]+/)[0];
+          if ( nextFirstWord && (nextFirstWord.indexOf('.') > -1 || ALL_SCHEMA_COLS.has(nextFirstWord.toLowerCase())) ) {
             return {
               line: i + 1,
-              msg: 'ERROR: syntax error at or near "' + nextFirstTok + '" (linia ' + (next + 1) + ') — brakuje przecinka `,` na końcu linii ' + (i + 1) + ' po `' + line + '`.'
+              msg: 'ERROR: syntax error at or near "' + nextFirstWord + '" — brakuje przecinka `,` na końcu linii ' + (i + 1) + ' po `' + clean + '` (bez przecinka SQL uznałby `' + nextFirstWord + '` za alias kolumny `' + clean + '`).'
             };
           }
           break;
@@ -754,113 +657,65 @@ function validatePgStrict(rawSql) {
   return null;
 }
 
-// Funkcja wyliczająca dokładną linię błędu SQL w edytorze
-function locateErrorLine(rawSql, errMsg) {
-  var lines = String(rawSql || '').split('\n');
-  var msg = String(errMsg || '');
-
-  // 1. Błąd typu "no such column: fc.fim_id" lub "no such table: ..."
-  var colMatch = /no such column:\s*([a-zA-Z0-9_.]+)/i.exec(msg) || /no such table:\s*([a-zA-Z0-9_.]+)/i.exec(msg) || /ambiguous column name:\s*([a-zA-Z0-9_.]+)/i.exec(msg);
-  if (colMatch && colMatch[1]) {
-    var badCol = colMatch[1].trim();
-    var shortCol = badCol.indexOf('.') > -1 ? badCol.split('.').pop() : badCol;
-    for (var cIdx = 0; cIdx < lines.length; cIdx++) {
-      if (lines[cIdx].indexOf(badCol) > -1) return cIdx + 1;
-    }
-    for (var cIdx2 = 0; cIdx2 < lines.length; cIdx2++) {
-      var re = new RegExp('\\b' + shortCol.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'i');
-      if (re.test(lines[cIdx2])) return cIdx2 + 1;
-    }
-  }
-
-  // 2. Sprawdzenie niezamkniętych nawiasów
-  var depth = 0, lastOpenLine = 1;
-  for (var i = 0; i < lines.length; i++) {
-    var lineClean = lines[i].replace(/--.*$/, '');
-    for (var c = 0; c < lineClean.length; c++) {
-      if (lineClean[c] === '(') { if (depth === 0) lastOpenLine = i + 1; depth++; }
-      else if (lineClean[c] === ')') {
-        depth--;
-        if (depth < 0) return i + 1;
-      }
-    }
-  }
-  if (depth > 0) return lastOpenLine;
-
-  // 3. Sprawdzenie przecinka wiszącego tuż przed FROM / WHERE / GROUP BY
-  for (var k = 1; k < lines.length; k++) {
-    if (/^\s*(FROM|WHERE|GROUP|ORDER|LIMIT|HAVING)\b/i.test(lines[k]) && /,\s*(--.*)?$/.test(lines[k - 1])) {
-      return k;
-    }
-  }
-
-  // 4. Dopasowanie tokenu z near "..." (z pominięciem pojedynczej kropki i słów kluczowych)
-  var IGNORE_KW = new Set(['.', ',', 'AS', 'FROM', 'SELECT', 'WHERE', 'AND', 'OR', 'JOIN', 'ON', 'GROUP', 'ORDER', 'BY', 'HAVING', 'IN', 'IS', 'NOT', 'NULL']);
-  var nearMatch = /near\s+"([^"]+)"/i.exec(msg);
-  if (nearMatch && nearMatch[1]) {
-    var tok = nearMatch[1].trim();
-    if (!IGNORE_KW.has(tok.toUpperCase())) {
-      for (var j = lines.length - 1; j >= 0; j--) {
-        if (lines[j].indexOf(tok) > -1) return j + 1;
-      }
-    }
-  }
-
-  return 1;
-}
-
-function formatPgErrorMessage(rawMsg) {
-  var m = String(rawMsg || '');
-  m = m.replace(/no such column:\s*([a-zA-Z0-9_.]+)/i, 'ERROR: column "$1" does not exist (sprawdź literówkę w nazwie kolumny)');
-  m = m.replace(/no such table:\s*([a-zA-Z0-9_.]+)/i, 'ERROR: relation "$1" does not exist (sprawdź nazwę tabeli)');
-  m = m.replace(/ambiguous column name:\s*([a-zA-Z0-9_.]+)/i, 'ERROR: column reference "$1" is ambiguous (dodaj przedrostek tabeli, np. f.$1)');
-  return m;
-}
+// Schemat dvdrental z natywnymi typami PostgreSQL (DATE, NUMERIC, INTEGER)
+var PG_DVDRENTAL_DDL = DVDRENTAL_SEED_SQL
+  .replace(/create_date TEXT/g, 'create_date DATE')
+  .replace(/rental_date TEXT NOT NULL/g, 'rental_date DATE NOT NULL')
+  .replace(/return_date TEXT/g, 'return_date DATE')
+  .replace(/payment_date TEXT NOT NULL/g, 'payment_date DATE NOT NULL');
 
 async function initDatabase() {
   var statusEl = document.getElementById('dbStatus');
   try {
-    if (typeof initSqlJs === 'undefined') throw new Error('Brak SQL.js');
-    var SQL = await initSqlJs({
-      locateFile: function(file) { return 'https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/' + file; }
-    });
-    db = new SQL.Database();
-    db.run(DVDRENTAL_SEED_SQL);
+    if (statusEl) statusEl.textContent = 'Pobieranie silnika PostgreSQL (PGlite)…';
+    var mod = await import('https://cdn.jsdelivr.net/npm/@electric-sql/pglite/dist/index.js');
+    var PGlite = mod.PGlite;
+    db = new PGlite();
+    await db.exec(PG_DVDRENTAL_DDL);
     dbReady = true;
-    if (statusEl) statusEl.textContent = 'Silnik dvdrental gotowy · 100% Offline';
+    if (statusEl) statusEl.textContent = 'Silnik PostgreSQL 16 (PGlite) gotowy';
     render();
   } catch (err) {
-    if (statusEl) statusEl.textContent = 'Błąd ładowania WASM';
+    console.error('PGlite init error:', err);
+    if (statusEl) statusEl.textContent = 'Błąd inicjalizacji PostgreSQL WASM';
   }
 }
 
-function runQuery(sql) {
-  if (!dbReady || !db) return { error: 'Silnik bazy danych jeszcze się ładuje.' };
+async function runQuery(sql) {
+  if (!dbReady || !db) return { error: 'Silnik PostgreSQL jeszcze się inicjalizuje (poczekaj 1-2 sekundy)…' };
   var raw = String(sql || '').trim();
   if (!raw) return { error: 'Wpisz zapytanie SQL.', errorLine: 1 };
 
-  // Ścisła walidacja PostgreSQL (wykrywa brak przecinka po kolumnie w SELECT jak w DBeaverze)
-  var strictErr = validatePgStrict(raw);
-  if (strictErr) {
-    var strictLineTxt = (raw.split('\n')[strictErr.line - 1] || '').trim();
+  // Sprawdzenie, czy użytkownik nie pominął przecinka między dwoma kolumnami w osobnych liniach
+  var aliasTrap = detectAccidentalColumnAlias(raw);
+  if (aliasTrap) {
+    var trapLineTxt = (raw.split('\n')[aliasTrap.line - 1] || '').trim();
     return {
-      error: strictErr.msg,
-      errorLine: strictErr.line,
-      errorSnippet: strictLineTxt
+      error: aliasTrap.msg,
+      errorLine: aliasTrap.line,
+      errorSnippet: trapLineTxt
     };
   }
 
-  var clean = pgToSqlite(raw);
   try {
-    var res = db.exec(clean);
-    if (!res || !res.length) return { columns: [], values: [] };
-    return { columns: res[0].columns, values: res[0].values };
+    var res = await db.query(raw);
+    var cols = (res.fields || []).map(function(f) { return f.name; });
+    var vals = (res.rows || []).map(function(rowObj) {
+      return cols.map(function(c) {
+        var v = rowObj[c];
+        if (v instanceof Date) return v.toISOString().slice(0, 10);
+        return v;
+      });
+    });
+    return { columns: cols, values: vals };
   } catch (e) {
     var rawMsg = e.message || String(e);
-    var ln = locateErrorLine(raw, rawMsg);
-    var lineTxt = (raw.split('\n')[ln - 1] || '').trim();
+    var ln = posToLineNumber(raw, e.position) || fallbackErrorLine(raw, rawMsg);
+    var linesArr = raw.split('\n');
+    ln = Math.max(1, Math.min(linesArr.length, ln));
+    var lineTxt = (linesArr[ln - 1] || '').trim();
     return {
-      error: formatPgErrorMessage(rawMsg),
+      error: 'ERROR: ' + rawMsg + (e.hint ? ' (Podpowiedź PG: ' + e.hint + ')' : ''),
       errorLine: ln,
       errorSnippet: lineTxt
     };
@@ -1066,14 +921,14 @@ var PATH_TASKS = [
   {
     id: 'p5_3', stage: 5, title: '5.3 Kalendarze generate_series, DATE_TRUNC i INTERVAL',
     tables: ['rental', 'payment'],
-    cols: ["generate_series('2026-05-01'::date, '2026-05-07'::date, '1 day') d", 'LEFT JOIN', 'COALESCE', 'DATE_TRUNC', 'INTERVAL'],
+    cols: ["generate_series('2026-05-01'::date, '2026-05-07'::date, '1 day')::date AS d", 'LEFT JOIN', 'COALESCE', 'DATE_TRUNC', 'INTERVAL'],
     gapId: 'g4',
     variants: [
-      { prompt: 'Wygeneruj kalendarz od `\'2026-05-01\'` do `\'2026-05-07\'` za pomocą `generate_series(\'2026-05-01\'::date, \'2026-05-07\'::date, \'1 day\') d` i połącz go `LEFT JOIN` z tabelą `rental` po `r.rental_date = d`. Zwróć dzień `d` oraz liczbę wypożyczeń (`COUNT(r.rental_id)`), posortowane po `d`.', sol: "SELECT d, COUNT(r.rental_id) AS rentals_cnt FROM generate_series('2026-05-01'::date, '2026-05-07'::date, '1 day') d LEFT JOIN rental r ON r.rental_date = d GROUP BY d ORDER BY d;", order: true },
-      { prompt: 'Wygeneruj kalendarz dni od `\'2026-05-01\'` do `\'2026-05-06\'` (`generate_series`) i połącz `LEFT JOIN` z `payment` (`p.payment_date = d`). Zwróć dzień `d` oraz dzienną sumę płatności z użyciem `COALESCE(SUM(p.amount), 0)`. Posortuj po `d`.', sol: "SELECT d, COALESCE(SUM(p.amount), 0) AS daily_rev FROM generate_series('2026-05-01'::date, '2026-05-06'::date, '1 day') d LEFT JOIN payment p ON p.payment_date = d GROUP BY d ORDER BY d;", order: true },
-      { prompt: 'Z tabeli `rental` dla wypożyczeń z maja (`rental_date LIKE \'2026-05%\'`) wypisz `rental_id`, `rental_date` oraz termin zwrotu wyznaczony jako 5 dni później: `rental_date + INTERVAL \'5 days\' AS due_date`.', sol: "SELECT rental_id, rental_date, rental_date + INTERVAL '5 days' AS due_date FROM rental WHERE rental_date LIKE '2026-05%';", order: false },
-      { prompt: 'Z tabeli `rental` pogrupuj wypożyczenia po miesiącu za pomocą `DATE_TRUNC(\'month\', rental_date) AS miesiac` i policz liczbę wypożyczeń (`COUNT(*)`) w każdym miesiącu.', sol: "SELECT DATE_TRUNC('month', rental_date) AS miesiac, COUNT(*) AS cnt FROM rental GROUP BY 1 ORDER BY 1;", order: true },
-      { prompt: 'Wygeneruj serię liczb od 1 do 6 za pomocą `generate_series(1, 6) s` i połącz ją z tabelą `category` (`c.category_id = s`). Zwróć `s` oraz `c.name`.', sol: "SELECT s, c.name FROM generate_series(1, 6) s JOIN category c ON c.category_id = s;", order: false }
+      { prompt: 'Wygeneruj kalendarz od `\'2026-05-01\'` do `\'2026-05-07\'` za pomocą `generate_series(\'2026-05-01\'::date, \'2026-05-07\'::date, \'1 day\') AS d` i połącz go `LEFT JOIN` z tabelą `rental` po `r.rental_date = d::date`. Zwróć dzień `d::date` oraz liczbę wypożyczeń (`COUNT(r.rental_id)`), posortowane po `1`.', sol: "SELECT d::date AS d, COUNT(r.rental_id) AS rentals_cnt FROM generate_series('2026-05-01'::date, '2026-05-07'::date, '1 day') AS d LEFT JOIN rental r ON r.rental_date = d::date GROUP BY 1 ORDER BY 1;", order: true },
+      { prompt: 'Wygeneruj kalendarz dni od `\'2026-05-01\'` do `\'2026-05-06\'` (`generate_series`) i połącz `LEFT JOIN` z `payment` (`p.payment_date = d::date`). Zwróć dzień `d::date` oraz dzienną sumę płatności z użyciem `COALESCE(SUM(p.amount), 0)`. Posortuj po `1`.', sol: "SELECT d::date AS d, COALESCE(SUM(p.amount), 0) AS daily_rev FROM generate_series('2026-05-01'::date, '2026-05-06'::date, '1 day') AS d LEFT JOIN payment p ON p.payment_date = d::date GROUP BY 1 ORDER BY 1;", order: true },
+      { prompt: 'Z tabeli `rental` dla wypożyczeń z maja (`rental_date >= \'2026-05-01\' AND rental_date < \'2026-06-01\'`) wypisz `rental_id`, `rental_date` oraz termin zwrotu wyznaczony jako 5 dni później: `(rental_date + INTERVAL \'5 days\')::date AS due_date`.', sol: "SELECT rental_id, rental_date, (rental_date + INTERVAL '5 days')::date AS due_date FROM rental WHERE rental_date >= '2026-05-01' AND rental_date < '2026-06-01';", order: false },
+      { prompt: 'Z tabeli `rental` pogrupuj wypożyczenia po miesiącu za pomocą `DATE_TRUNC(\'month\', rental_date)::date AS miesiac` i policz liczbę wypożyczeń (`COUNT(*)`) w każdym miesiącu.', sol: "SELECT DATE_TRUNC('month', rental_date)::date AS miesiac, COUNT(*) AS cnt FROM rental GROUP BY 1 ORDER BY 1;", order: true },
+      { prompt: 'Wygeneruj serię liczb od 1 do 6 za pomocą `generate_series(1, 6) AS s` i połącz ją z tabelą `category` (`c.category_id = s`). Zwróć `s` oraz `c.name`.', sol: "SELECT s, c.name FROM generate_series(1, 6) AS s JOIN category c ON c.category_id = s;", order: false }
     ]
   }
 ];
@@ -1105,8 +960,8 @@ var LEMUR_TASKS = [
     gapId: 'g2', gapName: 'LEFT JOIN: warunek daty w ON czy w WHERE',
     gapHint: 'Filtrowanie prawej tabeli w WHERE odrzuca wiersze z NULL i zamienia LEFT JOIN w INNER JOIN! Warunek daty dla prawej tabeli musi być w klauzuli ON.',
     cols: ['customer', 'rental', 'customer_id', 'first_name', 'rental_date', 'LEFT JOIN', 'COUNT(r.rental_id)'],
-    prompt: 'Zarząd chce listę WSZYSTKICH klientów z tabeli `customer` należących do sklepu `store_id = 1` wraz z liczbą ich wypożyczeń w czerwcu 2026 (`rental_date LIKE \'2026-06%\'`).\n\nJeśli klient ze sklepu 1 nie miał żadnego wypożyczenia w czerwcu, MUSI widnieć w wyniku z liczbą `0`.\nZwróć: `customer_id`, `first_name`, `june_rentals`.',
-    sol: "SELECT c.customer_id, c.first_name, COUNT(r.rental_id) AS june_rentals FROM customer c LEFT JOIN rental r ON c.customer_id = r.customer_id AND r.rental_date LIKE '2026-06%' WHERE c.store_id = 1 GROUP BY c.customer_id, c.first_name;",
+    prompt: 'Zarząd chce listę WSZYSTKICH klientów z tabeli `customer` należących do sklepu `store_id = 1` wraz z liczbą ich wypożyczeń w czerwcu 2026 (`r.rental_date >= \'2026-06-01\' AND r.rental_date < \'2026-07-01\'` lub `r.rental_date::text LIKE \'2026-06%\'`).\n\nJeśli klient ze sklepu 1 nie miał żadnego wypożyczenia w czerwcu, MUSI widnieć w wyniku z liczbą `0`.\nZwróć: `customer_id`, `first_name`, `june_rentals`.',
+    sol: "SELECT c.customer_id, c.first_name, COUNT(r.rental_id) AS june_rentals FROM customer c LEFT JOIN rental r ON c.customer_id = r.customer_id AND r.rental_date >= '2026-06-01' AND r.rental_date < '2026-07-01' WHERE c.store_id = 1 GROUP BY c.customer_id, c.first_name;",
     detectTrap: function(sql) {
       if (/LEFT\s+JOIN/i.test(sql) && /WHERE[\s\S]*RENTAL_DATE/i.test(sql)) {
         return 'PUŁAPKA DATALEMUR WYKRYTA: Użyłeś LEFT JOIN, ale filtr na `rental_date` dałeś w WHERE zamiast w ON! Przez to klienci bez wypożyczeń w czerwcu (mający NULL w rental_date) zostali wycięci.';
@@ -1200,8 +1055,8 @@ var LEMUR_TASKS = [
     gapId: 'g5', gapName: 'LAG i zmiana procentowa MoM po agregacji',
     gapHint: 'Najpierw zagreguj dane do ziarna miesiąca w CTE, a dopiero potem użyj LAG() OVER (ORDER BY miesiac).',
     cols: ['payment', 'payment_date', 'amount', 'DATE_TRUNC', 'LAG(', 'WITH'],
-    prompt: 'Policz przychód miesięczny w tabeli `payment` (`DATE_TRUNC(\'month\', payment_date) AS m`) oraz kwotę zmiany przychodu względem poprzedniego miesiąca (`rev - LAG(rev) OVER (ORDER BY m)`).\n\nZwróć: `m`, `rev`, `diff_from_prev`.',
-    sol: "WITH m_rev AS (SELECT DATE_TRUNC('month', payment_date) AS m, SUM(amount) AS rev FROM payment GROUP BY 1) SELECT m, rev, rev - LAG(rev) OVER (ORDER BY m) AS diff_from_prev FROM m_rev ORDER BY m;",
+    prompt: 'Policz przychód miesięczny w tabeli `payment` (`DATE_TRUNC(\'month\', payment_date)::date AS m`) oraz kwotę zmiany przychodu względem poprzedniego miesiąca (`rev - LAG(rev) OVER (ORDER BY m)`).\n\nZwróć: `m`, `rev`, `diff_from_prev`.',
+    sol: "WITH m_rev AS (SELECT DATE_TRUNC('month', payment_date)::date AS m, SUM(amount) AS rev FROM payment GROUP BY 1) SELECT m, rev, rev - LAG(rev) OVER (ORDER BY m) AS diff_from_prev FROM m_rev ORDER BY m;",
     detectTrap: function(sql) {
       if (!/GROUP\s+BY/i.test(sql)) return 'PUŁAPKA ZIARNA OKNA: Używasz LAG() na surowych wierszach płatności zamiast najpierw zagregować przychód do poziomu miesiąca!';
       return null;
@@ -1243,11 +1098,11 @@ var LEMUR_TASKS = [
     gapId: 'g7', gapName: 'Warunek A AND B na tym samym wierszu vs na grupie',
     gapHint: 'Jeden wiersz nie może mieć jednocześnie daty z maja ORAZ z czerwca. Aby znaleźć klientów mających wiersze w obu miesiącach, użyj INTERSECT lub HAVING z dwoma warunkami COUNT/FILTER.',
     cols: ['rental', 'customer_id', 'rental_date', 'INTERSECT', 'HAVING'],
-    prompt: 'Znajdź `customer_id` klientów z tabeli `rental`, którzy wypożyczyli co najmniej jeden film w maju (`2026-05%`) ORAZ co najmniej jeden film w czerwcu (`2026-06%`). Posortuj rosnąco po `customer_id`.',
-    sol: "SELECT customer_id FROM rental WHERE rental_date LIKE '2026-05%' INTERSECT SELECT customer_id FROM rental WHERE rental_date LIKE '2026-06%' ORDER BY customer_id;",
+    prompt: 'Znajdź `customer_id` klientów z tabeli `rental`, którzy wypożyczyli co najmniej jeden film w maju (`rental_date >= \'2026-05-01\' AND rental_date < \'2026-06-01\'`) ORAZ co najmniej jeden film w czerwcu (`rental_date >= \'2026-06-01\' AND rental_date < \'2026-07-01\'`). Posortuj rosnąco po `customer_id`.',
+    sol: "SELECT customer_id FROM rental WHERE rental_date >= '2026-05-01' AND rental_date < '2026-06-01' INTERSECT SELECT customer_id FROM rental WHERE rental_date >= '2026-06-01' AND rental_date < '2026-07-01' ORDER BY customer_id;",
     detectTrap: function(sql) {
-      if (/WHERE[\s\S]*2026-05[\s\S]*AND[\s\S]*2026-06/i.test(sql) && !/EXISTS/i.test(sql)) {
-        return 'PUŁAPKA LOGICZNA WHERE: Napisałeś w WHERE `rental_date LIKE 2026-05% AND rental_date LIKE 2026-06%`. Pojedynczy wiersz nigdy nie ma dwóch dat naraz! Użyj INTERSECT lub GROUP BY + HAVING.';
+      if (/WHERE[\s\S]*2026-05[\s\S]*AND[\s\S]*2026-06[\s\S]*AND[\s\S]*2026-07/i.test(sql) && !/INTERSECT|HAVING|EXISTS/i.test(sql)) {
+        return 'PUŁAPKA LOGICZNA WHERE: Pojedynczy wiersz nigdy nie ma daty z maja i z czerwca naraz! Użyj INTERSECT lub GROUP BY + HAVING.';
       }
       return null;
     }
@@ -1848,13 +1703,13 @@ document.addEventListener('click', async function(e) {
     render();
   }
   else if (act === 'runOnly') {
-    lastExecResult = runQuery(state.editorCode);
+    lastExecResult = await runQuery(state.editorCode);
     lastFeedback = null;
     render();
   }
   else if (act === 'peekTable') {
     var tName = el.dataset.table;
-    lastExecResult = runQuery('SELECT * FROM ' + tName + ' LIMIT 5;');
+    lastExecResult = await runQuery('SELECT * FROM ' + tName + ' LIMIT 5;');
     lastFeedback = { type: 'warn', title: '👁 Podgląd tabeli ' + tName + ' (pierwsze 5 wierszy)', msg: 'Twój kod w edytorze pozostał bez zmian.' };
     render();
   }
@@ -1908,8 +1763,8 @@ document.addEventListener('click', async function(e) {
     var task = PATH_TASKS.find(function(t) { return t.id === state.activeTaskId; }) || PATH_TASKS[0];
     var vIdx = state.activeVariantIdx % task.variants.length;
     var variant = task.variants[vIdx];
-    lastExecResult = runQuery(state.editorCode);
-    var expRes = runQuery(variant.sol);
+    lastExecResult = await runQuery(state.editorCode);
+    var expRes = await runQuery(variant.sol);
     var cmp = compareResults(lastExecResult, expRes, variant.order);
     if (cmp.ok) {
       var vKey = task.id + ':' + vIdx;
@@ -1936,14 +1791,14 @@ document.addEventListener('click', async function(e) {
     var task2 = PATH_TASKS.find(function(t) { return t.id === state.activeTaskId; }) || PATH_TASKS[0];
     var variant2 = task2.variants[state.activeVariantIdx % task2.variants.length];
     state.editorCode = variant2.sol;
-    lastExecResult = runQuery(variant2.sol);
+    lastExecResult = await runQuery(variant2.sol);
     lastFeedback = { type: 'warn', title: '💡 Wczytano wzorcowe rozwiązanie', msg: 'Przeanalizuj kod, a następnie przełącz się na kolejny Wariant (1..5), aby napisać podobne zapytanie samodzielnie.' };
     render();
   }
   else if (act === 'submitDiag') {
     var dq = DIAG_QUESTIONS[state.diagIdx];
-    lastExecResult = runQuery(state.editorCode);
-    var dExp = runQuery(dq.sol);
+    lastExecResult = await runQuery(state.editorCode);
+    var dExp = await runQuery(dq.sol);
     var dCmp = compareResults(lastExecResult, dExp, dq.order);
     if (dCmp.ok) {
       state.diagScore++;
@@ -2028,8 +1883,8 @@ document.addEventListener('click', async function(e) {
   }
   else if (act === 'checkLemurTask') {
     var lt = LEMUR_TASKS.find(function(x) { return x.id === state.activeLemurId; }) || LEMUR_TASKS[0];
-    lastExecResult = runQuery(state.editorCode);
-    var lExp = runQuery(lt.sol);
+    lastExecResult = await runQuery(state.editorCode);
+    var lExp = await runQuery(lt.sol);
     var lCmp = compareResults(lastExecResult, lExp, false);
     if (lCmp.ok) {
       if (!state.completedLemur[lt.id]) {
@@ -2052,7 +1907,7 @@ document.addEventListener('click', async function(e) {
   else if (act === 'showLemurSol') {
     var lt2 = LEMUR_TASKS.find(function(x) { return x.id === state.activeLemurId; }) || LEMUR_TASKS[0];
     state.editorCode = lt2.sol;
-    lastExecResult = runQuery(lt2.sol);
+    lastExecResult = await runQuery(lt2.sol);
     lastFeedback = { type: 'warn', title: '💡 Wzorcowe rozwiązanie (' + lt2.company + ')', msg: lt2.gapHint };
     render();
   }
@@ -2073,15 +1928,15 @@ document.addEventListener('click', async function(e) {
   else if (act === 'previewTable') {
     var tbl = el.dataset.table;
     state.editorCode = 'SELECT * FROM ' + tbl + ' LIMIT 10;';
-    lastExecResult = runQuery(state.editorCode);
+    lastExecResult = await runQuery(state.editorCode);
     lastFeedback = null;
     render();
     window.scrollTo(0, 0);
   }
   else if (act === 'loadPgTest') {
-    state.editorCode = "-- Test 5 konstrukcji PostgreSQL (::numeric, ILIKE, DATE_TRUNC, INTERVAL, generate_series):\nSELECT\n  d AS dzien_kalendarza,\n  DATE_TRUNC('month', d) AS miesiac,\n  d + INTERVAL '7 days' AS tydzien_pozniej,\n  COUNT(r.rental_id) FILTER (WHERE r.return_date IS NOT NULL) AS zwrocone,\n  (COUNT(r.rental_id)::numeric / 2)::numeric AS test_numeric\nFROM generate_series('2026-05-01'::date, '2026-05-05'::date, '1 day') d\nLEFT JOIN rental r ON r.rental_date ILIKE d\nGROUP BY d\nORDER BY d;";
-    lastExecResult = runQuery(state.editorCode);
-    lastFeedback = { type: 'ok', title: '⚡ Test składni PostgreSQL wykonany!', msg: 'Wszystkie konstrukcje (::numeric, ::date, ILIKE, DATE_TRUNC, FILTER, INTERVAL oraz generate_series) zadziałały poprawnie.' };
+    state.editorCode = "-- Natywny silnik PostgreSQL 16 (PGlite WASM):\nSELECT\n  d::date AS dzien_kalendarza,\n  DATE_TRUNC('month', d)::date AS miesiac,\n  (d + INTERVAL '7 days')::date AS tydzien_pozniej,\n  COUNT(r.rental_id) FILTER (WHERE r.return_date IS NOT NULL) AS zwrocone,\n  ROUND((COUNT(r.rental_id)::numeric / 2)::numeric, 2) AS test_numeric\nFROM generate_series('2026-05-01'::date, '2026-05-05'::date, '1 day') AS d\nLEFT JOIN rental r ON r.rental_date = d::date\nGROUP BY d\nORDER BY d;";
+    lastExecResult = await runQuery(state.editorCode);
+    lastFeedback = { type: 'ok', title: '⚡ Natywny PostgreSQL 16 (PGlite) działa!', msg: 'Zapytanie wykonało się na prawdziwym silniku PostgreSQL WASM (bez żadnych sztucznych regexów ani konwersji do SQLite).' };
     saveState();
     render();
   }
