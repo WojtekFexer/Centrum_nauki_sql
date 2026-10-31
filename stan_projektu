@@ -34,11 +34,11 @@ Do sprawdzenia w prototypie (Twoje testy w VS Code + Live Server)
 
 [x] TEST 4 (Tryb Offline): Działanie wykonywania zapytań SQL po załadowaniu silnika WASM.
 
-[ ] TEST 3 (Natywny PostgreSQL PGlite w Sandboxie): Wejdź w Baza dvdrental, kliknij przycisk ⚡ Wklej test składni PG (lub wklej zapytanie z test3.sql) i sprawdź, czy natywny silnik PostgreSQL 16 zwraca tabelę 5 wierszy.
+[x] TEST 3 (Natywny PostgreSQL PGlite w Sandboxie): Wejdź w Baza dvdrental, kliknij przycisk ⚡ Wklej test składni PG (lub wklej zapytanie z test3.sql) i sprawdź, czy natywny silnik PostgreSQL 16 zwraca tabelę 5 wierszy.
 
-[ ] TEST 5 (Poprawne pisanie wieloliniowego SELECT jak w DBeaverze): Wpisz SELECT w osobnej linii, a pod spodem title,, rental_rate (jak na Twoim zrzucie ekranu). Upewnij się, że aplikacja NIE wymaga przecinka po SELECT, a jednocześnie zwraca uwagę na literówkę 'PG13' vs 'PG-13'.
+[x] TEST 5 (Poprawne pisanie wieloliniowego SELECT jak w DBeaverze): Wpisz SELECT w osobnej linii, a pod spodem title,, rental_rate (jak na Twoim zrzucie ekranu). Upewnij się, że aplikacja NIE wymaga przecinka po SELECT, a jednocześnie zwraca uwagę na literówkę 'PG13' vs 'PG-13'.
 
-[ ] TEST 6 (Wskazywanie linii błędu z parsera PostgreSQL + brak przecinka między kolumnami):
+[x] TEST 6 (Wskazywanie linii błędu z parsera PostgreSQL + brak przecinka między kolumnami):
 
 Wpisz w SELECT pod sobą rating (bez przecinka) i length — sprawdź, czy wskaże brak przecinka w linii z rating.
 
