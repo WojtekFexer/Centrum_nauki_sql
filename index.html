@@ -202,11 +202,15 @@ code.inline {
   padding: 12px 14px; border-radius: 12px; background: var(--surface-2); border: 1px solid var(--line);
   cursor: pointer; text-align: left; width: 100%; color: var(--ink);
   transition: border-color .15s, transform .1s;
+  overflow: hidden;
 }
+.node-item > div:first-child { flex: 1; min-width: 0; }
+.node-item > .chip { flex-shrink: 0; }
 .node-item:hover { border-color: var(--accent); }
 .node-item:active { transform: scale(.99); }
 .node-title { font-weight: 600; font-size: 14px; display: block; margin-bottom: 2px; }
 .node-meta { font-size: 12px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.schema-cols { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
 
 /* Prompt Box inside Workspace */
 .prompt-box {
@@ -228,14 +232,31 @@ details.helper-fold summary {
 details.helper-fold summary::-webkit-details-marker { display: none; }
 details.helper-fold summary::after { content: "▼"; font-size: 10px; color: var(--muted); }
 details.helper-fold[open] summary::after { content: "▲"; }
+.helper-col-btn {
+  font: 500 12px var(--mono); background: var(--surface); color: var(--al);
+  padding: 3px 8px; border-radius: 6px; border: 1px solid var(--line);
+  cursor: pointer; display: inline-flex; align-items: center; transition: all .12s ease;
+}
+.helper-col-btn:hover { border-color: var(--accent); background: var(--accent); color: #fff; }
+.helper-col-btn:active { transform: scale(.95); }
+.helper-tbl-btn {
+  font: 700 12.5px var(--mono); background: transparent; color: var(--kw);
+  padding: 2px 6px; border-radius: 6px; border: 1px dashed var(--line);
+  cursor: pointer;
+}
+.helper-tbl-btn:hover { border-color: var(--kw); background: rgba(122, 168, 255, 0.12); }
 
-/* Mobile SQL Quick-Bar */
+/* Mobile SQL Quick-Bar (with visible horizontal scrollbar) */
 .quickbar-label { font-size: 11px; color: var(--muted); margin: 6px 0 2px; display: block; }
 .quickbar {
-  display: flex; gap: 6px; overflow-x: auto; padding: 4px 2px 6px;
-  scrollbar-width: none; -webkit-overflow-scrolling: touch;
+  display: flex; gap: 6px; overflow-x: auto; padding: 4px 2px 8px;
+  scrollbar-width: thin; scrollbar-color: var(--accent) var(--surface-2);
+  -webkit-overflow-scrolling: touch;
 }
-.quickbar::-webkit-scrollbar { display: none; }
+.quickbar::-webkit-scrollbar { height: 6px; display: block; }
+.quickbar::-webkit-scrollbar-track { background: var(--surface-2); border-radius: 99px; }
+.quickbar::-webkit-scrollbar-thumb { background: var(--line); border-radius: 99px; }
+.quickbar::-webkit-scrollbar-thumb:hover { background: var(--accent); }
 .qbtn {
   flex: none; font: 600 12px var(--mono); padding: 6px 10px;
   border-radius: 8px; background: var(--surface-2); color: var(--kw);
@@ -244,7 +265,7 @@ details.helper-fold[open] summary::after { content: "▲"; }
 .qbtn.col { color: var(--al); background: rgba(240, 164, 93, 0.08); }
 .qbtn:active { background: var(--accent); color: #fff; }
 
-/* Dual-layer SQL Editor (iOS Safe) */
+/* Dual-layer SQL Editor (iOS Safe + Vertical Line Numbers + Error Line Highlight) */
 .ed {
   display: flex; border: 1px solid var(--line); border-radius: 12px;
   background: var(--code-bg); overflow: hidden; margin-top: 4px;
@@ -254,10 +275,12 @@ details.helper-fold[open] summary::after { content: "▲"; }
   font: 13.5px/1.6 var(--mono); letter-spacing: 0; word-spacing: 0;
 }
 #sqlgut {
-  padding: 12px 8px; text-align: right; color: var(--muted);
-  user-select: none; border-right: 1px solid var(--line); min-width: 2.5em;
-  background: rgba(255,255,255,0.02);
+  padding: 12px 6px; text-align: right; color: var(--muted);
+  user-select: none; border-right: 1px solid var(--line); min-width: 2.8em;
+  background: rgba(255,255,255,0.02); white-space: pre; overflow: hidden;
 }
+#sqlgut .ln { display: block; padding: 0 4px; border-radius: 4px; }
+#sqlgut .ln.err { background: var(--open); color: #fff; font-weight: 700; }
 .edwrap { position: relative; flex: 1; min-width: 0; }
 #sqlhl, #answer { margin: 0; padding: 12px; border: 0; white-space: pre; tab-size: 2; }
 #sqlhl { position: absolute; inset: 0; overflow: hidden; pointer-events: none; color: var(--ink); }
@@ -561,25 +584,51 @@ var SCHEMA_META = [
    ========================================================================== */
 function pgToSqlite(sql) {
   var s = String(sql || '').trim();
+  var ctePrefix = '';
 
-  // 1. Obsługa generate_series dla dat: generate_series('2026-05-01'::date, '2026-05-07'::date, '1 day') [AS] alias
-  s = s.replace(/generate_series\s*\(\s*'([^']+)'(?:\s*::\s*\w+)?\s*,\s*'([^']+)'(?:\s*::\s*\w+)?\s*,\s*'1\s+day'\s*\)(?:\s+AS)?\s+([a-zA-Z_]\w*)/gi,
-    "(WITH RECURSIVE _gs($3) AS (SELECT '$1' UNION ALL SELECT date($3, '+1 day') FROM _gs WHERE $3 < '$2') SELECT $3 FROM _gs) AS $3");
+  // 1. Obsługa generate_series dla dat -> bezpieczne CTE _gs_cal na początku zapytania
+  var gsDateRe = /generate_series\s*\(\s*'([^']+)'(?:\s*::\s*\w+)?\s*,\s*'([^']+)'(?:\s*::\s*\w+)?\s*,\s*'1\s+day'\s*\)(?:\s+AS)?\s+([a-zA-Z_]\w*)/i;
+  var mDate = gsDateRe.exec(s);
+  if (mDate) {
+    var dStart = mDate[1], dEnd = mDate[2], alias = mDate[3];
+    ctePrefix = "WITH RECURSIVE _gs_cal(" + alias + ") AS (SELECT '" + dStart + "' UNION ALL SELECT date(" + alias + ", '+1 day') FROM _gs_cal WHERE " + alias + " < '" + dEnd + "') ";
+    s = s.replace(gsDateRe, "_gs_cal");
+  }
 
-  // 2. Obsługa generate_series dla liczb: generate_series(1, 10) [AS] alias
-  s = s.replace(/generate_series\s*\(\s*(\d+)\s*,\s*(\d+)\s*\)(?:\s+AS)?\s+([a-zA-Z_]\w*)/gi,
-    "(WITH RECURSIVE _gs($3) AS (SELECT $1 UNION ALL SELECT $3 + 1 FROM _gs WHERE $3 < $2) SELECT $3 FROM _gs) AS $3");
+  // 2. Obsługa generate_series dla liczb -> bezpieczne CTE _gs_num
+  var gsNumRe = /generate_series\s*\(\s*(\d+)\s*,\s*(\d+)\s*\)(?:\s+AS)?\s+([a-zA-Z_]\w*)/i;
+  var mNum = gsNumRe.exec(s);
+  if (mNum) {
+    var nStart = mNum[1], nEnd = mNum[2], nAlias = mNum[3];
+    ctePrefix = "WITH RECURSIVE _gs_num(" + nAlias + ") AS (SELECT " + nStart + " UNION ALL SELECT " + nAlias + " + 1 FROM _gs_num WHERE " + nAlias + " < " + nEnd + ") ";
+    s = s.replace(gsNumRe, "_gs_num");
+  }
+
+  if (ctePrefix) {
+    if (/^\s*WITH\b/i.test(s)) {
+      s = s.replace(/^\s*WITH\s+(?:RECURSIVE\s+)?/i, ctePrefix + ", ");
+    } else {
+      s = ctePrefix + s;
+    }
+  }
 
   // 3. Rzutowania na literałach stringowych: '2026-05-01'::date -> '2026-05-01'
   s = s.replace(/'([^']*)'\s*::\s*(date|text|varchar|timestamp)/gi, "'$1'");
   s = s.replace(/'([^']*)'\s*::\s*(numeric|decimal|float|real)/gi, "CAST('$1' AS REAL)");
   s = s.replace(/'([^']*)'\s*::\s*(int|integer|bigint)/gi, "CAST('$1' AS INTEGER)");
 
-  // 4. Rzutowania na wyrażeniach i kolumnach: col::numeric, (a/b)::numeric, d::date
-  s = s.replace(/([a-zA-Z0-9_.)]+)\s*::\s*(numeric|decimal|float|real)/gi, 'CAST($1 AS REAL)');
-  s = s.replace(/([a-zA-Z0-9_.)]+)\s*::\s*(int|integer|bigint)/gi, 'CAST($1 AS INTEGER)');
-  s = s.replace(/([a-zA-Z0-9_.)]+)\s*::\s*(text|varchar)/gi, 'CAST($1 AS TEXT)');
-  s = s.replace(/([a-zA-Z0-9_.)]+)\s*::\s*(date|timestamp)/gi, '$1');
+  // 4. Wielokrotne rzutowania na nawiasach i kolumnach, np. (COUNT(r.rental_id)::numeric / 2)::numeric
+  for (var pass = 0; pass < 3; pass++) {
+    s = s.replace(/\(([^()]+)\)\s*::\s*(numeric|decimal|float|real)/gi, 'CAST(($1) AS REAL)');
+    s = s.replace(/\(([^()]+)\)\s*::\s*(int|integer|bigint)/gi, 'CAST(($1) AS INTEGER)');
+    s = s.replace(/\(([^()]+)\)\s*::\s*(text|varchar)/gi, 'CAST(($1) AS TEXT)');
+    s = s.replace(/\(([^()]+)\)\s*::\s*(date|timestamp)/gi, '($1)');
+
+    s = s.replace(/([a-zA-Z0-9_.]+(?:\([^()]*\))?)\s*::\s*(numeric|decimal|float|real)/gi, 'CAST($1 AS REAL)');
+    s = s.replace(/([a-zA-Z0-9_.]+(?:\([^()]*\))?)\s*::\s*(int|integer|bigint)/gi, 'CAST($1 AS INTEGER)');
+    s = s.replace(/([a-zA-Z0-9_.]+(?:\([^()]*\))?)\s*::\s*(text|varchar)/gi, 'CAST($1 AS TEXT)');
+    s = s.replace(/([a-zA-Z0-9_.]+(?:\([^()]*\))?)\s*::\s*(date|timestamp)/gi, '$1');
+  }
 
   // 5. ILIKE -> LIKE
   s = s.replace(/\bILIKE\b/gi, 'LIKE');
@@ -594,6 +643,43 @@ function pgToSqlite(sql) {
   s = s.replace(/([a-zA-Z0-9_.'()]+)\s*-\s*INTERVAL\s*'([+-]?\d+\s+\w+)'/gi, "date($1, '-$2')");
 
   return s;
+}
+
+// Funkcja wyliczająca dokładną linię błędu SQL w edytorze
+function locateErrorLine(rawSql, errMsg) {
+  var lines = String(rawSql || '').split('\n');
+  var msg = String(errMsg || '');
+
+  // 1. Sprawdzenie niezamkniętych nawiasów
+  var depth = 0, lastOpenLine = 1;
+  for (var i = 0; i < lines.length; i++) {
+    var lineClean = lines[i].replace(/--.*$/, '');
+    for (var c = 0; c < lineClean.length; c++) {
+      if (lineClean[c] === '(') { if (depth === 0) lastOpenLine = i + 1; depth++; }
+      else if (lineClean[c] === ')') {
+        depth--;
+        if (depth < 0) return i + 1;
+      }
+    }
+  }
+  if (depth > 0) return lastOpenLine;
+
+  // 2. Dopasowanie tokenu z komunikatu SQLite: near "X": syntax error lub no such column: X
+  var nearMatch = /near\s+"([^"]+)"/i.exec(msg) || /column:\s*([a-zA-Z0-9_.]+)/i.exec(msg) || /table:\s*([a-zA-Z0-9_.]+)/i.exec(msg);
+  if (nearMatch && nearMatch[1]) {
+    var tok = nearMatch[1].trim();
+    for (var j = 0; j < lines.length; j++) {
+      if (lines[j].indexOf(tok) > -1) return j + 1;
+    }
+  }
+
+  // 3. Sprawdzenie przecinka wiszącego przed FROM / WHERE / GROUP BY
+  for (var k = 1; k < lines.length; k++) {
+    if (/^\s*(FROM|WHERE|GROUP|ORDER|LIMIT|HAVING)\b/i.test(lines[k]) && /,\s*(--.*)?$/.test(lines[k - 1])) {
+      return k;
+    }
+  }
+  return 1;
 }
 
 async function initDatabase() {
@@ -615,19 +701,30 @@ async function initDatabase() {
 
 function runQuery(sql) {
   if (!dbReady || !db) return { error: 'Silnik bazy danych jeszcze się ładuje.' };
-  var clean = pgToSqlite(sql);
-  if (!clean) return { error: 'Wpisz zapytanie SQL.' };
+  var raw = String(sql || '').trim();
+  if (!raw) return { error: 'Wpisz zapytanie SQL.', errorLine: 1 };
+  var clean = pgToSqlite(raw);
   try {
     var res = db.exec(clean);
     if (!res || !res.length) return { columns: [], values: [] };
     return { columns: res[0].columns, values: res[0].values };
   } catch (e) {
-    return { error: e.message || String(e) };
+    var rawMsg = e.message || String(e);
+    var ln = locateErrorLine(raw, rawMsg);
+    var lineTxt = (raw.split('\n')[ln - 1] || '').trim();
+    return {
+      error: rawMsg,
+      errorLine: ln,
+      errorSnippet: lineTxt
+    };
   }
 }
 
 function compareResults(userRes, expRes, checkOrder) {
-  if (userRes.error) return { ok: false, reason: 'error', msg: 'Błąd wykonania SQL: ' + userRes.error };
+  if (userRes.error) {
+    var lnInfo = userRes.errorLine ? ' (Linia ' + userRes.errorLine + (userRes.errorSnippet ? ': `' + userRes.errorSnippet + '`' : '') + ')' : '';
+    return { ok: false, reason: 'error', msg: 'Błąd wykonania SQL' + lnInfo + ': ' + userRes.error };
+  }
   var uRows = userRes.values || [], eRows = expRes.values || [];
   var uCols = userRes.columns || [], eCols = expRes.columns || [];
 
@@ -1141,9 +1238,12 @@ function sqlUpdate() {
   var code = document.getElementById('answer');
   if (!code) return;
   var gut = document.getElementById('sqlgut'), hl = document.getElementById('sqlhl');
-  var t = code.value, n = t.split('\n').length, s = '';
-  for (var i = 1; i <= n; i++) s += i + (i < n ? '\n' : '');
-  gut.textContent = s;
+  var t = code.value, n = t.split('\n').length, gHtml = '';
+  var errLn = (lastExecResult && lastExecResult.errorLine) ? lastExecResult.errorLine : 0;
+  for (var i = 1; i <= n; i++) {
+    gHtml += '<span class="ln' + (i === errLn ? ' err' : '') + '">' + i + '</span>';
+  }
+  gut.innerHTML = gHtml;
   code.style.height = 'auto';
   code.style.height = Math.max(130, code.scrollHeight + 4) + 'px';
 
@@ -1166,6 +1266,7 @@ function sqlUpdate() {
   hl.innerHTML = out;
   hl.scrollTop = code.scrollTop;
   hl.scrollLeft = code.scrollLeft;
+  gut.scrollTop = code.scrollTop;
 }
 
 function insertAtCursor(snippet) {
@@ -1179,6 +1280,7 @@ function insertAtCursor(snippet) {
   ta.focus();
   ta.setSelectionRange(pos, pos);
   state.editorCode = ta.value;
+  if (lastExecResult && lastExecResult.errorLine) lastExecResult.errorLine = 0;
   sqlUpdate();
   saveState();
 }
@@ -1187,13 +1289,17 @@ function renderTablesHelper(tableNames) {
   if (!tableNames || !tableNames.length) return '';
   var metas = SCHEMA_META.filter(function(m) { return tableNames.indexOf(m.table) > -1; });
   if (!metas.length) return '';
-  return '<details class="helper-fold">' +
-    '<summary>👁 Podejrzyj kolumny tabel w tym zadaniu (' + metas.map(function(m){return m.table;}).join(', ') + ')</summary>' +
-    '<div style="margin-top:8px;display:flex;flex-direction:column;gap:6px">' +
+  return '<details class="helper-fold" open>' +
+    '<summary>👁 Podejrzyj i kliknij kolumny tabel w tym zadaniu (' + metas.map(function(m){return m.table;}).join(', ') + ')</summary>' +
+    '<p class="small muted" style="margin:6px 0 8px">💡 Kliknij dowolną nazwę tabeli lub kolumny poniżej, aby od razu wstawić ją do swojego kodu SQL:</p>' +
+    '<div style="display:flex;flex-direction:column;gap:8px">' +
       metas.map(function(m) {
-        return '<div><strong>📦 ' + esc(m.table) + ':</strong> ' +
-          m.cols.map(function(c) { return '<code class="inline" style="margin-right:4px">' + esc(c) + '</code>'; }).join(' ') +
-          ' <button type="button" class="btn sm" style="min-height:24px;padding:2px 8px;font-size:11px" data-act="peekTable" data-table="' + esc(m.table) + '">Podgląd 5 wierszy</button>' +
+        return '<div style="display:flex;flex-wrap:wrap;align-items:center;gap:5px">' +
+          '<button type="button" class="helper-tbl-btn" data-act="ins" data-val="' + esc(m.table) + '" title="Wstaw nazwę tabeli ' + esc(m.table) + '">📦 ' + esc(m.table) + '</button>' +
+          m.cols.map(function(c) {
+            return '<button type="button" class="helper-col-btn" data-act="ins" data-val="' + esc(c) + '" title="Wstaw kolumnę ' + esc(c) + '">' + esc(c) + '</button>';
+          }).join('') +
+          '<button type="button" class="btn sm" style="min-height:24px;padding:2px 8px;font-size:11px;margin-left:auto" data-act="peekTable" data-table="' + esc(m.table) + '">Podgląd 5 wierszy</button>' +
         '</div>';
       }).join('') +
     '</div>' +
@@ -1201,19 +1307,19 @@ function renderTablesHelper(tableNames) {
 }
 
 function renderEditorWidget(extraCols, actionType) {
-  var kwPills = ['SELECT', 'FROM', 'WHERE', 'JOIN', 'LEFT JOIN', 'ON', 'GROUP BY', 'HAVING', 'ORDER BY', 'COUNT(*)', 'SUM(', 'CASE WHEN', 'WITH', "'", '=', '*', '100.0', '::numeric'];
+  var kwPills = ['SELECT', 'FROM', 'WHERE', 'JOIN', 'LEFT JOIN', 'ON', 'GROUP BY', 'HAVING', 'ORDER BY', 'LIMIT', 'COUNT(*)', 'SUM(', 'AVG(', 'CASE WHEN', 'THEN', 'ELSE', 'END', 'WITH', 'OVER (PARTITION BY', 'ROW_NUMBER()', 'DENSE_RANK()', 'LAG(', "'", '=', '*', '100.0', '::numeric', 'ILIKE', 'IS NULL', 'IS NOT NULL'];
   var colPills = extraCols || ['film', 'customer', 'rental', 'payment', 'title', 'customer_id', 'amount'];
   return '' +
-    '<span class="quickbar-label">Dotknij, aby wstawić tabelę lub kolumnę:</span>' +
+    '<span class="quickbar-label">Dotknij lub przewiń suwakiem ↔, aby wstawić tabelę lub kolumnę:</span>' +
     '<div class="quickbar">' +
       colPills.map(function(c) { return '<button type="button" class="qbtn col" data-act="ins" data-val="' + esc(c) + '">' + esc(c) + '</button>'; }).join('') +
     '</div>' +
-    '<span class="quickbar-label">Słowa kluczowe i operatory SQL:</span>' +
+    '<span class="quickbar-label">Słowa kluczowe i operatory SQL (przewiń w bok ↔):</span>' +
     '<div class="quickbar">' +
       kwPills.map(function(k) { return '<button type="button" class="qbtn" data-act="ins" data-val="' + esc(k) + '">' + esc(k) + '</button>'; }).join('') +
     '</div>' +
     '<div class="ed">' +
-      '<div id="sqlgut" aria-hidden="true">1</div>' +
+      '<div id="sqlgut" aria-hidden="true"><span class="ln">1</span></div>' +
       '<div class="edwrap">' +
         '<pre id="sqlhl" aria-hidden="true"></pre>' +
         '<textarea id="answer" wrap="off" spellcheck="false" autocomplete="off" autocorrect="off" autocapitalize="off" placeholder="Wpisz zapytanie SQL...">' + esc(state.editorCode) + '</textarea>' +
@@ -1237,7 +1343,9 @@ function renderResultBox() {
   }
   if (lastExecResult) {
     if (lastExecResult.error) {
-      h += '<div class="fb-box trap"><strong>Błąd SQL:</strong> <span class="small">' + esc(lastExecResult.error) + '</span></div>';
+      var lnBadge = lastExecResult.errorLine ? ' w linii ' + lastExecResult.errorLine : '';
+      var snippetHtml = lastExecResult.errorSnippet ? '<div style="margin-top:6px;padding:6px 10px;background:rgba(0,0,0,0.25);border-radius:6px;font-family:var(--mono);font-size:12px">Linia ' + lastExecResult.errorLine + ': <code>' + esc(lastExecResult.errorSnippet) + '</code></div>' : '';
+      h += '<div class="fb-box trap"><strong>⚠️ Błąd SQL' + esc(lnBadge) + ':</strong> <span class="small">' + esc(lastExecResult.error) + '</span>' + snippetHtml + '</div>';
     } else if (lastExecResult.columns && lastExecResult.columns.length) {
       h += '<p class="small muted" style="margin:10px 0 4px">Wynik zapytania (' + lastExecResult.values.length + ' wierszy):</p>' +
         '<div class="tblwrap"><table><thead><tr>' +
@@ -1480,13 +1588,13 @@ function renderSchemaTab() {
 
   h += '<div class="card">' +
     '<h2>Schemat bazy danych dvdrental (10 tabel)</h2>' +
-    '<p class="small muted">Dotknij dowolnej tabeli poniżej, aby natychmiast wyświetlić jej zawartość w edytorze powyżej.</p>' +
+    '<p class="small muted">Dotknij karty tabeli, aby wyświetlić jej wiersze (<code>SELECT *</code>), lub kliknij pojedynczą nazwę kolumny, aby wstawić ją do edytora powyżej.</p>' +
     '<div class="node-list">';
   SCHEMA_META.forEach(function(m) {
     h += '<div class="node-item" data-act="previewTable" data-table="' + m.table + '">' +
       '<div><span class="node-title">📦 ' + esc(m.table) + '</span>' +
       '<span class="node-meta">' + esc(m.desc) + '</span>' +
-      '<div style="margin-top:5px">' + m.cols.map(function(c) { return '<code class="inline" style="margin-right:4px">' + esc(c) + '</code>'; }).join('') + '</div></div>' +
+      '<div class="schema-cols">' + m.cols.map(function(c) { return '<button type="button" class="helper-col-btn" data-act="ins" data-val="' + esc(c) + '">' + esc(c) + '</button>'; }).join('') + '</div></div>' +
       '<span class="chip info">SELECT *</span>' +
     '</div>';
   });
@@ -1560,6 +1668,7 @@ function render() {
 document.addEventListener('input', function(e) {
   if (e.target.id === 'answer') {
     state.editorCode = e.target.value;
+    if (lastExecResult && lastExecResult.errorLine) lastExecResult.errorLine = 0;
     sqlUpdate();
     saveState();
   }
