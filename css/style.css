@@ -234,6 +234,26 @@ details.helper-fold[open] summary::after { content: "▲"; }
   cursor: pointer;
 }
 .helper-tbl-btn:hover { border-color: var(--kw); background: rgba(122, 168, 255, 0.12); }
+.helper-col-btn.col-key-chip {
+  border-color: var(--mid);
+  background: var(--mid-soft);
+  color: var(--mid);
+  font-weight: 600;
+}
+.helper-col-btn.col-key-chip:hover {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+.join-keys-banner {
+  margin-top: 8px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: var(--mid-soft);
+  border: 1px solid var(--mid);
+  color: var(--ink);
+  font-size: 12px;
+}
 
 /* Mobile SQL Quick-Bar (with visible horizontal scrollbar) */
 .quickbar-label { font-size: 11px; color: var(--muted); margin: 6px 0 2px; display: block; }

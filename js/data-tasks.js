@@ -52,7 +52,7 @@ var PATH_TASKS = [
     cols: ['COUNT(*)', 'COUNT(return_date)', 'COUNT(DISTINCT', 'rental', 'return_date', 'customer_id', 'film'],
     gapId: 'g3',
     variants: [
-      { prompt: 'W tabeli `rental` część filmów nie ma daty zwrotu (`return_date` jest `NULL`). Zwróć w jednym wierszu 3 kolumny: liczbę wszystkich wypożyczeń (`COUNT(*)`), liczbę zwróconych (`COUNT(return_date)`) oraz niezwróconych (`COUNT(*) - COUNT(return_date)`).', sol: "SELECT COUNT(*) AS all_rentals, COUNT(return_date) AS ret_cnt FROM rental;", order: false },
+      { prompt: 'W tabeli `rental` część filmów nie ma daty zwrotu (`return_date` jest `NULL`). Zwróć w jednym wierszu 3 kolumny: liczbę wszystkich wypożyczeń (`COUNT(*)`), liczbę zwróconych (`COUNT(return_date)`) oraz niezwróconych (`COUNT(*) - COUNT(return_date)`).', sol: "SELECT COUNT(*) AS all_rentals, COUNT(return_date) AS returned_rentals, COUNT(*) - COUNT(return_date) AS unreturned FROM rental;", order: false },
       { prompt: 'Dla każdego pracownika (`staff_id`) w tabeli `rental` policz: łączną liczbę wypożyczeń (`COUNT(*)`) oraz liczbę wypożyczeń już zwróconych (`COUNT(return_date)`).', sol: "SELECT staff_id, COUNT(*) AS total_cnt, COUNT(return_date) AS returned_cnt FROM rental GROUP BY staff_id;", order: false },
       { prompt: 'Z tabeli `rental` zwróć w jednym wierszu: liczbę wszystkich wypożyczeń (`COUNT(*)`), liczbę unikalnych klientów mających wypożyczenia (`COUNT(DISTINCT customer_id)`) oraz liczbę unikalnych wypożyczonych filmów (`COUNT(DISTINCT film_id)`).', sol: "SELECT COUNT(*) AS total_rows, COUNT(DISTINCT customer_id) AS uniq_customers, COUNT(DISTINCT film_id) AS uniq_films FROM rental;", order: false },
       { prompt: 'Z tabeli `film` policz dla każdego `rating`: liczbę filmów (`COUNT(*)`) oraz liczbę unikalnych stawek cenowych (`COUNT(DISTINCT rental_rate)`).', sol: "SELECT rating, COUNT(*) AS films_cnt, COUNT(DISTINCT rental_rate) AS rates_cnt FROM film GROUP BY rating;", order: false },
@@ -193,11 +193,15 @@ var LEMUR_TASKS = [
     prompt: 'Zarząd chce listę WSZYSTKICH klientów z tabeli `customer` należących do sklepu `store_id = 1` wraz z liczbą ich wypożyczeń w czerwcu 2026 (`r.rental_date >= \'2026-06-01\' AND r.rental_date < \'2026-07-01\'` lub `r.rental_date::text LIKE \'2026-06%\'`).\n\nJeśli klient ze sklepu 1 nie miał żadnego wypożyczenia w czerwcu, MUSI widnieć w wyniku z liczbą `0`.\nZwróć: `customer_id`, `first_name`, `june_rentals`.',
     sol: "SELECT c.customer_id, c.first_name, COUNT(r.rental_id) AS june_rentals FROM customer c LEFT JOIN rental r ON c.customer_id = r.customer_id AND r.rental_date >= '2026-06-01' AND r.rental_date < '2026-07-01' WHERE c.store_id = 1 GROUP BY c.customer_id, c.first_name;",
     detectTrap: function(sql) {
-      if (/LEFT\s+JOIN/i.test(sql) && /WHERE[\s\S]*RENTAL_DATE/i.test(sql)) {
+      var s = String(sql || '').replace(/--[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '');
+      if (/\bJOIN\b/i.test(s) && !/\bLEFT\s+(?:OUTER\s+)?JOIN\b/i.test(s)) {
+        return 'PUŁAPKA INNER JOIN: Użyłeś zwykłego JOIN zamiast LEFT JOIN, przez co klienci bez wypożyczeń zostali całkowicie pominięci!';
+      }
+      if (/\bWHERE\b[\s\S]*\brental_date\b/i.test(s)) {
         return 'PUŁAPKA DATALEMUR WYKRYTA: Użyłeś LEFT JOIN, ale filtr na `rental_date` dałeś w WHERE zamiast w ON! Przez to klienci bez wypożyczeń w czerwcu (mający NULL w rental_date) zostali wycięci.';
       }
-      if (/COUNT\s*\(\s*\*\s*\)/i.test(sql)) {
-        return 'PUŁAPKA COUNT(*): Przy LEFT JOIN użycie COUNT(*) policzy wiersz klienta jako 1 zamiast 0! Użyj COUNT(r.rental_id).';
+      if (/COUNT\s*\(\s*(\*|c\.)/i.test(s)) {
+        return 'PUŁAPKA COUNT(*): Przy LEFT JOIN użycie COUNT(*) lub COUNT(c.customer_id) policzy wiersz klienta jako 1 zamiast 0! Użyj COUNT(r.rental_id).';
       }
       return null;
     }
@@ -212,8 +216,10 @@ var LEMUR_TASKS = [
     prompt: 'Dla każdego pracownika (`staff_id`) w tabeli `rental` oblicz odsetek wypożyczeń, które NIE zostały jeszcze zwrócone (`return_date IS NULL`).\n\nZwróć: `staff_id` oraz `unreturned_pct` (jako dokładny procent zmiennoprzecinkowy).',
     sol: "SELECT staff_id, SUM(CASE WHEN return_date IS NULL THEN 1 ELSE 0 END) * 100.0 / COUNT(*) AS unreturned_pct FROM rental GROUP BY staff_id;",
     detectTrap: function(sql) {
-      if (/=\s*NULL/i.test(sql)) return 'PUŁAPKA SQL: Napisałeś `= NULL`. W SQL porównanie przez `=` z NULL daje UNKNOWN. Użyj `return_date IS NULL`.';
-      if (sql.indexOf('100.0') < 0 && !/numeric|float|real/i.test(sql)) return 'PUŁAPKA DZIELENIA CAŁKOWITEGO: Brakuje `* 100.0` lub `::numeric` przy dzieleniu liczby wierszy!';
+      var s = String(sql || '').replace(/--[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '');
+      if (/=\s*NULL\b/i.test(s)) return 'PUŁAPKA SQL: Napisałeś `= NULL`. W SQL porównanie przez `=` z NULL daje UNKNOWN. Użyj `return_date IS NULL`.';
+      if (/\//.test(s) && s.indexOf('100.0') < 0 && !/numeric|decimal|float|real/i.test(s)) return 'PUŁAPKA DZIELENIA CAŁKOWITEGO: Brakuje `* 100.0` lub `::numeric` przy dzieleniu liczby wierszy!';
+      if (/COUNT\s*\(\s*(\*|r\.)/i.test(s) && !/CASE\s+WHEN|FILTER/i.test(s)) return 'PUŁAPKA AGREGACJI: Aby policzyć tylko niezwrócone wypożyczenia w liczniku, użyj `SUM(CASE WHEN return_date IS NULL THEN 1 ELSE 0 END)` lub `COUNT(*) FILTER (WHERE return_date IS NULL)`.';
       return null;
     }
   },
@@ -227,7 +233,8 @@ var LEMUR_TASKS = [
     prompt: 'Dla filmów o `film_id` z listy `(1, 2, 6)` wypisz: `film_id`, `title`, liczbę przypisanych kategorii (`cat_cnt` z `film_category`) oraz liczbę przypisanych aktorów (`actor_cnt` z `film_actor`).\n\nUważaj na pomnożenie liczby kategorii przez liczbę aktorów!',
     sol: "SELECT f.film_id, f.title, COUNT(DISTINCT fc.category_id) AS cat_cnt, COUNT(DISTINCT fa.actor_id) AS actor_cnt FROM film f LEFT JOIN film_category fc ON f.film_id = fc.film_id LEFT JOIN film_actor fa ON f.film_id = fa.film_id WHERE f.film_id IN (1, 2, 6) GROUP BY f.film_id, f.title;",
     detectTrap: function(sql) {
-      if (!/DISTINCT/i.test(sql) && !/WITH/i.test(sql)) {
+      var s = String(sql || '').replace(/--[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '');
+      if (/film_category/i.test(s) && /film_actor/i.test(s) && /COUNT\s*\((?!\s*DISTINCT\b)/i.test(s) && !/\bWITH\b/i.test(s)) {
         return 'PUŁAPKA ZIARNA (Fan-out): Łączysz dwie tabele podrzędne naraz używając zwykłego COUNT() bez DISTINCT ani osobnych CTE! Przez to każda kategoria mnoży się przez każdego aktora.';
       }
       return null;
@@ -243,8 +250,9 @@ var LEMUR_TASKS = [
     prompt: 'W kategorii wiekowej `rating = \'PG\'` znajdź filmy mające 2 najwyższe wartości kosztu odtworzenia (`replacement_cost`). Jeśli dwa filmy mają ten sam koszt (np. `20.99`), oba mają się znaleźć na tym samym miejscu bez pomijania kolejnych numerów miejsc!\n\nZwróć: `title`, `replacement_cost`, `rnk` (dla miejsc `<= 2`).',
     sol: "WITH r AS (SELECT title, replacement_cost, DENSE_RANK() OVER (ORDER BY replacement_cost DESC) AS rnk FROM film WHERE rating = 'PG') SELECT title, replacement_cost, rnk FROM r WHERE rnk <= 2;",
     detectTrap: function(sql) {
-      if (/ROW_NUMBER/i.test(sql)) return 'PUŁAPKA REMISÓW: Użyłeś ROW_NUMBER(), który przy remisie `20.99` nadał różne numery wierszy zamiast tego samego miejsca!';
-      if (/\bRANK\s*\(/i.test(sql) && !/DENSE_RANK/i.test(sql)) return 'PUŁAPKA RANK(): Zwykły RANK() po remisie przeskakuje oczko numeracji (1, 2, 2, 4). Użyj DENSE_RANK().';
+      var s = String(sql || '').replace(/--[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '');
+      if (/\bROW_NUMBER\s*\(/i.test(s)) return 'PUŁAPKA REMISÓW: Użyłeś ROW_NUMBER(), który przy remisie `20.99` nadał różne numery wierszy zamiast tego samego miejsca!';
+      if (/\bRANK\s*\(/i.test(s) && !/\bDENSE_RANK\s*\(/i.test(s)) return 'PUŁAPKA RANK(): Zwykły RANK() po remisie przeskakuje oczko numeracji (1, 2, 2, 4). Użyj DENSE_RANK().';
       return null;
     }
   },
@@ -258,7 +266,10 @@ var LEMUR_TASKS = [
     prompt: 'Znajdź dokładnie TRZECIĄ chronologicznie płatność każdego klienta w tabeli `payment` (sortując po `payment_date ASC, payment_id ASC`).\n\nZwróć: `customer_id`, `payment_id`, `amount`, `payment_date`.',
     sol: "WITH r AS (SELECT customer_id, payment_id, amount, payment_date, ROW_NUMBER() OVER (PARTITION BY customer_id ORDER BY payment_date ASC, payment_id ASC) AS rn FROM payment) SELECT customer_id, payment_id, amount, payment_date FROM r WHERE rn = 3;",
     detectTrap: function(sql) {
-      if (!/WITH/i.test(sql) && !/FROM\s*\(\s*SELECT/i.test(sql)) return 'PUŁAPKA KOLEJNOŚCI SQL: Próbujesz filtrować wynik funkcji okna bez CTE lub podzapytania!';
+      var s = String(sql || '').replace(/--[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '');
+      if (/\bWHERE\b[\s\S]*\b(?:ROW_NUMBER|RANK|DENSE_RANK|OVER)\s*\(/i.test(s) || (/\bOVER\s*\(/i.test(s) && !/\bWITH\b/i.test(s) && !/\bFROM\s*\(\s*SELECT\b/i.test(s))) {
+        return 'PUŁAPKA KOLEJNOŚCI SQL: Próbujesz filtrować wynik funkcji okna bez CTE lub podzapytania!';
+      }
       return null;
     }
   },
@@ -272,7 +283,8 @@ var LEMUR_TASKS = [
     prompt: 'W tabeli `rental` kolumna `return_date` zawiera wartości `NULL`. Ktoś próbował znaleźć wypożyczenia, których data wypożyczenia (`rental_date`) NIE pokrywa się z żadną datą zwrotu (`return_date`) w bazie, pisząc:\n`SELECT rental_id, rental_date FROM rental WHERE rental_date NOT IN (SELECT return_date FROM rental);`\nAle zapytanie zwróciło 0 wierszy przez `NULL` w `return_date`!\n\nNapisz poprawne zapytanie zwracające `rental_id` oraz `rental_date` dla wypożyczeń, których `rental_date` nie występuje wśród niepustych wartości `return_date`.',
     sol: "SELECT rental_id, rental_date FROM rental WHERE rental_date NOT IN (SELECT return_date FROM rental WHERE return_date IS NOT NULL);",
     detectTrap: function(sql, userRes) {
-      if (/NOT\s+IN/i.test(sql) && !/IS\s+NOT\s+NULL/i.test(sql) && userRes && userRes.values && userRes.values.length === 0) {
+      var s = String(sql || '').replace(/--[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '');
+      if (/\bNOT\s+IN\s*\(\s*SELECT\b/i.test(s) && !/\bIS\s+NOT\s+NULL\b/i.test(s)) {
         return 'PUŁAPKA NOT IN + NULL: Twoje podzapytanie w NOT IN zwraca NULL-e! W logice trójwartościowej SQL `x NOT IN (..., NULL)` zawsze daje UNKNOWN i zwraca 0 wierszy.';
       }
       return null;
@@ -288,7 +300,10 @@ var LEMUR_TASKS = [
     prompt: 'Policz przychód miesięczny w tabeli `payment` (`DATE_TRUNC(\'month\', payment_date)::date AS m`) oraz kwotę zmiany przychodu względem poprzedniego miesiąca (`rev - LAG(rev) OVER (ORDER BY m)`).\n\nZwróć: `m`, `rev`, `diff_from_prev`.',
     sol: "WITH m_rev AS (SELECT DATE_TRUNC('month', payment_date)::date AS m, SUM(amount) AS rev FROM payment GROUP BY 1) SELECT m, rev, rev - LAG(rev) OVER (ORDER BY m) AS diff_from_prev FROM m_rev ORDER BY m;",
     detectTrap: function(sql) {
-      if (!/GROUP\s+BY/i.test(sql)) return 'PUŁAPKA ZIARNA OKNA: Używasz LAG() na surowych wierszach płatności zamiast najpierw zagregować przychód do poziomu miesiąca!';
+      var s = String(sql || '').replace(/--[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '');
+      if (/\bLAG\s*\(/i.test(s) && !/\bGROUP\s+BY\b/i.test(s)) {
+        return 'PUŁAPKA ZIARNA OKNA: Używasz LAG() na surowych wierszach płatności zamiast najpierw zagregować przychód do poziomu miesiąca!';
+      }
       return null;
     }
   },
@@ -302,7 +317,10 @@ var LEMUR_TASKS = [
     prompt: 'Połącz `rental` oraz `film_category` (po `film_id`). Znajdź klientów (`customer_id`), którzy wypożyczyli filmy z co najmniej `3` RÓŻNYCH kategorii (`category_id`).\n\nZwróć: `customer_id` oraz liczbę unikalnych kategorii (`uniq_cats`).',
     sol: "SELECT r.customer_id, COUNT(DISTINCT fc.category_id) AS uniq_cats FROM rental r JOIN film_category fc ON r.film_id = fc.film_id GROUP BY r.customer_id HAVING COUNT(DISTINCT fc.category_id) >= 3;",
     detectTrap: function(sql) {
-      if (!/DISTINCT/i.test(sql)) return 'PUŁAPKA DUPLIKATÓW: Klient mógł wypożyczyć 3 filmy z tej samej kategorii! Musisz użyć COUNT(DISTINCT fc.category_id), a nie zwykłego COUNT.';
+      var s = String(sql || '').replace(/--[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '');
+      if (/\bCOUNT\s*\((?!\s*DISTINCT\b)/i.test(s) && !/\bCOUNT\s*\(\s*DISTINCT\b/i.test(s)) {
+        return 'PUŁAPKA DUPLIKATÓW: Klient mógł wypożyczyć 3 filmy z tej samej kategorii! Musisz użyć COUNT(DISTINCT fc.category_id), a nie zwykłego COUNT.';
+      }
       return null;
     }
   },
@@ -316,8 +334,9 @@ var LEMUR_TASKS = [
     prompt: 'W sklepie `store_id = 1` jest 5 klientów, ale jedna klientka (`MARGARET`) nigdy nic nie kupiła. Policz w jednym wierszu dwie liczby dla klientów ze `store_id = 1`:\n1) Średnią łączną kwotę wydatków na klienta liczoną po WSZYSTKICH 5 klientach ze sklepu 1 (`avg_all_customers`, gdzie brak wpłat to `0`).\n2) Liczbę wszystkich klientów w `store_id = 1`.',
     sol: "WITH cust_totals AS (SELECT c.customer_id, COALESCE(SUM(p.amount), 0) AS tot FROM customer c LEFT JOIN payment p ON c.customer_id = p.customer_id WHERE c.store_id = 1 GROUP BY c.customer_id) SELECT AVG(tot) AS avg_all_customers, COUNT(*) AS cust_cnt FROM cust_totals;",
     detectTrap: function(sql) {
-      if (!/LEFT\s+JOIN/i.test(sql)) return 'PUŁAPKA INNER JOIN: Bez LEFT JOIN klientka z kwotą 0 wypada z mianownika średniej!';
-      if (!/COALESCE/i.test(sql)) return 'PUŁAPKA AVG i NULL: Funkcja AVG() pomija wartości NULL! Musisz zamienić NULL na 0 przez COALESCE.';
+      var s = String(sql || '').replace(/--[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '');
+      if (/\bJOIN\b/i.test(s) && !/\bLEFT\s+(?:OUTER\s+)?JOIN\b/i.test(s)) return 'PUŁAPKA INNER JOIN: Bez LEFT JOIN klientka z kwotą 0 wypada z mianownika średniej!';
+      if (/\bAVG\s*\(/i.test(s) && !/\bCOALESCE\s*\(/i.test(s)) return 'PUŁAPKA AVG i NULL: Funkcja AVG() pomija wartości NULL! Musisz zamienić NULL na 0 przez COALESCE.';
       return null;
     }
   },
@@ -331,7 +350,8 @@ var LEMUR_TASKS = [
     prompt: 'Znajdź `customer_id` klientów z tabeli `rental`, którzy wypożyczyli co najmniej jeden film w maju (`rental_date >= \'2026-05-01\' AND rental_date < \'2026-06-01\'`) ORAZ co najmniej jeden film w czerwcu (`rental_date >= \'2026-06-01\' AND rental_date < \'2026-07-01\'`). Posortuj rosnąco po `customer_id`.',
     sol: "SELECT customer_id FROM rental WHERE rental_date >= '2026-05-01' AND rental_date < '2026-06-01' INTERSECT SELECT customer_id FROM rental WHERE rental_date >= '2026-06-01' AND rental_date < '2026-07-01' ORDER BY customer_id;",
     detectTrap: function(sql) {
-      if (/WHERE[\s\S]*2026-05[\s\S]*AND[\s\S]*2026-06[\s\S]*AND[\s\S]*2026-07/i.test(sql) && !/INTERSECT|HAVING|EXISTS/i.test(sql)) {
+      var s = String(sql || '').replace(/--[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '');
+      if (/WHERE[\s\S]*2026-05[\s\S]*AND[\s\S]*2026-06[\s\S]*AND[\s\S]*2026-07/i.test(s) && !/\b(?:INTERSECT|HAVING|EXISTS)\b/i.test(s) && !/\bJOIN\s+rental\b/i.test(s)) {
         return 'PUŁAPKA LOGICZNA WHERE: Pojedynczy wiersz nigdy nie ma daty z maja i z czerwca naraz! Użyj INTERSECT lub GROUP BY + HAVING.';
       }
       return null;
@@ -347,7 +367,8 @@ var LEMUR_TASKS = [
     prompt: 'Dla płatności klientów `customer_id IN (1, 2)` wypisz każdy pojedynczy wiersz płatności: `payment_id`, `customer_id`, `amount` oraz łączną sumę wszystkich wydatków tego klienta (`cust_total`) wyliczoną funkcją okna. Posortuj po `payment_id`.',
     sol: "SELECT payment_id, customer_id, amount, SUM(amount) OVER (PARTITION BY customer_id) AS cust_total FROM payment WHERE customer_id IN (1, 2) ORDER BY payment_id;",
     detectTrap: function(sql) {
-      if (/GROUP\s+BY/i.test(sql) && !/OVER/i.test(sql)) return 'PUŁAPKA GROUP BY: Użyłeś GROUP BY zamiast funkcji okna SUM(amount) OVER (PARTITION BY customer_id), przez co zwinąłeś wiersze lub rozbiłeś sumę po payment_id!';
+      var s = String(sql || '').replace(/--[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '');
+      if (/\bGROUP\s+BY\b/i.test(s) && !/\bOVER\s*\(/i.test(s)) return 'PUŁAPKA GROUP BY: Użyłeś GROUP BY zamiast funkcji okna SUM(amount) OVER (PARTITION BY customer_id), przez co zwinąłeś wiersze lub rozbiłeś sumę po payment_id!';
       return null;
     }
   },
@@ -361,7 +382,10 @@ var LEMUR_TASKS = [
     prompt: 'Z tabeli `rental` znajdź wypożyczenia, które zostały zwrócone najpóźniej w ciągu `3` dni od daty wypożyczenia (`return_date <= rental_date + INTERVAL \'3 days\'`).\n\nZwróć: `rental_id`, `customer_id`, `rental_date`, `return_date`, posortowane po `rental_id`.',
     sol: "SELECT rental_id, customer_id, rental_date, return_date FROM rental WHERE return_date IS NOT NULL AND return_date <= rental_date + INTERVAL '3 days' ORDER BY rental_id;",
     detectTrap: function(sql) {
-      if (!/return_date/i.test(sql)) return 'Sprawdź porównanie kolumny `return_date` z `rental_date + INTERVAL \'3 days\'`.';
+      var s = String(sql || '').replace(/--[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '');
+      if (/=\s*NULL\b/i.test(s)) return 'PUŁAPKA NULL: Porównanie `= NULL` lub `!= NULL` zwraca UNKNOWN. Użyj `return_date IS NOT NULL`.';
+      if (/return_date\s*>=?\s*rental_date\s*\+\s*INTERVAL/i.test(s)) return 'PUŁAPKA KIERUNKU PRZEDZIAŁU: Szukasz zwrotów późniejszych niż 3 dni (`>` lub `>=`), a zadanie pyta o zwroty NAJPÓŹNIEJ w ciągu 3 dni (`<=`).';
+      if (/rental_date\s*\+\s*3\b/i.test(s) && !/\bINTERVAL\b/i.test(s)) return 'PUŁAPKA DODAWANIA DNI: Aby dodać dni do daty w PostgreSQL, użyj wyraźnie `rental_date + INTERVAL \'3 days\'`.';
       return null;
     }
   }
