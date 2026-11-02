@@ -12,10 +12,16 @@ var dbReady = false;
    2. NATYWNY SILNIK POSTGRESQL (PGlite WASM) + PRECYZYJNA DETEKCJA LINII BŁĘDU
    Zero sztucznej transpilacji regex - 100% prawdziwy PostgreSQL jak w DBeaverze!
    ========================================================================== */
+var ALL_SCHEMA_META = SCHEMA_META.concat(window.INTERVIEW_SCHEMA_META || []);
 var ALL_SCHEMA_COLS = new Set();
-SCHEMA_META.forEach(function(m) {
-  m.cols.forEach(function(c) { ALL_SCHEMA_COLS.add(c.toLowerCase()); });
+ALL_SCHEMA_META.forEach(function(m) {
+  m.cols.forEach(function(c) {
+    var colName = typeof c === 'string' ? c : c.name;
+    ALL_SCHEMA_COLS.add(colName.toLowerCase());
+  });
 });
+
+var interviewSamples = {};
 
 // Przelicza oficjalną pozycję znaku (err.position z silnika PostgreSQL) na numer linii w edytorze
 function posToLineNumber(sql, charPos) {
@@ -103,7 +109,16 @@ async function initDatabase() {
     var PGlite = mod.PGlite;
     db = new PGlite();
     await db.exec(PG_DVDRENTAL_DDL);
+    if (window.INTERVIEW_SEED_SQL) {
+      await db.exec(window.INTERVIEW_SEED_SQL);
+    }
     dbReady = true;
+    if (window.INTERVIEW_SCHEMA_META) {
+      for (var i = 0; i < window.INTERVIEW_SCHEMA_META.length; i++) {
+        var tblName = window.INTERVIEW_SCHEMA_META[i].table;
+        interviewSamples[tblName] = await runQuery('SELECT * FROM ' + tblName + ' LIMIT 5;');
+      }
+    }
     if (statusEl) statusEl.textContent = 'Silnik PostgreSQL 16 (PGlite) gotowy';
     render();
   } catch (err) {
@@ -129,7 +144,11 @@ async function runQuery(sql) {
   }
 
   try {
-    var res = await db.query(raw);
+    var res = await db.query(raw, [], {
+      parsers: {
+        1114: function(v) { return String(v).replace(/ 00:00:00$/, ''); }
+      }
+    });
     var cols = (res.fields || []).map(function(f) { return f.name; });
     var vals = (res.rows || []).map(function(rowObj) {
       return cols.map(function(c) {
@@ -219,7 +238,7 @@ function defaultState() {
     lemurSubTab: 'tasks',
     activeTaskId: 'p1_1',
     activeVariantIdx: 0,
-    activeLemurId: 'dl_1',
+    activeLemurId: 'iv_1',
     editorCode: "SELECT title, rental_rate\nFROM film\nWHERE rating = 'PG-13'\n  AND rental_rate = 4.99\nORDER BY title;",
     diagIdx: 0,
     diagScore: 0,
@@ -259,8 +278,9 @@ function saveState() {
 
 var currentTab = 'path';
 var lastExecResult = null;
+var lastExpectedResult = null;
 var lastFeedback = null;
-var uiState = { schemaBoxOpen: false, theoryBoxOpen: null };
+var uiState = { schemaBoxOpen: false, theoryBoxOpen: null, lemurDiffFilter: 'all' };
 
 function esc(s) {
   return String(s == null ? '' : s).replace(/[&<>"']/g, function(c) {
@@ -354,7 +374,7 @@ function insertAtCursor(snippet) {
 function resolveTaskTables(tableNames, solSql) {
   var sql = typeof tableNames === 'string' ? tableNames : String(solSql || '');
   if (sql) {
-    var fromSol = SCHEMA_META.filter(function(m) {
+    var fromSol = ALL_SCHEMA_META.filter(function(m) {
       return new RegExp('\\b' + m.table + '\\b', 'i').test(sql);
     }).map(function(m) { return m.table; });
     if (fromSol.length) return fromSol;
@@ -366,15 +386,17 @@ function resolveTaskTables(tableNames, solSql) {
 function buildTaskSchemaBox(tableNames, solSql) {
   var activeTables = resolveTaskTables(tableNames, solSql);
   if (!activeTables.length) return '';
-  var metas = SCHEMA_META.filter(function(m) { return activeTables.indexOf(m.table) > -1; });
+  var metas = ALL_SCHEMA_META.filter(function(m) { return activeTables.indexOf(m.table) > -1; });
   if (!metas.length) return '';
 
-  // Zliczanie kluczy _id występujących w więcej niż jednej tabeli zadania
+  // Zliczanie kluczy występujących w więcej niż jednej tabeli zadania
   var keyCounts = {};
   metas.forEach(function(m) {
     m.cols.forEach(function(c) {
-      if (/_id$/i.test(c)) {
-        keyCounts[c] = (keyCounts[c] || 0) + 1;
+      var colName = typeof c === 'string' ? c : c.name;
+      var isKey = typeof c === 'string' ? /_id$/i.test(c) : !!c.isKey;
+      if (isKey) {
+        keyCounts[colName] = (keyCounts[colName] || 0) + 1;
       }
     });
   });
@@ -391,11 +413,12 @@ function buildTaskSchemaBox(tableNames, solSql) {
         return '<div style="display:flex;flex-wrap:wrap;align-items:center;gap:5px">' +
           '<button type="button" class="helper-tbl-btn" data-act="ins" data-val="' + esc(m.table) + '" data-insert-sql="' + esc(m.table) + '" title="Wstaw nazwę tabeli ' + esc(m.table) + '">📦 ' + esc(m.table) + '</button>' +
           m.cols.map(function(c) {
-            var isKey = /_id$/i.test(c);
+            var colName = typeof c === 'string' ? c : c.name;
+            var isKey = typeof c === 'string' ? /_id$/i.test(c) : !!c.isKey;
             var cls = 'helper-col-btn' + (isKey ? ' col-key-chip' : '');
-            var ttl = isKey ? 'Klucz złączenia (JOIN ON)' : 'Wstaw kolumnę ' + esc(c);
-            var lbl = (isKey ? '🔗 ' : '') + esc(c);
-            return '<button type="button" class="' + cls + '" data-act="ins" data-val="' + esc(c) + '" data-insert-sql="' + esc(c) + '" title="' + ttl + '">' + lbl + '</button>';
+            var ttl = isKey ? 'Klucz złączenia (JOIN ON)' : 'Wstaw kolumnę ' + esc(colName);
+            var lbl = (isKey ? '🔗 ' : '') + esc(colName);
+            return '<button type="button" class="' + cls + '" data-act="ins" data-val="' + esc(colName) + '" data-insert-sql="' + esc(colName) + '" title="' + ttl + '">' + lbl + '</button>';
           }).join('') +
           '<button type="button" class="btn sm" style="min-height:24px;padding:2px 8px;font-size:11px;margin-left:auto" data-act="peekTable" data-table="' + esc(m.table) + '">Podgląd 5 wierszy</button>' +
         '</div>';
@@ -405,6 +428,49 @@ function buildTaskSchemaBox(tableNames, solSql) {
   '</details>';
 }
 var renderTablesHelper = buildTaskSchemaBox;
+
+function buildInterviewSpecBox(tableNames) {
+  var activeTables = Array.isArray(tableNames) ? tableNames : [];
+  var ivMeta = window.INTERVIEW_SCHEMA_META || [];
+  var metas = ivMeta.filter(function(m) { return activeTables.indexOf(m.table) > -1; });
+  if (!metas.length) return '';
+
+  return '<div class="iv-spec-box">' +
+    '<div class="iv-spec-hdr">📋 Specyfikacja tabel i przykładowe dane</div>' +
+    '<p class="small muted" style="margin:2px 0 10px">Kliknij dowolną nazwę tabeli lub kolumny, aby wstawić ją do edytora SQL poniżej:</p>' +
+    metas.map(function(m) {
+      var sample = interviewSamples[m.table];
+      var sampleHtml = '';
+      if (sample && sample.columns && sample.columns.length) {
+        sampleHtml = '<details class="iv-sample-fold" open>' +
+          '<summary>Przykładowe wiersze z tabeli <code>' + esc(m.table) + '</code> (pierwsze ' + sample.values.length + ' wierszy)</summary>' +
+          renderSingleTable(sample, 5) +
+        '</details>';
+      } else {
+        sampleHtml = '<div style="margin-top:6px"><button type="button" class="btn sm" data-act="peekTable" data-table="' + esc(m.table) + '">👁 Podgląd 5 wierszy (' + esc(m.table) + ')</button></div>';
+      }
+
+      return '<div class="iv-tbl-card">' +
+        '<div class="iv-tbl-top">' +
+          '<button type="button" class="helper-tbl-btn" data-act="ins" data-val="' + esc(m.table) + '" data-insert-sql="' + esc(m.table) + '" title="Wstaw nazwę tabeli ' + esc(m.table) + '">📦 ' + esc(m.table) + '</button>' +
+          '<span class="small muted">' + esc(m.desc) + '</span>' +
+        '</div>' +
+        '<div class="tblwrap iv-schema-wrap"><table><thead><tr><th>Kolumna (kliknij, aby wstawić)</th><th>Typ danych SQL</th></tr></thead><tbody>' +
+          m.cols.map(function(c) {
+            var isKey = !!c.isKey;
+            var cls = 'helper-col-btn' + (isKey ? ' col-key-chip' : '');
+            var lbl = (isKey ? '🔗 ' : '') + esc(c.name);
+            return '<tr>' +
+              '<td><button type="button" class="' + cls + '" data-act="ins" data-val="' + esc(c.name) + '" data-insert-sql="' + esc(c.name) + '">' + lbl + '</button></td>' +
+              '<td><code>' + esc(c.type) + '</code></td>' +
+            '</tr>';
+          }).join('') +
+        '</tbody></table></div>' +
+        sampleHtml +
+      '</div>';
+    }).join('') +
+  '</div>';
+}
 
 function renderEditorWidget(extraCols, actionType) {
   return '' +
@@ -423,6 +489,26 @@ function renderEditorWidget(extraCols, actionType) {
     renderResultBox();
 }
 
+function renderSingleTable(resObj, maxRows) {
+  var limit = maxRows || 30;
+  if (!resObj || !resObj.columns || !resObj.columns.length) {
+    return '<p class="small muted" style="margin:6px 0">Zapytanie zwróciło 0 wierszy (brak kolumn).</p>';
+  }
+  var rows = resObj.values || [];
+  if (!rows.length) {
+    return '<div class="tblwrap"><table><thead><tr>' +
+      resObj.columns.map(function(c) { return '<th>' + esc(c) + '</th>'; }).join('') +
+      '</tr></thead><tbody><tr><td colspan="' + resObj.columns.length + '" class="muted" style="text-align:center;padding:10px">0 wierszy</td></tr></tbody></table></div>';
+  }
+  return '<div class="tblwrap"><table><thead><tr>' +
+    resObj.columns.map(function(c) { return '<th>' + esc(c) + '</th>'; }).join('') +
+    '</tr></thead><tbody>' +
+    rows.slice(0, limit).map(function(r) {
+      return '<tr>' + r.map(function(v) { return '<td>' + (v === null ? '<em class="muted">NULL</em>' : esc(v)) + '</td>'; }).join('') + '</tr>';
+    }).join('') +
+    '</tbody></table></div>';
+}
+
 function renderResultBox() {
   var h = '';
   if (lastFeedback) {
@@ -436,15 +522,22 @@ function renderResultBox() {
       var lnBadge = lastExecResult.errorLine ? ' w linii ' + lastExecResult.errorLine : '';
       var snippetHtml = lastExecResult.errorSnippet ? '<div style="margin-top:6px;padding:6px 10px;background:rgba(0,0,0,0.25);border-radius:6px;font-family:var(--mono);font-size:12px">Linia ' + lastExecResult.errorLine + ': <code>' + esc(lastExecResult.errorSnippet) + '</code></div>' : '';
       h += '<div class="fb-box trap"><strong>⚠️ Błąd SQL' + esc(lnBadge) + ':</strong> <span class="small">' + esc(lastExecResult.error) + '</span>' + snippetHtml + '</div>';
+    } else if (lastExpectedResult && lastExpectedResult.columns) {
+      var uCnt = (lastExecResult.values || []).length;
+      var eCnt = (lastExpectedResult.values || []).length;
+      h += '<div class="cmp-grid">' +
+        '<div class="cmp-col bad">' +
+          '<div class="cmp-hdr bad">❌ Twój wynik (' + uCnt + ' wierszy)</div>' +
+          renderSingleTable(lastExecResult, 20) +
+        '</div>' +
+        '<div class="cmp-col ok">' +
+          '<div class="cmp-hdr ok">✅ Oczekiwany wynik — Wzorzec (' + eCnt + ' wierszy)</div>' +
+          renderSingleTable(lastExpectedResult, 20) +
+        '</div>' +
+      '</div>';
     } else if (lastExecResult.columns && lastExecResult.columns.length) {
       h += '<p class="small muted" style="margin:10px 0 4px">Wynik zapytania (' + lastExecResult.values.length + ' wierszy):</p>' +
-        '<div class="tblwrap"><table><thead><tr>' +
-        lastExecResult.columns.map(function(c) { return '<th>' + esc(c) + '</th>'; }).join('') +
-        '</tr></thead><tbody>' +
-        lastExecResult.values.slice(0, 30).map(function(r) {
-          return '<tr>' + r.map(function(v) { return '<td>' + (v === null ? '<em class="muted">NULL</em>' : esc(v)) + '</td>'; }).join('') + '</tr>';
-        }).join('') +
-        '</tbody></table></div>';
+        renderSingleTable(lastExecResult, 30);
     } else {
       h += '<p class="small muted" style="margin-top:8px">Zapytanie wykonało się poprawnie, ale zwróciło 0 wierszy.</p>';
     }
@@ -598,18 +691,26 @@ function renderDiagTab() {
   '</div>';
 }
 
-// ZAKŁADKA 3: REKRUTACJA DATALEMUR (12 ZADAŃ) + REJESTR LUK
+// ZAKŁADKA 3: WYZWANIA REKRUTACYJNE (15 ZADAŃ: EASY / MEDIUM / HARD) + REJESTR LUK
+function diffBadge(diff) {
+  var d = String(diff || 'easy').toLowerCase();
+  if (d === 'hard') return { cls: 'open', lbl: '🔴 Hard' };
+  if (d === 'medium') return { cls: 'mid', lbl: '🟡 Medium' };
+  return { cls: 'done', lbl: '🟢 Easy' };
+}
+
 function renderLemurTab() {
+  var tasksList = window.INTERVIEW_TASKS || window.LEMUR_TASKS || [];
   var openGapsCnt = state.gaps.filter(function(g) { return g.lvl <= 1; }).length;
   var nav = '<div class="subnav">' +
-    '<button type="button" class="' + (state.lemurSubTab === 'tasks' ? 'active' : '') + '" data-act="lemurSub" data-sub="tasks">🎯 Zadania DataLemur (12)</button>' +
+    '<button type="button" class="' + (state.lemurSubTab === 'tasks' ? 'active' : '') + '" data-act="lemurSub" data-sub="tasks">🎯 Wyzwania Rekrutacyjne (' + tasksList.length + ')</button>' +
     '<button type="button" class="' + (state.lemurSubTab === 'gaps' ? 'active' : '') + '" data-act="lemurSub" data-sub="gaps">🧠 Twój Rejestr Luk (' + state.gaps.length + (openGapsCnt ? ' · 🔥' + openGapsCnt : '') + ')</button>' +
   '</div>';
 
   if (state.lemurSubTab === 'gaps') {
     var gh = nav + '<div class="card">' +
       '<h2>Twój Rejestr Luk (Spaced Repetition)</h2>' +
-      '<p class="small muted">Każda wpadka na pułapce w zadaniach DataLemur lub pominięcie pytania w Diagnozie podbija licznik pułapek i obniża poziom luki, przesuwając ją na górę listy.</p>';
+      '<p class="small muted">Każda wpadka na pułapce w zadaniach rekrutacyjnych lub pominięcie pytania w Diagnozie podbija licznik pułapek i obniża poziom luki, przesuwając ją na górę listy.</p>';
 
     var sortedGaps = state.gaps.slice().sort(function(a, b) {
       return (a.lvl - b.lvl) || ((b.hits || 0) - (a.hits || 0));
@@ -633,15 +734,21 @@ function renderLemurTab() {
   }
 
   if (state.lemurMode === 'solve') {
-    var task = LEMUR_TASKS.find(function(x) { return x.id === state.activeLemurId; }) || LEMUR_TASKS[0];
+    var task = tasksList.find(function(x) { return x.id === state.activeLemurId; }) || tasksList[0];
+    if (task && state.activeLemurId !== task.id) state.activeLemurId = task.id;
     var isSolved = !!state.completedLemur[task.id];
+    var bdg = diffBadge(task.difficulty);
     return nav + '<div class="card">' +
       '<div class="ws-bar">' +
-        '<button class="btn sm" data-act="backToLemurList">← Wróć do listy 12 zadań</button>' +
-        '<span class="chip open">🔥 ' + esc(task.company) + ' · ' + esc(task.diff) + '</span>' +
+        '<button class="btn sm" data-act="backToLemurList">← Wróć do listy (' + tasksList.length + ' zadań)</button>' +
+        '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">' +
+          '<span class="chip ' + bdg.cls + '">' + bdg.lbl + '</span>' +
+          '<span class="chip info">' + esc(task.categoryTag || 'Analiza SQL') + '</span>' +
+        '</div>' +
       '</div>' +
       '<h2>' + (isSolved ? '✅ ' : '') + esc(task.title) + '</h2>' +
       '<div class="prompt-box">' + formatPrompt(task.prompt) + '</div>' +
+      buildInterviewSpecBox(task.tables) +
       buildTaskSchemaBox(task.tables, task.sol) +
       renderEditorWidget(task.cols, 'checkLemurTask') +
       '<div class="acts" style="margin-top:12px;border-top:1px solid var(--line);padding-top:10px">' +
@@ -651,22 +758,38 @@ function renderLemurTab() {
     '</div>';
   }
 
-  var solvedCnt = Object.keys(state.completedLemur).length;
+  var solvedCnt = tasksList.filter(function(t) { return !!state.completedLemur[t.id]; }).length;
+  var easyCnt = tasksList.filter(function(t) { return t.difficulty === 'easy'; }).length;
+  var medCnt = tasksList.filter(function(t) { return t.difficulty === 'medium'; }).length;
+  var hardCnt = tasksList.filter(function(t) { return t.difficulty === 'hard'; }).length;
+  var curFilter = uiState.lemurDiffFilter || 'all';
+  var filteredTasks = tasksList.filter(function(t) {
+    return curFilter === 'all' || t.difficulty === curFilter;
+  });
+
   var lh = nav + '<div class="card">' +
-    '<h2>Zadania Rekrutacyjne z Pułapką (DataLemur Style)</h2>' +
-    '<p class="small muted">12 klasycznych problemów rekrutacyjnych z firm technologicznych przeniesionych na bazę <code>dvdrental</code>. Ukończone: <strong>' + solvedCnt + '/' + LEMUR_TASKS.length + '</strong>.</p>' +
-    '<div class="bar"><i style="width:' + Math.round((solvedCnt / LEMUR_TASKS.length) * 100) + '%"></i></div>' +
+    '<h2>Wyzwania Rekrutacyjne SQL (Easy · Medium · Hard)</h2>' +
+    '<p class="small muted">' + tasksList.length + ' praktycznych zadań rekrutacyjnych na dedykowanych tabelach biznesowych (HR, Finanse, Produkt SaaS, E-commerce). Ukończone: <strong>' + solvedCnt + '/' + tasksList.length + '</strong>.</p>' +
+    '<div class="bar"><i style="width:' + Math.round((solvedCnt / (tasksList.length || 1)) * 100) + '%"></i></div>' +
+    '<div class="diff-filters">' +
+      '<button type="button" class="diff-pill ' + (curFilter === 'all' ? 'active' : '') + '" data-act="lemurFilter" data-diff="all">Wszystkie (' + tasksList.length + ')</button>' +
+      '<button type="button" class="diff-pill ' + (curFilter === 'easy' ? 'active' : '') + '" data-act="lemurFilter" data-diff="easy">🟢 Easy (' + easyCnt + ')</button>' +
+      '<button type="button" class="diff-pill ' + (curFilter === 'medium' ? 'active' : '') + '" data-act="lemurFilter" data-diff="medium">🟡 Medium (' + medCnt + ')</button>' +
+      '<button type="button" class="diff-pill ' + (curFilter === 'hard' ? 'active' : '') + '" data-act="lemurFilter" data-diff="hard">🔴 Hard (' + hardCnt + ')</button>' +
+    '</div>' +
     '<div class="node-list">';
 
-  LEMUR_TASKS.forEach(function(lt) {
+  filteredTasks.forEach(function(lt) {
     var done = !!state.completedLemur[lt.id];
-    var diffCls = lt.diff === 'Hard' ? 'open' : lt.diff === 'Medium' ? 'mid' : 'info';
+    var bdg = diffBadge(lt.difficulty);
     lh += '<button type="button" class="node-item" data-act="openLemurTask" data-id="' + lt.id + '">' +
       '<div>' +
         '<span class="node-title">' + (done ? '✅ ' : '🎯 ') + esc(lt.title) + '</span>' +
         '<div class="node-meta">' +
-          '<span class="chip ' + diffCls + '">' + esc(lt.company) + ' · ' + esc(lt.diff) + '</span>' +
-          '<span>Testuje lukę: <strong>' + esc(lt.gapName) + '</strong></span>' +
+          '<span class="chip ' + bdg.cls + '">' + bdg.lbl + '</span>' +
+          '<span class="chip info">' + esc(lt.categoryTag || 'SQL') + '</span>' +
+          '<span>Tabele: <code>' + esc((lt.tables || []).join(', ')) + '</code></span>' +
+          '<span>· Luka: <strong>' + esc(lt.gapName) + '</strong></span>' +
         '</div>' +
       '</div>' +
       '<span class="chip ' + (done ? 'done' : 'info') + '">' + (done ? 'Rozwiązane' : 'Zmierz się →') + '</span>' +
@@ -729,7 +852,7 @@ function renderProfileTab() {
   '</div>' +
   '<div class="card">' +
     '<h2>Kopia zapasowa postępów (.json)</h2>' +
-    '<p class="small muted">Twój obecny stan: <strong>' + state.xp + ' XP</strong> · Rozwiązane warianty Ścieżki: <strong>' + Object.keys(state.completedVariants).length + '/' + totalPathVars + '</strong> · Zadania DataLemur: <strong>' + Object.keys(state.completedLemur).length + '/' + LEMUR_TASKS.length + '</strong>.</p>' +
+    '<p class="small muted">Twój obecny stan: <strong>' + state.xp + ' XP</strong> · Rozwiązane warianty Ścieżki: <strong>' + Object.keys(state.completedVariants).length + '/' + totalPathVars + '</strong> · Zadania Rekrutacyjne: <strong>' + Object.keys(state.completedLemur).length + '/' + LEMUR_TASKS.length + '</strong>.</p>' +
     '<div class="acts">' +
       '<button class="btn sm primary" data-act="exportJson">⬇ Pobierz pełny backup (.json)</button>' +
     '</div>' +
@@ -812,6 +935,7 @@ document.addEventListener('click', async function(e) {
     currentTab = el.dataset.tab;
     lastFeedback = null;
     lastExecResult = null;
+    lastExpectedResult = null;
     uiState.schemaBoxOpen = false;
     if (currentTab === 'diag' && state.diagIdx < DIAG_QUESTIONS.length) {
       state.editorCode = '-- Zadanie diagnostyczne #' + (state.diagIdx + 1) + '\nSELECT ';
@@ -830,17 +954,20 @@ document.addEventListener('click', async function(e) {
   else if (act === 'clearEd') {
     state.editorCode = '';
     lastExecResult = null;
+    lastExpectedResult = null;
     lastFeedback = null;
     render();
   }
   else if (act === 'runOnly') {
     lastExecResult = await runQuery(state.editorCode);
+    lastExpectedResult = null;
     lastFeedback = null;
     render();
   }
   else if (act === 'peekTable') {
     var tName = el.dataset.table;
     lastExecResult = await runQuery('SELECT * FROM ' + tName + ' LIMIT 5;');
+    lastExpectedResult = null;
     lastFeedback = { type: 'warn', title: '👁 Podgląd tabeli ' + tName + ' (pierwsze 5 wierszy)', msg: 'Twój kod w edytorze pozostał bez zmian.' };
     render();
   }
@@ -853,6 +980,7 @@ document.addEventListener('click', async function(e) {
     var t = PATH_TASKS.find(function(x) { return x.id === state.activeTaskId; });
     if (t) state.editorCode = '-- ' + t.title + ' (Wariant 1)\nSELECT ';
     lastExecResult = null;
+    lastExpectedResult = null;
     lastFeedback = null;
     saveState();
     render();
@@ -863,6 +991,7 @@ document.addEventListener('click', async function(e) {
     uiState.schemaBoxOpen = false;
     uiState.theoryBoxOpen = null;
     lastExecResult = null;
+    lastExpectedResult = null;
     lastFeedback = null;
     saveState();
     render();
@@ -871,6 +1000,7 @@ document.addEventListener('click', async function(e) {
   else if (act === 'backToPathList') {
     state.pathMode = 'list';
     lastExecResult = null;
+    lastExpectedResult = null;
     lastFeedback = null;
     saveState();
     render();
@@ -882,6 +1012,7 @@ document.addEventListener('click', async function(e) {
     var tVar = PATH_TASKS.find(function(x) { return x.id === state.activeTaskId; });
     if (tVar) state.editorCode = '-- ' + tVar.title + ' (Wariant ' + (state.activeVariantIdx + 1) + ')\nSELECT ';
     lastExecResult = null;
+    lastExpectedResult = null;
     lastFeedback = null;
     saveState();
     render();
@@ -897,6 +1028,7 @@ document.addEventListener('click', async function(e) {
     uiState.schemaBoxOpen = false;
     state.editorCode = '-- ' + curTask.title + ' (Wariant ' + (state.activeVariantIdx + 1) + ')\nSELECT ';
     lastExecResult = null;
+    lastExpectedResult = null;
     lastFeedback = { type: 'warn', title: '🎲 Wylosowano Wariant #' + (state.activeVariantIdx + 1) + ' z ' + curTask.variants.length, msg: 'Zmieniliśmy tabelę lub warunki zadania. Napisz nowe zapytanie!' };
     saveState();
     render();
@@ -909,6 +1041,7 @@ document.addEventListener('click', async function(e) {
     var expRes = await runQuery(variant.sol);
     var cmp = compareResults(lastExecResult, expRes, variant.order);
     if (cmp.ok) {
+      lastExpectedResult = null;
       var vKey = task.id + ':' + vIdx;
       if (!state.completedVariants[vKey]) {
         state.completedVariants[vKey] = true;
@@ -924,6 +1057,7 @@ document.addEventListener('click', async function(e) {
       lastFeedback = { type: 'ok', title: '✅ Wariant #' + (vIdx + 1) + ' zaliczony! (+XP)', msg: cmp.msg + ' Możesz kliknąć kolejny numer wariantu u góry karty, aby przećwiczyć inne tabele!' };
       saveState();
     } else {
+      lastExpectedResult = lastExecResult.error ? null : expRes;
       var pathTrap = task.detectTrap ? task.detectTrap(state.editorCode, lastExecResult) : null;
       if (pathTrap && task.gapId) registerGapTrap(task.gapId, task.title, pathTrap);
       lastFeedback = { type: 'trap', title: '❌ Wynik różni się od wzorca', msg: cmp.msg };
@@ -935,6 +1069,7 @@ document.addEventListener('click', async function(e) {
     var variant2 = task2.variants[state.activeVariantIdx % task2.variants.length];
     state.editorCode = variant2.sol;
     lastExecResult = await runQuery(variant2.sol);
+    lastExpectedResult = null;
     lastFeedback = { type: 'warn', title: '💡 Wczytano wzorcowe rozwiązanie', msg: 'Przeanalizuj kod, a następnie przełącz się na kolejny Wariant (1..10), aby napisać podobne zapytanie samodzielnie.' };
     render();
   }
@@ -950,6 +1085,7 @@ document.addEventListener('click', async function(e) {
       state.diagIdx++;
       uiState.schemaBoxOpen = false;
       lastExecResult = null;
+      lastExpectedResult = null;
       lastFeedback = null;
       if (state.diagIdx < DIAG_QUESTIONS.length) {
         state.editorCode = '-- Zadanie diagnostyczne #' + (state.diagIdx + 1) + '\nSELECT ';
@@ -957,6 +1093,7 @@ document.addEventListener('click', async function(e) {
       saveState();
       render();
     } else {
+      lastExpectedResult = lastExecResult.error ? null : dExp;
       lastFeedback = { type: 'trap', title: 'Wynik niepoprawny', msg: dCmp.msg + ' Popraw zapytanie lub kliknij "Pomiń zadanie".' };
       render();
     }
@@ -968,6 +1105,7 @@ document.addEventListener('click', async function(e) {
     state.diagIdx++;
     uiState.schemaBoxOpen = false;
     lastExecResult = null;
+    lastExpectedResult = null;
     lastFeedback = null;
     if (state.diagIdx < DIAG_QUESTIONS.length) {
       state.editorCode = '-- Zadanie diagnostyczne #' + (state.diagIdx + 1) + '\nSELECT ';
@@ -997,6 +1135,7 @@ document.addEventListener('click', async function(e) {
     uiState.schemaBoxOpen = false;
     state.editorCode = '-- Zadanie diagnostyczne #1\nSELECT ';
     lastExecResult = null;
+    lastExpectedResult = null;
     lastFeedback = null;
     saveState();
     render();
@@ -1004,8 +1143,13 @@ document.addEventListener('click', async function(e) {
   else if (act === 'lemurSub') {
     state.lemurSubTab = el.dataset.sub;
     lastExecResult = null;
+    lastExpectedResult = null;
     lastFeedback = null;
     saveState();
+    render();
+  }
+  else if (act === 'lemurFilter') {
+    uiState.lemurDiffFilter = el.dataset.diff || 'all';
     render();
   }
   else if (act === 'openLemurTask') {
@@ -1013,8 +1157,9 @@ document.addEventListener('click', async function(e) {
     state.lemurMode = 'solve';
     uiState.schemaBoxOpen = false;
     var ltOpen = LEMUR_TASKS.find(function(x) { return x.id === state.activeLemurId; });
-    state.editorCode = '-- ' + (ltOpen ? ltOpen.company + ': ' + ltOpen.title : 'DataLemur') + '\nSELECT ';
+    state.editorCode = '-- ' + (ltOpen ? ltOpen.title : 'Zadanie rekrutacyjne') + '\nSELECT ';
     lastExecResult = null;
+    lastExpectedResult = null;
     lastFeedback = null;
     saveState();
     render();
@@ -1023,6 +1168,7 @@ document.addEventListener('click', async function(e) {
   else if (act === 'backToLemurList') {
     state.lemurMode = 'list';
     lastExecResult = null;
+    lastExpectedResult = null;
     lastFeedback = null;
     saveState();
     render();
@@ -1032,21 +1178,23 @@ document.addEventListener('click', async function(e) {
     var lt = LEMUR_TASKS.find(function(x) { return x.id === state.activeLemurId; }) || LEMUR_TASKS[0];
     lastExecResult = await runQuery(state.editorCode);
     var lExp = await runQuery(lt.sol);
-    var lCmp = compareResults(lastExecResult, lExp, false);
+    var lCmp = compareResults(lastExecResult, lExp, !!lt.order);
     if (lCmp.ok) {
+      lastExpectedResult = null;
       if (!state.completedLemur[lt.id]) {
         state.completedLemur[lt.id] = true;
         state.xp += 40;
       }
-      lastFeedback = { type: 'ok', title: '🏆 Brawo! Ominąłeś pułapkę rekrutacyjną ' + lt.company + ' (+40 XP)', msg: lCmp.msg };
+      lastFeedback = { type: 'ok', title: '🏆 Brawo! Zadanie rekrutacyjne zaliczone (+40 XP)', msg: lCmp.msg };
       saveState();
     } else {
+      lastExpectedResult = lastExecResult.error ? null : lExp;
       var trapMsg = lt.detectTrap ? lt.detectTrap(state.editorCode, lastExecResult) : null;
       if (trapMsg) {
         registerGapTrap(lt.gapId, lt.gapName, lt.gapHint);
         lastFeedback = {
           type: 'trap',
-          title: '⚠️ Wpadłeś w pułapkę rekrutacyjną (' + lt.company + ')!',
+          title: '⚠️ Wpadłeś w pułapkę rekrutacyjną (' + (lt.categoryTag || 'SQL') + ')!',
           msg: trapMsg + '\n\n' + lCmp.msg + '\n👉 Luka [' + lt.gapName + '] została zaktualizowana w Twoim Rejestrze Luk.'
         };
       } else {
@@ -1063,7 +1211,8 @@ document.addEventListener('click', async function(e) {
     var lt2 = LEMUR_TASKS.find(function(x) { return x.id === state.activeLemurId; }) || LEMUR_TASKS[0];
     state.editorCode = lt2.sol;
     lastExecResult = await runQuery(lt2.sol);
-    lastFeedback = { type: 'warn', title: '💡 Wzorcowe rozwiązanie (' + lt2.company + ')', msg: lt2.gapHint };
+    lastExpectedResult = null;
+    lastFeedback = { type: 'warn', title: '💡 Wzorcowe rozwiązanie (' + lt2.title + ')', msg: lt2.gapHint };
     render();
   }
   else if (act === 'lemurTrapHint') {
@@ -1084,6 +1233,7 @@ document.addEventListener('click', async function(e) {
     var tbl = el.dataset.table;
     state.editorCode = 'SELECT * FROM ' + tbl + ' LIMIT 10;';
     lastExecResult = await runQuery(state.editorCode);
+    lastExpectedResult = null;
     lastFeedback = null;
     render();
     window.scrollTo(0, 0);
@@ -1091,6 +1241,7 @@ document.addEventListener('click', async function(e) {
   else if (act === 'loadPgTest') {
     state.editorCode = "-- Natywny silnik PostgreSQL 16 (PGlite WASM):\nSELECT\n  d::date AS dzien_kalendarza,\n  DATE_TRUNC('month', d)::date AS miesiac,\n  (d + INTERVAL '7 days')::date AS tydzien_pozniej,\n  COUNT(r.rental_id) FILTER (WHERE r.return_date IS NOT NULL) AS zwrocone,\n  ROUND((COUNT(r.rental_id)::numeric / 2)::numeric, 2) AS test_numeric\nFROM generate_series('2026-05-01'::date, '2026-05-05'::date, '1 day') AS d\nLEFT JOIN rental r ON r.rental_date = d::date\nGROUP BY d\nORDER BY d;";
     lastExecResult = await runQuery(state.editorCode);
+    lastExpectedResult = null;
     lastFeedback = { type: 'ok', title: '⚡ Natywny PostgreSQL 16 (PGlite) działa!', msg: 'Zapytanie wykonało się na prawdziwym silniku PostgreSQL WASM (bez żadnych sztucznych regexów ani konwersji do SQLite).' };
     saveState();
     render();

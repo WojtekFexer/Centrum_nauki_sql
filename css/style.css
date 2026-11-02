@@ -340,6 +340,31 @@ details.helper-fold[open] summary::after { content: "▲"; }
 .tblwrap th { background: var(--surface-2); color: var(--kw); font-weight: 600; position: sticky; top: 0; }
 .tblwrap tr:last-child td { border-bottom: 0; }
 
+/* Side-by-side / Stacked Comparison: Twój wynik vs Oczekiwany wynik */
+.cmp-grid { display: grid; grid-template-columns: 1fr; gap: 12px; margin-top: 12px; }
+@media (min-width: 600px) { .cmp-grid { grid-template-columns: 1fr 1fr; } }
+.cmp-col { border: 1px solid var(--line); border-radius: 12px; padding: 10px; background: var(--surface-2); min-width: 0; }
+.cmp-col.bad { border-color: rgba(239, 68, 68, 0.45); }
+.cmp-col.ok { border-color: rgba(16, 185, 129, 0.45); }
+.cmp-hdr { font: 700 12.5px var(--body); margin-bottom: 6px; display: flex; align-items: center; gap: 6px; }
+.cmp-hdr.bad { color: var(--open); }
+.cmp-hdr.ok { color: var(--done); }
+.cmp-col .tblwrap { margin: 0; max-height: 220px; }
+
+/* Interview Difficulty Filter Pills & Table Specification Panel */
+.diff-filters { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0 10px; }
+.diff-pill { font: 600 12px var(--body); padding: 6px 12px; border-radius: 99px; border: 1px solid var(--line); background: var(--surface-2); color: var(--muted); cursor: pointer; transition: all .15s; }
+.diff-pill:hover { border-color: var(--accent); color: var(--ink); }
+.diff-pill.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+.iv-spec-box { background: var(--surface-2); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; margin-bottom: 10px; }
+.iv-spec-hdr { font: 700 13.5px var(--head); color: var(--ink); margin-bottom: 2px; }
+.iv-tbl-card { border-top: 1px solid var(--line); padding-top: 10px; margin-top: 10px; }
+.iv-tbl-card:first-of-type { border-top: 0; padding-top: 4px; margin-top: 4px; }
+.iv-tbl-top { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 6px; }
+.iv-schema-wrap { max-height: none; margin: 6px 0; }
+details.iv-sample-fold { margin-top: 6px; font-size: 12px; }
+details.iv-sample-fold summary { cursor: pointer; font-weight: 600; color: var(--kw); margin-bottom: 4px; }
+
 /* Feedback Boxes */
 .fb-box {
   border-radius: 12px; padding: 12px 14px; margin-top: 12px;
