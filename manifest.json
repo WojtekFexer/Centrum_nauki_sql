@@ -1,0 +1,19 @@
+{
+  "name": "SQL Master — Centrum nauki SQL",
+  "short_name": "SQL Master",
+  "description": "Interaktywne Centrum nauki SQL (PostgreSQL 16 WASM) — 120 wariantów Ścieżki, 10 zadań Diagnozy i 60 wyzwań rekrutacyjnych.",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#0b1020",
+  "theme_color": "#0b1020",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
+

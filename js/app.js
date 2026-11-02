@@ -354,6 +354,18 @@ function sqlUpdate() {
   gut.scrollTop = code.scrollTop;
 }
 
+function formatSqlPretty(sql) {
+  var s = String(sql || '').trim();
+  if (!s) return '';
+  if (s.indexOf('\n') > -1 && s.split('\n').length >= 4) return s;
+  s = s.replace(/\s+/g, ' ');
+  s = s.replace(/\s+\b(INNER\s+JOIN|LEFT\s+(?:OUTER\s+)?JOIN|RIGHT\s+(?:OUTER\s+)?JOIN|FULL\s+(?:OUTER\s+)?JOIN|CROSS\s+JOIN|JOIN|FROM|WHERE|GROUP\s+BY|HAVING|ORDER\s+BY|LIMIT|UNION(?:\s+ALL)?|EXCEPT)\b/gi, function(_, kw) {
+    return '\n' + kw.toUpperCase();
+  });
+  s = s.replace(/,\s*(?=[a-zA-Z_]\w*\s+AS\s*\()/gi, ',\n  ');
+  return s;
+}
+
 function insertAtCursor(snippet) {
   var ta = document.getElementById('answer');
   if (!ta) return;
@@ -1060,17 +1072,21 @@ document.addEventListener('click', async function(e) {
       lastExpectedResult = lastExecResult.error ? null : expRes;
       var pathTrap = task.detectTrap ? task.detectTrap(state.editorCode, lastExecResult) : null;
       if (pathTrap && task.gapId) registerGapTrap(task.gapId, task.title, pathTrap);
-      lastFeedback = { type: 'trap', title: '❌ Wynik różni się od wzorca', msg: cmp.msg };
+      var pathErrMsg = lastExecResult.error
+        ? cmp.msg
+        : (pathTrap ? pathTrap : 'Odpowiedź nie pasuje do wzorca. Porównaj swój wynik z oczekiwanym wynikiem poniżej.');
+      lastFeedback = { type: 'trap', title: '❌ Wynik różni się od wzorca', msg: pathErrMsg };
     }
     render();
   }
   else if (act === 'showSolution') {
     var task2 = PATH_TASKS.find(function(t) { return t.id === state.activeTaskId; }) || PATH_TASKS[0];
     var variant2 = task2.variants[state.activeVariantIdx % task2.variants.length];
-    state.editorCode = variant2.sol;
+    state.editorCode = formatSqlPretty(variant2.sol);
     lastExecResult = await runQuery(variant2.sol);
     lastExpectedResult = null;
     lastFeedback = { type: 'warn', title: '💡 Wczytano wzorcowe rozwiązanie', msg: 'Przeanalizuj kod, a następnie przełącz się na kolejny Wariant (1..10), aby napisać podobne zapytanie samodzielnie.' };
+    saveState();
     render();
   }
   else if (act === 'submitDiag') {
@@ -1094,7 +1110,10 @@ document.addEventListener('click', async function(e) {
       render();
     } else {
       lastExpectedResult = lastExecResult.error ? null : dExp;
-      lastFeedback = { type: 'trap', title: 'Wynik niepoprawny', msg: dCmp.msg + ' Popraw zapytanie lub kliknij "Pomiń zadanie".' };
+      var diagErrMsg = lastExecResult.error
+        ? dCmp.msg
+        : 'Odpowiedź nie pasuje do wzorca. Porównaj swój wynik z oczekiwanym wynikiem poniżej.';
+      lastFeedback = { type: 'trap', title: 'Wynik niepoprawny', msg: diagErrMsg };
       render();
     }
   }
@@ -1191,17 +1210,17 @@ document.addEventListener('click', async function(e) {
       lastExpectedResult = lastExecResult.error ? null : lExp;
       var trapMsg = lt.detectTrap ? lt.detectTrap(state.editorCode, lastExecResult) : null;
       if (trapMsg) {
-        registerGapTrap(lt.gapId, lt.gapName, lt.gapHint);
+        registerGapTrap(lt.gapId, lt.gapName, lt.gapHint || lt.hint);
         lastFeedback = {
           type: 'trap',
           title: '⚠️ Wpadłeś w pułapkę rekrutacyjną (' + (lt.categoryTag || 'SQL') + ')!',
-          msg: trapMsg + '\n\n' + lCmp.msg + '\n👉 Luka [' + lt.gapName + '] została zaktualizowana w Twoim Rejestrze Luk.'
+          msg: trapMsg + '\n👉 Luka [' + lt.gapName + '] została zaktualizowana w Twoim Rejestrze Luk.'
         };
       } else {
         lastFeedback = {
           type: 'trap',
           title: '❌ Wynik niezgodny z wzorcem',
-          msg: lCmp.msg
+          msg: lastExecResult.error ? lCmp.msg : 'Odpowiedź nie pasuje do wzorca. Porównaj swój wynik z oczekiwanym wynikiem poniżej.'
         };
       }
     }
@@ -1209,15 +1228,16 @@ document.addEventListener('click', async function(e) {
   }
   else if (act === 'showLemurSol') {
     var lt2 = LEMUR_TASKS.find(function(x) { return x.id === state.activeLemurId; }) || LEMUR_TASKS[0];
-    state.editorCode = lt2.sol;
+    state.editorCode = formatSqlPretty(lt2.sol);
     lastExecResult = await runQuery(lt2.sol);
     lastExpectedResult = null;
-    lastFeedback = { type: 'warn', title: '💡 Wzorcowe rozwiązanie (' + lt2.title + ')', msg: lt2.gapHint };
+    lastFeedback = { type: 'warn', title: '💡 Wzorcowe rozwiązanie (' + lt2.title + ')', msg: lt2.hint || lt2.gapHint };
+    saveState();
     render();
   }
   else if (act === 'lemurTrapHint') {
     var lt3 = LEMUR_TASKS.find(function(x) { return x.id === state.activeLemurId; }) || LEMUR_TASKS[0];
-    lastFeedback = { type: 'warn', title: '🛡️ Wskazówka dotycząca pułapki (' + lt3.gapName + ')', msg: lt3.gapHint };
+    lastFeedback = { type: 'warn', title: '🛡️ Wskazówka dotycząca pułapki (' + lt3.gapName + ')', msg: lt3.hint || lt3.gapHint };
     render();
   }
   else if (act === 'bumpGap') {
@@ -1294,5 +1314,11 @@ document.addEventListener('click', async function(e) {
 
 render();
 initDatabase();
+
+if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
+  window.addEventListener('load', function() {
+    navigator.serviceWorker.register('./sw.js').catch(function() {});
+  });
+}
 })();
 
