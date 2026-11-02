@@ -138,7 +138,11 @@ code.inline {
   display: flex; align-items: center; justify-content: space-between;
   gap: 8px; margin-bottom: 12px; flex-wrap: wrap;
 }
-.var-pills { display: flex; gap: 4px; align-items: center; }
+.var-pills { display: flex; gap: 4px; align-items: center; flex-wrap: wrap; }
+.var-pill:hover { border-color: var(--accent); color: var(--ink); }
+.var-pill.var-pill-mix { border-color: rgba(139, 92, 246, 0.45); color: var(--agg); }
+.var-pill.var-pill-mix.active { border-color: var(--accent-2); background: var(--accent-2); color: #fff; }
+.var-sep { font: 700 10px var(--body); text-transform: uppercase; letter-spacing: .04em; padding: 2px 6px; margin-left: 3px; border-radius: 6px; background: rgba(139, 92, 246, 0.14); color: var(--agg); border: 1px dashed rgba(139, 92, 246, 0.45); }
 .var-pill {
   width: 30px; height: 30px; border-radius: 8px; border: 1px solid var(--line);
   background: var(--surface-2); color: var(--muted); font: 600 12px var(--mono);
@@ -200,6 +204,19 @@ code.inline {
 .node-title { font-weight: 600; font-size: 14px; display: block; margin-bottom: 2px; }
 .node-meta { font-size: 12px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .schema-cols { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
+
+/* Teach-First Theory Box */
+details.theory-box { background: var(--surface-2); border: 1px solid var(--line); border-left: 4px solid var(--accent-2); border-radius: 12px; padding: 10px 14px; margin: 10px 0; font-size: 13.5px; line-height: 1.55; }
+details.theory-box summary { cursor: pointer; font-weight: 600; color: var(--ink); list-style: none; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+details.theory-box summary::-webkit-details-marker { display: none; }
+details.theory-box summary::after { content: "▼"; font-size: 10px; color: var(--muted); flex-shrink: 0; }
+details.theory-box[open] summary::after { content: "▲"; }
+.theory-body { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--line); }
+.theory-body ul { margin: 0 0 10px; padding-left: 18px; }
+.theory-body li { margin-bottom: 6px; }
+.theory-body code { font: 500 12px var(--mono); background: var(--surface); color: var(--kw); padding: 1px 5px; border-radius: 5px; border: 1px solid var(--line); }
+.theory-code { background: var(--code-bg); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; overflow-x: auto; }
+.theory-code code { background: transparent; border: 0; padding: 0; color: var(--str); white-space: pre-wrap; display: block; }
 
 /* Prompt Box inside Workspace */
 .prompt-box {

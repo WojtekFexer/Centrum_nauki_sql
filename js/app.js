@@ -260,7 +260,7 @@ function saveState() {
 var currentTab = 'path';
 var lastExecResult = null;
 var lastFeedback = null;
-var uiState = { schemaBoxOpen: false };
+var uiState = { schemaBoxOpen: false, theoryBoxOpen: null };
 
 function esc(s) {
   return String(s == null ? '' : s).replace(/[&<>"']/g, function(c) {
@@ -456,7 +456,7 @@ function renderResultBox() {
    8. WIDOKI ZAKŁADEK (PRZEJRZYSTY PODZIAŁ: MAPA vs TRYB ZADANIA)
    ========================================================================== */
 
-// ZAKŁADKA 1: ŚCIEŻKA (60 WARIANTÓW)
+// ZAKŁADKA 1: ŚCIEŻKA (120 WARIANTÓW)
 function renderPathTab() {
   if (state.pathMode === 'solve') {
     var task = PATH_TASKS.find(function(t) { return t.id === state.activeTaskId; }) || PATH_TASKS[0];
@@ -465,20 +465,37 @@ function renderPathTab() {
 
     var varPills = '';
     for (var i = 0; i < task.variants.length; i++) {
+      if (i === 5) {
+        varPills += '<span class="var-sep" title="Warianty 6–10: Poziom Progresywny (Mix+)">Mix+</span>';
+      }
       var vDone = !!state.completedVariants[task.id + ':' + i];
-      varPills += '<button type="button" class="var-pill ' + (i === vIdx ? 'active ' : '') + (vDone ? 'done' : '') + '" data-act="pickVariant" data-idx="' + i + '" title="Wariant ' + (i + 1) + '">' + (i + 1) + '</button>';
+      var isMix = i >= 5;
+      var cls = 'var-pill ' + (isMix ? 'var-pill-mix ' : '') + (i === vIdx ? 'active ' : '') + (vDone ? 'done' : '');
+      var ttl = 'Wariant ' + (i + 1) + (isMix ? ' (Poziom Mix+)' : ' (Podstawy)');
+      varPills += '<button type="button" class="' + cls.trim() + '" data-act="pickVariant" data-idx="' + i + '" title="' + ttl + '">' + (i + 1) + '</button>';
     }
+
+    var isTheoryOpen = uiState.theoryBoxOpen !== null ? uiState.theoryBoxOpen : (task.stage === 1);
+    var theoryHtml = task.theory
+      ? '<details class="theory-box"' + (isTheoryOpen ? ' open' : '') + '>' +
+          '<summary>📘 Teoria w pigułce: jak działają klauzule w tej lekcji (kliknij, aby rozwinąć/zwinąć)</summary>' +
+          '<div class="theory-body">' + task.theory + '</div>' +
+        '</details>'
+      : '';
+
+    var tierLabel = vIdx >= 5 ? ' · 🔥 Poziom Mix+' : ' · Podstawy';
 
     return '<div class="card">' +
       '<div class="ws-bar">' +
         '<button class="btn sm" data-act="backToPathList">← Wróć do Mapy Ścieżki</button>' +
-        '<div class="var-pills"><span class="small muted" style="margin-right:4px">Wariant:</span>' + varPills + '</div>' +
+        '<div class="var-pills"><span class="small muted" style="margin-right:2px">Wariant:</span>' + varPills + '</div>' +
         '<button class="btn sm" data-act="shuffleVariant">🎲 Losuj wariant</button>' +
       '</div>' +
-      '<span class="chip info">Etap ' + task.stage + ' · Wariant ' + (vIdx + 1) + ' z ' + task.variants.length + '</span>' +
+      '<span class="chip info">Etap ' + task.stage + ' · Wariant ' + (vIdx + 1) + ' z ' + task.variants.length + tierLabel + '</span>' +
       '<h2 style="margin-top:8px">' + esc(task.title) + '</h2>' +
+      theoryHtml +
       '<div class="prompt-box">' + formatPrompt(variant.prompt) + '</div>' +
-      buildTaskSchemaBox(task.tables, variant.sol) +
+      buildTaskSchemaBox(variant.tables || task.tables, variant.sol) +
       renderEditorWidget(task.cols, 'checkPathTask') +
       '<div class="acts" style="margin-top:12px;border-top:1px solid var(--line);padding-top:10px">' +
         '<button class="btn sm" data-act="showSolution">💡 Pokaż wzorcowy kod</button>' +
@@ -487,7 +504,7 @@ function renderPathTab() {
     '</div>';
   }
 
-  var totalVariants = PATH_TASKS.length * 5;
+  var totalVariants = PATH_TASKS.reduce(function(acc, t) { return acc + t.variants.length; }, 0);
   var doneVariants = Object.keys(state.completedVariants).length;
   var doneLessons = Object.keys(state.completedTasks).length;
 
@@ -695,9 +712,11 @@ function renderSchemaTab() {
 
 // ZAKŁADKA 5: KONTO, KLUCZ API & BACKUP
 function renderProfileTab() {
+  var totalPathVars = PATH_TASKS.reduce(function(acc, t) { return acc + t.variants.length; }, 0);
+  var totalAllTasks = totalPathVars + DIAG_QUESTIONS.length + LEMUR_TASKS.length;
   return '<div class="card">' +
     '<h2>Konfiguracja Silnika AI (Tryb Hybrydowy)</h2>' +
-    '<p class="small muted">Wszystkie 82 zadania na bazie <code>dvdrental</code> działają w 100% lokalnie i offline. Jeśli chcesz korzystać z podpowiedzi mentora AI, wybierz dostawcę:</p>' +
+    '<p class="small muted">Wszystkie ' + totalAllTasks + ' zadania na bazie <code>dvdrental</code> działają w 100% lokalnie i offline. Jeśli chcesz korzystać z podpowiedzi mentora AI, wybierz dostawcę:</p>' +
     '<label class="small">Dostawca AI</label>' +
     '<select id="aiProvSel">' +
       '<option value="gemini" ' + (state.aiProvider === 'gemini' ? 'selected' : '') + '>Google Gemini API (Darmowy klucz z Google AI Studio)</option>' +
@@ -710,7 +729,7 @@ function renderProfileTab() {
   '</div>' +
   '<div class="card">' +
     '<h2>Kopia zapasowa postępów (.json)</h2>' +
-    '<p class="small muted">Twój obecny stan: <strong>' + state.xp + ' XP</strong> · Rozwiązane warianty Ścieżki: <strong>' + Object.keys(state.completedVariants).length + '/60</strong> · Zadania DataLemur: <strong>' + Object.keys(state.completedLemur).length + '/12</strong>.</p>' +
+    '<p class="small muted">Twój obecny stan: <strong>' + state.xp + ' XP</strong> · Rozwiązane warianty Ścieżki: <strong>' + Object.keys(state.completedVariants).length + '/' + totalPathVars + '</strong> · Zadania DataLemur: <strong>' + Object.keys(state.completedLemur).length + '/' + LEMUR_TASKS.length + '</strong>.</p>' +
     '<div class="acts">' +
       '<button class="btn sm primary" data-act="exportJson">⬇ Pobierz pełny backup (.json)</button>' +
     '</div>' +
@@ -758,10 +777,14 @@ function render() {
   }
 }
 
-// Zapamiętywanie stanu rozwinięcia/zwinięcia podglądu tabel przez użytkownika
+// Zapamiętywanie stanu rozwinięcia/zwinięcia podglądu tabel oraz teorii przez użytkownika
 document.addEventListener('toggle', function(e) {
-  if (e.target && e.target.classList && e.target.classList.contains('helper-fold')) {
-    uiState.schemaBoxOpen = e.target.open;
+  if (e.target && e.target.classList) {
+    if (e.target.classList.contains('helper-fold')) {
+      uiState.schemaBoxOpen = e.target.open;
+    } else if (e.target.classList.contains('theory-box')) {
+      uiState.theoryBoxOpen = e.target.open;
+    }
   }
 }, true);
 
@@ -826,6 +849,7 @@ document.addEventListener('click', async function(e) {
     state.activeVariantIdx = 0;
     state.pathMode = 'solve';
     uiState.schemaBoxOpen = false;
+    uiState.theoryBoxOpen = null;
     var t = PATH_TASKS.find(function(x) { return x.id === state.activeTaskId; });
     if (t) state.editorCode = '-- ' + t.title + ' (Wariant 1)\nSELECT ';
     lastExecResult = null;
@@ -837,6 +861,7 @@ document.addEventListener('click', async function(e) {
   else if (act === 'continuePath') {
     state.pathMode = 'solve';
     uiState.schemaBoxOpen = false;
+    uiState.theoryBoxOpen = null;
     lastExecResult = null;
     lastFeedback = null;
     saveState();
@@ -863,7 +888,12 @@ document.addEventListener('click', async function(e) {
   }
   else if (act === 'shuffleVariant') {
     var curTask = PATH_TASKS.find(function(x) { return x.id === state.activeTaskId; }) || PATH_TASKS[0];
-    state.activeVariantIdx = (state.activeVariantIdx + 1) % curTask.variants.length;
+    var len = curTask.variants.length;
+    var nextIdx = Math.floor(Math.random() * len);
+    if (len > 1 && nextIdx === state.activeVariantIdx) {
+      nextIdx = (nextIdx + 1) % len;
+    }
+    state.activeVariantIdx = nextIdx;
     uiState.schemaBoxOpen = false;
     state.editorCode = '-- ' + curTask.title + ' (Wariant ' + (state.activeVariantIdx + 1) + ')\nSELECT ';
     lastExecResult = null;
@@ -905,7 +935,7 @@ document.addEventListener('click', async function(e) {
     var variant2 = task2.variants[state.activeVariantIdx % task2.variants.length];
     state.editorCode = variant2.sol;
     lastExecResult = await runQuery(variant2.sol);
-    lastFeedback = { type: 'warn', title: '💡 Wczytano wzorcowe rozwiązanie', msg: 'Przeanalizuj kod, a następnie przełącz się na kolejny Wariant (1..5), aby napisać podobne zapytanie samodzielnie.' };
+    lastFeedback = { type: 'warn', title: '💡 Wczytano wzorcowe rozwiązanie', msg: 'Przeanalizuj kod, a następnie przełącz się na kolejny Wariant (1..10), aby napisać podobne zapytanie samodzielnie.' };
     render();
   }
   else if (act === 'submitDiag') {
@@ -1091,10 +1121,12 @@ document.addEventListener('click', async function(e) {
         lastFeedback = { type: 'trap', title: 'Błąd połączenia z API', msg: 'Sprawdź swój klucz API w zakładce Konto & AI.' };
       }
     } else {
+      var hintTask = PATH_TASKS.find(function(t) { return t.id === state.activeTaskId; }) || PATH_TASKS[0];
+      var hintVar = hintTask.variants[state.activeVariantIdx % hintTask.variants.length];
       lastFeedback = {
         type: 'warn',
         title: '💡 Wskazówka lokalnego mentora (Offline)',
-        msg: 'Rozwiń sekcję "👁 Podejrzyj i kliknij kolumny tabel w tym zadaniu" nad edytorem, aby upewnić się co do nazw kolumn i zawartości tabel.'
+        msg: (hintVar && hintVar.hint ? hintVar.hint + '\n\n' : '') + 'Rozwiń sekcję "👁 Podejrzyj i kliknij kolumny tabel w tym zadaniu" nad edytorem, aby upewnić się co do nazw kolumn i zawartości tabel.'
       };
     }
     render();

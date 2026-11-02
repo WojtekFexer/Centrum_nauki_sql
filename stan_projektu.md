@@ -28,10 +28,10 @@
 - [x] SELECT zwraca tabelę wyników i porównuje ją z zapytaniem wzorcowym
 - [x] Diagnoza z przyciskiem Pomiń (10 przekrojowych zadań) pamięta stan zwinięcia podglądu tabel
 - [x] TEST 1–6 z poprzedniej sesji (przejrzystość UI, pułapka Netflix `dl_1`, składnia PG, wieloliniowy SELECT, linia błędu parsera PG)
-- [ ] **NOWY TEST 7 (wydzielenie `js/app.js`):** aplikacja uruchamia się w Live Server bez błędów w konsoli (F12), `index.html` ma ok. 60 linii, a wszystkie zakładki (Ścieżka, Diagnoza, Rekrutacja, Baza dvdrental, Konto & AI) reagują prawidłowo
-- [ ] **NOWY TEST 8 (uszczelnienie `detectTrap` w `dl_2`–`dl_12`):** w zadaniu Stripe (`dl_2`) i Amazon (`dl_3`) wpisanie `SELECT * FROM actor;` zwraca zwykły błąd wyniku i NIE uruchamia fałszywego alarmu detektora pułapek
-- [ ] **NOWY TEST 9 (Teoria „Ludzkim językiem”):** w zadaniach Ścieżki (np. 1.1, 2.1, 3.1) widoczny jest przystępny opis działania klauzul SQL dla początkujących (można go zwinąć/rozwinąć)
-- [ ] **NOWY TEST 10 (10 wariantów na lekcję — Basic 1–5 + Mix 6–10):**
+- [x] **NOWY TEST 7 (wydzielenie `js/app.js`):** aplikacja uruchamia się w Live Server bez błędów w konsoli (F12), `index.html` ma ok. 60 linii, a wszystkie zakładki (Ścieżka, Diagnoza, Rekrutacja, Baza dvdrental, Konto & AI) reagują prawidłowo
+- [x] **NOWY TEST 8 (uszczelnienie `detectTrap` w `dl_2`–`dl_12`):** w zadaniu Stripe (`dl_2`) i Amazon (`dl_3`) wpisanie `SELECT * FROM actor;` zwraca zwykły błąd wyniku i NIE uruchamia fałszywego alarmu detektora pułapek
+- [x]**NOWY TEST 9 (Teoria „Ludzkim językiem”):** w zadaniach Ścieżki (np. 1.1, 2.1, 3.1) widoczny jest przystępny opis działania klauzul SQL dla początkujących (można go zwinąć/rozwinąć)
+- [x] **NOWY TEST 10 (10 wariantów na lekcję — Basic 1–5 + Mix 6–10):**
   - Dolny pasek pokazuje `Ścieżka (120)`, a wewnątrz lekcji widoczne są warianty `1`–`10`
   - Warianty 6–10 w Etapie 2 (Agregacje) i Etapie 3 (JOIN) łączą zagadnienia z poprzednich lekcji (np. `JOIN` + `WHERE` + `GROUP BY` + `ORDER BY`)
   - Podgląd kolumn `👁` w wariantach 6–10 poprawnie wyświetla wszystkie tabele biorące udział w trudniejszym zadaniu
