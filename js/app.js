@@ -2,6 +2,29 @@
 'use strict';
 
 /* ==========================================================================
+   0. KONFIGURACJA CHMURY SUPABASE (REST API — RANKING I PROFILE TESTERÓW)
+   ========================================================================== */
+const SUPABASE_CONFIG = {
+  url: localStorage.getItem('sql_master_sb_url') || '',
+  anonKey: localStorage.getItem('sql_master_sb_key') || ''
+};
+
+try {
+  var urlParams = new URLSearchParams(window.location.search);
+  var paramSbUrl = urlParams.get('sb_url');
+  var paramSbKey = urlParams.get('sb_key');
+  if (paramSbUrl && paramSbKey) {
+    SUPABASE_CONFIG.url = paramSbUrl.trim().replace(/\/+$/, '');
+    SUPABASE_CONFIG.anonKey = paramSbKey.trim();
+    localStorage.setItem('sql_master_sb_url', SUPABASE_CONFIG.url);
+    localStorage.setItem('sql_master_sb_key', SUPABASE_CONFIG.anonKey);
+    if (window.history && window.history.replaceState) {
+      window.history.replaceState({}, document.title, window.location.pathname + window.location.hash);
+    }
+  }
+} catch (e) {}
+
+/* ==========================================================================
    1. BAZA DANYCH DVDRENTAL (10 TABEL Z PRZYPADKAMI BRZEGOWYMI)
    Dane i schemat ładowane z js/data-dvdrental.js
    ========================================================================== */
@@ -244,6 +267,7 @@ function compareResults(userRes, expRes, checkOrder) {
    6. STAN APLIKACJI I NAWIGACJI (CZYSTY PODZIAŁ LISTA <-> WORKSPACE)
    ========================================================================== */
 var STORAGE_KEY = 'sqlmaster_dvd_v1';
+var LOCAL_PROFILES_KEY = 'sql_master_local_profiles';
 
 function defaultState() {
   return {
@@ -252,6 +276,8 @@ function defaultState() {
     theme: 'dark',
     unlockedStage: 1,
     diagDone: false,
+    testerUnlockAll: false,
+    tutorialsDone: {},
     completedTasks: {},
     completedVariants: {},
     completedLemur: {},
@@ -278,7 +304,8 @@ function defaultState() {
     ],
     aiProvider: 'gemini',
     apiKey: '',
-    nickname: 'Wojtek_SQL'
+    nickname: 'Wojtek_SQL',
+    userProfile: null
   };
 }
 
@@ -290,6 +317,8 @@ try {
     state = Object.assign(defaultState(), parsed);
     if (!state.completedVariants) state.completedVariants = {};
     if (!state.completedLemur) state.completedLemur = {};
+    if (!state.completedTasks) state.completedTasks = {};
+    if (!state.tutorialsDone) state.tutorialsDone = {};
   }
 } catch (e) {}
 
@@ -302,7 +331,321 @@ var currentTab = 'path';
 var lastExecResult = null;
 var lastExpectedResult = null;
 var lastFeedback = null;
-var uiState = { schemaBoxOpen: false, theoryBoxOpen: null, lemurDiffFilter: 'all' };
+var uiState = {
+  schemaBoxOpen: false,
+  theoryBoxOpen: null,
+  lemurDiffFilter: 'all',
+  tutorialSlideIdx: 0,
+  quizSelected: null,
+  quizPassed: false,
+  authModalOpen: !(state.userProfile && state.userProfile.nick),
+  authError: '',
+  leaderboard: null,
+  leaderboardSource: 'local',
+  lastSyncTime: null,
+  syncing: false
+};
+
+/* --- PROGRESJA SOLOLEARN: BLOKADY WARIANTÓW 6-10 ORAZ KOLEJNYCH LEKCJI --- */
+function countBasicSolved(taskId) {
+  var c = 0;
+  var cv = (state && state.completedVariants) ? state.completedVariants : {};
+  for (var i = 0; i < 5; i++) {
+    if (cv[taskId + ':' + i]) c++;
+  }
+  return c;
+}
+
+function isAdvancedUnlocked(taskId) {
+  if (state && state.testerUnlockAll) return true;
+  return countBasicSolved(taskId) >= 5;
+}
+
+function isLessonUnlocked(taskId) {
+  if (state && state.testerUnlockAll) return true;
+  var idx = PATH_TASKS.findIndex(function(t) { return t.id === taskId; });
+  if (idx <= 0) return true; // Lekcja 1.1 zawsze odblokowana na starcie
+  var task = PATH_TASKS[idx];
+  var prevTask = PATH_TASKS[idx - 1];
+  // Odblokowana, gdy poprzednia lekcja ma zaliczone min. 5 podstawowych wariantów (1-5)
+  if (countBasicSolved(prevTask.id) >= 5) return true;
+  // Lub została odblokowana przez moduł Diagnozy (state.unlockedStage)
+  if (state && state.diagDone && (state.unlockedStage || 1) > 1) {
+    if (task.stage < state.unlockedStage) return true;
+    if (task.stage === state.unlockedStage && prevTask.stage < task.stage) return true;
+  }
+  return false;
+}
+
+function isStageUnlocked(stageId) {
+  if (state && state.testerUnlockAll) return true;
+  if (stageId <= 1) return true;
+  if (state && state.diagDone && stageId <= (state.unlockedStage || 1)) return true;
+  var firstTask = PATH_TASKS.find(function(t) { return t.stage === stageId; });
+  return firstTask ? isLessonUnlocked(firstTask.id) : false;
+}
+
+function getLessonSlides(task) {
+  if (!task) return [];
+  if (Array.isArray(task.slides) && task.slides.length) return task.slides;
+  if (window.LESSON_TUTORIALS && window.LESSON_TUTORIALS[task.id]) return window.LESSON_TUTORIALS[task.id];
+  return [];
+}
+
+/* --- AUTORYZACJA TESTERÓW (NICK + PIN) ORAZ SYNCHRONIZACJA SUPABASE REST API --- */
+function hashPin(nick, pin) {
+  var str = String(nick || '').trim().toLowerCase() + ':' + String(pin || '').trim() + ':sqlmaster_salt_2026';
+  var h1 = 0xdeadbeef ^ str.length, h2 = 0x41c6ce57 ^ str.length;
+  for (var i = 0, ch; i < str.length; i++) {
+    ch = str.charCodeAt(i);
+    h1 = Math.imul(h1 ^ ch, 2654435761);
+    h2 = Math.imul(h2 ^ ch, 1597334677);
+  }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return (h2 >>> 0).toString(16).padStart(8, '0') + (h1 >>> 0).toString(16).padStart(8, '0');
+}
+
+function isSupabaseConfigured() {
+  return Boolean(SUPABASE_CONFIG.url && SUPABASE_CONFIG.anonKey);
+}
+
+function getTotalSolvedCount() {
+  var vCnt = Object.keys((state && state.completedVariants) || {}).length;
+  var lCnt = Object.keys((state && state.completedLemur) || {}).length;
+  return vCnt + lCnt;
+}
+
+function getLocalProfilesMap() {
+  try {
+    var raw = localStorage.getItem(LOCAL_PROFILES_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch (e) {
+    return {};
+  }
+}
+
+function saveLocalProfileEntry() {
+  if (!state.userProfile || !state.userProfile.nick) return;
+  try {
+    var map = getLocalProfilesMap();
+    var key = state.userProfile.nick.toLowerCase();
+    map[key] = {
+      nick: state.userProfile.nick,
+      pin_hash: state.userProfile.pinHash,
+      xp: state.xp,
+      streak: state.streak,
+      solved_count: getTotalSolvedCount(),
+      state_json: {
+        xp: state.xp,
+        streak: state.streak,
+        unlockedStage: state.unlockedStage,
+        diagDone: state.diagDone,
+        tutorialsDone: state.tutorialsDone,
+        completedTasks: state.completedTasks,
+        completedVariants: state.completedVariants,
+        completedLemur: state.completedLemur,
+        gaps: state.gaps
+      },
+      updated_at: new Date().toISOString()
+    };
+    localStorage.setItem(LOCAL_PROFILES_KEY, JSON.stringify(map));
+  } catch (e) {}
+}
+
+function mergeRemoteStateIntoCurrent(remoteState) {
+  if (!remoteState || typeof remoteState !== 'object') return;
+  state.xp = Math.max(state.xp || 0, Number(remoteState.xp) || 0);
+  state.streak = Math.max(state.streak || 1, Number(remoteState.streak) || 1);
+  state.unlockedStage = Math.max(state.unlockedStage || 1, Number(remoteState.unlockedStage) || 1);
+  state.diagDone = Boolean(state.diagDone || remoteState.diagDone);
+  state.tutorialsDone = Object.assign({}, remoteState.tutorialsDone || {}, state.tutorialsDone || {});
+  state.completedTasks = Object.assign({}, remoteState.completedTasks || {}, state.completedTasks || {});
+  state.completedVariants = Object.assign({}, remoteState.completedVariants || {}, state.completedVariants || {});
+  state.completedLemur = Object.assign({}, remoteState.completedLemur || {}, state.completedLemur || {});
+}
+
+async function syncProfileToCloud(silent) {
+  saveLocalProfileEntry();
+  if (!isSupabaseConfigured() || !state.userProfile || !state.userProfile.nick) {
+    await fetchLeaderboard();
+    return false;
+  }
+  uiState.syncing = true;
+  var baseUrl = SUPABASE_CONFIG.url.replace(/\/+$/, '');
+  var nowIso = new Date().toISOString();
+  state.userProfile.updatedAt = nowIso;
+  var payload = {
+    nick: state.userProfile.nick,
+    pin_hash: state.userProfile.pinHash,
+    xp: state.xp,
+    streak: state.streak,
+    solved_count: getTotalSolvedCount(),
+    state_json: {
+      xp: state.xp,
+      streak: state.streak,
+      unlockedStage: state.unlockedStage,
+      diagDone: state.diagDone,
+      tutorialsDone: state.tutorialsDone,
+      completedTasks: state.completedTasks,
+      completedVariants: state.completedVariants,
+      completedLemur: state.completedLemur,
+      gaps: state.gaps
+    },
+    updated_at: nowIso
+  };
+  try {
+    var resp = await fetch(baseUrl + '/rest/v1/sql_profiles?on_conflict=nick', {
+      method: 'POST',
+      headers: {
+        'apikey': SUPABASE_CONFIG.anonKey,
+        'Authorization': 'Bearer ' + SUPABASE_CONFIG.anonKey,
+        'Content-Type': 'application/json',
+        'Prefer': 'resolution=merge-duplicates,return=minimal'
+      },
+      body: JSON.stringify(payload)
+    });
+    uiState.syncing = false;
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    uiState.lastSyncTime = new Date().toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit' });
+    saveState();
+    await fetchLeaderboard();
+    if (!silent) toast('☁️ Zsynchronizowano postęp z chmurą Supabase!');
+    return true;
+  } catch (err) {
+    uiState.syncing = false;
+    console.warn('Supabase sync error:', err);
+    await fetchLeaderboard();
+    if (!silent) toast('⚠️ Zapisano lokalnie (sprawdź połączenie lub tabelę sql_profiles w Supabase).');
+    return false;
+  }
+}
+
+async function fetchLeaderboard() {
+  if (isSupabaseConfigured()) {
+    try {
+      var baseUrl = SUPABASE_CONFIG.url.replace(/\/+$/, '');
+      var resp = await fetch(baseUrl + '/rest/v1/sql_profiles?select=nick,xp,streak,solved_count,updated_at&order=xp.desc&limit=20', {
+        method: 'GET',
+        headers: {
+          'apikey': SUPABASE_CONFIG.anonKey,
+          'Authorization': 'Bearer ' + SUPABASE_CONFIG.anonKey
+        }
+      });
+      if (resp.ok) {
+        var rows = await resp.json();
+        if (Array.isArray(rows)) {
+          uiState.leaderboard = rows;
+          uiState.leaderboardSource = 'supabase';
+          if (currentTab === 'profile') render();
+          return rows;
+        }
+      }
+    } catch (err) {
+      console.warn('Leaderboard fetch fallback:', err);
+    }
+  }
+  uiState.leaderboardSource = 'local';
+  uiState.leaderboard = getDisplayLeaderboard();
+  if (currentTab === 'profile') render();
+  return uiState.leaderboard;
+}
+
+function getDisplayLeaderboard() {
+  if (uiState.leaderboardSource === 'supabase' && Array.isArray(uiState.leaderboard) && uiState.leaderboard.length > 0) {
+    return uiState.leaderboard;
+  }
+  var demoPlayers = [
+    { nick: 'Ania_Data', xp: 1420, streak: 6, solved_count: 38 },
+    { nick: 'Kamil_BI', xp: 980, streak: 3, solved_count: 24 },
+    { nick: 'Marta_SQL', xp: 640, streak: 2, solved_count: 15 },
+    { nick: 'Tomek_Dev', xp: 410, streak: 1, solved_count: 9 }
+  ];
+  var localMap = getLocalProfilesMap();
+  var byNick = {};
+  demoPlayers.forEach(function(p) { byNick[p.nick.toLowerCase()] = p; });
+  Object.keys(localMap).forEach(function(k) {
+    var lp = localMap[k];
+    byNick[k] = { nick: lp.nick, xp: lp.xp, streak: lp.streak, solved_count: lp.solved_count };
+  });
+  var curNick = (state.userProfile && state.userProfile.nick) ? state.userProfile.nick : (state.nickname || 'Ty (Gość)');
+  byNick[curNick.toLowerCase()] = {
+    nick: curNick,
+    xp: state.xp,
+    streak: state.streak,
+    solved_count: getTotalSolvedCount()
+  };
+  return Object.keys(byNick).map(function(k) { return byNick[k]; }).sort(function(a, b) {
+    return (b.xp - a.xp) || (b.solved_count - a.solved_count);
+  }).slice(0, 20);
+}
+
+async function loginOrRegisterTester(rawNick, rawPin) {
+  var nick = String(rawNick || '').trim();
+  var pin = String(rawPin || '').trim();
+  if (nick.length < 2 || nick.length > 24) {
+    return { ok: false, msg: 'Podaj Nick o długości od 2 do 24 znaków (np. Wojtek).' };
+  }
+  if (!/^\d{4}$/.test(pin)) {
+    return { ok: false, msg: 'PIN musi składać się dokładnie z 4 cyfr (np. 1234).' };
+  }
+  var pinHash = hashPin(nick, pin);
+
+  // 1. Sprawdzenie w chmurze Supabase (jeśli skonfigurowana)
+  if (isSupabaseConfigured()) {
+    try {
+      var baseUrl = SUPABASE_CONFIG.url.replace(/\/+$/, '');
+      var checkResp = await fetch(baseUrl + '/rest/v1/sql_profiles?nick=eq.' + encodeURIComponent(nick) + '&select=nick,pin_hash,xp,streak,solved_count,state_json,updated_at', {
+        method: 'GET',
+        headers: {
+          'apikey': SUPABASE_CONFIG.anonKey,
+          'Authorization': 'Bearer ' + SUPABASE_CONFIG.anonKey
+        }
+      });
+      if (checkResp.ok) {
+        var found = await checkResp.json();
+        if (Array.isArray(found) && found.length > 0) {
+          var remoteRow = found[0];
+          if (remoteRow.pin_hash && remoteRow.pin_hash !== pinHash) {
+            return { ok: false, msg: 'Gracz "' + nick + '" już istnieje w chmurze, ale podano błędny 4-cyfrowy PIN!' };
+          }
+          if (remoteRow.state_json) {
+            mergeRemoteStateIntoCurrent(remoteRow.state_json);
+          } else {
+            state.xp = Math.max(state.xp, Number(remoteRow.xp) || 0);
+            state.streak = Math.max(state.streak, Number(remoteRow.streak) || 1);
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('Cloud profile check warning:', e);
+    }
+  }
+
+  // 2. Sprawdzenie w lokalnym rejestrze profili na tym urządzeniu
+  var localMap = getLocalProfilesMap();
+  var existingLocal = localMap[nick.toLowerCase()];
+  if (existingLocal) {
+    if (existingLocal.pin_hash && existingLocal.pin_hash !== pinHash) {
+      return { ok: false, msg: 'Profil "' + nick + '" na tym urządzeniu ma przypisany inny 4-cyfrowy PIN!' };
+    }
+    if (existingLocal.state_json) {
+      mergeRemoteStateIntoCurrent(existingLocal.state_json);
+    }
+  }
+
+  state.userProfile = {
+    nick: nick,
+    pinHash: pinHash,
+    updatedAt: new Date().toISOString()
+  };
+  state.nickname = nick;
+  uiState.authModalOpen = false;
+  uiState.authError = '';
+  saveState();
+  await syncProfileToCloud(true);
+  return { ok: true, msg: 'Zalogowano jako ' + nick + '!' };
+}
 
 function esc(s) {
   return String(s == null ? '' : s).replace(/[&<>"']/g, function(c) {
@@ -580,43 +923,213 @@ function renderResultBox() {
 }
 
 /* ==========================================================================
-   8. WIDOKI ZAKŁADEK (PRZEJRZYSTY PODZIAŁ: MAPA vs TRYB ZADANIA)
+   8. WIDOKI ZAKŁADEK (PRZEJRZYSTY PODZIAŁ: MAPA vs SLAJDY TEORII vs ZADANIA)
    ========================================================================== */
 
-// ZAKŁADKA 1: ŚCIEŻKA (120 WARIANTÓW)
-function renderPathTab() {
-  if (state.pathMode === 'solve') {
-    var task = PATH_TASKS.find(function(t) { return t.id === state.activeTaskId; }) || PATH_TASKS[0];
-    var vIdx = state.activeVariantIdx % task.variants.length;
-    var variant = task.variants[vIdx];
+var WRITE_ORDER_STEPS = ['SELECT', 'FROM', 'JOIN', 'WHERE', 'GROUP BY', 'HAVING', 'ORDER BY', 'LIMIT'];
+var EXEC_ORDER_STEPS = [
+  { num: 1, lbl: '1. FROM / JOIN', desc: 'Pobranie i złączenie tabel' },
+  { num: 2, lbl: '2. WHERE', desc: 'Sito pojedynczych wierszy' },
+  { num: 3, lbl: '3. GROUP BY', desc: 'Podział na koszyki (grupy)' },
+  { num: 4, lbl: '4. HAVING', desc: 'Filtr całych koszyków po agregacji' },
+  { num: 5, lbl: '5. SELECT (+ OVER)', desc: 'Wyliczenia, aliasy AS i funkcje okna' },
+  { num: 6, lbl: '6. DISTINCT', desc: 'Usunięcie duplikatów' },
+  { num: 7, lbl: '7. ORDER BY', desc: 'Sortowanie wyniku (widzi aliasy!)' },
+  { num: 8, lbl: '8. LIMIT', desc: 'Odcięcie pierwszych N wierszy' }
+];
 
-    var varPills = '';
+function renderTutorialView(task) {
+  var slides = getLessonSlides(task);
+  if (!slides.length) {
+    state.pathMode = 'solve';
+    return renderPathTab();
+  }
+  var sIdx = Math.max(0, Math.min(slides.length - 1, uiState.tutorialSlideIdx || 0));
+  uiState.tutorialSlideIdx = sIdx;
+  var slide = slides[sIdx];
+  var isDone = !!(state.tutorialsDone && state.tutorialsDone[task.id]);
+  var stepTitles = ['1. Składnia', '2. Kolejność SQL', '3. Przykład', '4. Quiz'];
+
+  var stepDots = '<div class="tut-steps">' + slides.map(function(_, idx) {
+    var cls = 'tut-step-btn' + (idx === sIdx ? ' active' : '') + (idx < sIdx || isDone ? ' visited' : '');
+    return '<button type="button" class="' + cls + '" data-act="goToSlide" data-idx="' + idx + '">' + esc(stepTitles[idx] || ('Karta ' + (idx + 1))) + '</button>';
+  }).join('') + '</div>';
+
+  var bodyHtml = '';
+  if (sIdx === 0) {
+    bodyHtml = '<div class="tut-card-inner">' +
+      '<span class="chip info">Karta 1/4 · Składnia i cel klauzuli</span>' +
+      '<h3 style="margin:8px 0">' + esc(slide.title) + '</h3>' +
+      '<div class="theory-code" style="margin-bottom:12px"><code>' + esc(slide.syntax) + '</code></div>' +
+      '<ul class="tut-list">' + (slide.bullets || []).map(function(b) { return '<li>' + b + '</li>'; }).join('') + '</ul>' +
+    '</div>';
+  } else if (sIdx === 1) {
+    var fw = slide.focusWrite || [];
+    var fe = slide.focusExec || [];
+    bodyHtml = '<div class="tut-card-inner">' +
+      '<span class="chip mid">Karta 2/4 · Architektura silnika PostgreSQL</span>' +
+      '<h3 style="margin:8px 0">' + esc(slide.title) + '</h3>' +
+      '<div class="order-box">' +
+        '<div class="order-label">✍️ Kolejność pisania w kodzie SQL:</div>' +
+        '<div class="order-flow">' +
+          WRITE_ORDER_STEPS.map(function(w, idx) {
+            var hi = fw.indexOf(w) > -1;
+            return (idx > 0 ? '<span class="order-arr">→</span>' : '') +
+              '<span class="order-pill' + (hi ? ' active' : '') + '">' + esc(w) + '</span>';
+          }).join('') +
+        '</div>' +
+      '</div>' +
+      '<div class="order-box exec">' +
+        '<div class="order-label">⚙️ Prawdziwa kolejność wykonywania pod maską PostgreSQL:</div>' +
+        '<div class="exec-grid">' +
+          EXEC_ORDER_STEPS.map(function(st) {
+            var hi = fe.indexOf(st.num) > -1;
+            return '<div class="exec-step' + (hi ? ' active' : '') + '">' +
+              '<strong>' + esc(st.lbl) + '</strong>' +
+              '<span>' + esc(st.desc) + '</span>' +
+            '</div>';
+          }).join('') +
+        '</div>' +
+      '</div>' +
+      '<div class="fb-box warn" style="margin-top:10px">' + slide.note + '</div>' +
+    '</div>';
+  } else if (sIdx === 2) {
+    bodyHtml = '<div class="tut-card-inner">' +
+      '<span class="chip info">Karta 3/4 · Przykład krok po kroku</span>' +
+      '<h3 style="margin:8px 0">' + esc(slide.title) + '</h3>' +
+      '<div class="theory-code" style="margin-bottom:12px"><code>' + esc(slide.code) + '</code></div>' +
+      '<div class="tut-lines">' +
+        (slide.lines || []).map(function(ln, idx) {
+          return '<div class="tut-line-item">' +
+            '<div class="tut-line-code"><code>' + esc(ln.line) + '</code></div>' +
+            '<div class="tut-line-desc"><strong>Krok ' + (idx + 1) + ':</strong> ' + esc(ln.desc) + '</div>' +
+          '</div>';
+        }).join('') +
+      '</div>' +
+    '</div>';
+  } else if (sIdx === 3 && slide.quiz) {
+    var qz = slide.quiz;
+    var sel = uiState.quizSelected;
+    var passed = uiState.quizPassed || isDone;
+    bodyHtml = '<div class="tut-card-inner">' +
+      '<span class="chip done">Karta 4/4 · Interaktywne sprawdzenie (+15 XP)</span>' +
+      '<h3 style="margin:8px 0">' + esc(slide.title) + '</h3>' +
+      '<div class="prompt-box" style="margin-bottom:12px"><strong>❓ Pytanie:</strong> ' + formatPrompt(qz.question) + '</div>' +
+      '<div class="quiz-opts">' +
+        qz.options.map(function(optTxt, oIdx) {
+          var optCls = 'quiz-opt-btn';
+          if (sel === oIdx) {
+            optCls += (oIdx === qz.correct) ? ' correct' : ' wrong';
+          } else if (passed && oIdx === qz.correct) {
+            optCls += ' correct';
+          }
+          var prefix = ['A', 'B', 'C'][oIdx] || (oIdx + 1);
+          return '<button type="button" class="' + optCls + '" data-act="pickQuizOpt" data-opt="' + oIdx + '">' +
+            '<span class="quiz-letter">' + prefix + '</span>' +
+            '<span>' + formatPrompt(optTxt) + '</span>' +
+          '</button>';
+        }).join('') +
+      '</div>' +
+      (sel !== null && sel !== qz.correct
+        ? '<div class="fb-box trap"><strong>❌ Jeszcze nie to!</strong> <span class="small">Sprawdź wskazówki z Karty 2 (Kolejność wykonywania SQL) i kliknij inną odpowiedź.</span></div>'
+        : '') +
+      (passed
+        ? '<div class="fb-box ok"><strong>✅ Świetnie! Teoria opanowana.</strong><p class="small" style="margin:4px 0 0">' + esc(qz.explanation) + '</p></div>'
+        : '') +
+    '</div>';
+  }
+
+  var canFinish = uiState.quizPassed || isDone;
+  var navBtns = '<div class="acts" style="justify-content:space-between;margin-top:14px;border-top:1px solid var(--line);padding-top:12px">' +
+    (sIdx > 0
+      ? '<button type="button" class="btn sm" data-act="prevSlide">← Wstecz</button>'
+      : '<button type="button" class="btn sm" data-act="backToPathList">← Mapa Ścieżki</button>') +
+    '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
+      (sIdx < slides.length - 1
+        ? '<button type="button" class="btn primary" data-act="nextSlide">Dalej (' + (sIdx + 2) + '/' + slides.length + ') →</button>'
+        : (canFinish
+            ? '<button type="button" class="btn success" data-act="finishTutorial">🚀 Przejdź do zadań praktycznych →</button>'
+            : '<button type="button" class="btn sm" disabled style="opacity:.6;cursor:not-allowed">Wybierz poprawną odpowiedź powyżej</button>')) +
+    '</div>' +
+  '</div>';
+
+  return '<div class="card">' +
+    '<div class="ws-bar">' +
+      '<button type="button" class="btn sm" data-act="backToPathList">← Wróć do Mapy Ścieżki</button>' +
+      '<span class="chip info">📖 Lekcja · Okno ' + (sIdx + 1) + ' z ' + slides.length + '</span>' +
+      (isDone ? '<button type="button" class="btn sm primary" data-act="finishTutorial">Przejdź do edytora SQL →</button>' : '') +
+    '</div>' +
+    '<h2 style="margin:4px 0 6px">' + esc(task.title) + '</h2>' +
+    '<div class="bar"><i style="width:' + Math.round(((sIdx + 1) / slides.length) * 100) + '%"></i></div>' +
+    stepDots +
+    bodyHtml +
+    navBtns +
+  '</div>';
+}
+
+// ZAKŁADKA 1: ŚCIEŻKA (120 WARIANTÓW + SLAJDY SOLOLEARN + PROGRESJA BLOKAD)
+function renderPathTab() {
+  var activeTask = PATH_TASKS.find(function(t) { return t.id === state.activeTaskId; }) || PATH_TASKS[0];
+
+  if (state.pathMode === 'tutorial') {
+    return renderTutorialView(activeTask);
+  }
+
+  if (state.pathMode === 'solve') {
+    var task = activeTask;
+    var advOpen = isAdvancedUnlocked(task.id);
+    var vIdx = state.activeVariantIdx % task.variants.length;
+    if (vIdx >= 5 && !advOpen) {
+      vIdx = 0;
+      state.activeVariantIdx = 0;
+    }
+    var variant = task.variants[vIdx];
+    var basicCnt = countBasicSolved(task.id);
+
+    var basicPills = '';
+    var advPills = '';
     for (var i = 0; i < task.variants.length; i++) {
-      if (i === 5) {
-        varPills += '<span class="var-sep" title="Warianty 6–10: Poziom Progresywny (Mix+)">Mix+</span>';
-      }
       var vDone = !!state.completedVariants[task.id + ':' + i];
       var isMix = i >= 5;
-      var cls = 'var-pill ' + (isMix ? 'var-pill-mix ' : '') + (i === vIdx ? 'active ' : '') + (vDone ? 'done' : '');
-      var ttl = 'Wariant ' + (i + 1) + (isMix ? ' (Poziom Mix+)' : ' (Podstawy)');
-      varPills += '<button type="button" class="' + cls.trim() + '" data-act="pickVariant" data-idx="' + i + '" title="' + ttl + '">' + (i + 1) + '</button>';
+      var isLockedVar = isMix && !advOpen;
+      var cls = 'var-pill ' + (isMix ? 'var-pill-mix ' : '') + (i === vIdx ? 'active ' : '') + (vDone ? 'done ' : '') + (isLockedVar ? 'locked' : '');
+      var ttl = isLockedVar
+        ? 'Zablokowane! Rozwiąż najpierw zadania podstawowe 1–5 (' + basicCnt + '/5).'
+        : 'Wariant ' + (i + 1) + (isMix ? ' (Poziom Zaawansowany 6–10)' : ' (Poziom Podstawowy 1–5)');
+      var btnHtml = '<button type="button" class="' + cls.trim() + '" data-act="pickVariant" data-idx="' + i + '" title="' + ttl + '">' +
+        (isLockedVar ? '🔒' : (i + 1)) +
+      '</button>';
+      if (i < 5) basicPills += btnHtml;
+      else advPills += btnHtml;
     }
 
-    var isTheoryOpen = uiState.theoryBoxOpen !== null ? uiState.theoryBoxOpen : (task.stage === 1);
+    var isTheoryOpen = uiState.theoryBoxOpen !== null ? uiState.theoryBoxOpen : false;
     var theoryHtml = task.theory
       ? '<details class="theory-box"' + (isTheoryOpen ? ' open' : '') + '>' +
-          '<summary>📘 Teoria w pigułce: jak działają klauzule w tej lekcji (kliknij, aby rozwinąć/zwinąć)</summary>' +
+          '<summary>📘 Ściąga składniowa do tej lekcji (kliknij, aby rozwinąć/zwinąć)</summary>' +
           '<div class="theory-body">' + task.theory + '</div>' +
         '</details>'
       : '';
 
-    var tierLabel = vIdx >= 5 ? ' · 🔥 Poziom Mix+' : ' · Podstawy';
+    var tierLabel = vIdx >= 5 ? ' · 🔥 Poziom Zaawansowany (6–10)' : ' · Poziom Podstawowy (1–5)';
 
     return '<div class="card">' +
       '<div class="ws-bar">' +
-        '<button class="btn sm" data-act="backToPathList">← Wróć do Mapy Ścieżki</button>' +
-        '<div class="var-pills"><span class="small muted" style="margin-right:2px">Wariant:</span>' + varPills + '</div>' +
-        '<button class="btn sm" data-act="shuffleVariant">🎲 Losuj wariant</button>' +
+        '<button type="button" class="btn sm" data-act="backToPathList">← Mapa Ścieżki</button>' +
+        '<div style="display:flex;gap:6px;flex-wrap:wrap">' +
+          '<button type="button" class="btn sm" data-act="openTutorialSlides">📖 Teoria (Slajdy 1–4)</button>' +
+          '<button type="button" class="btn sm" data-act="shuffleVariant">🎲 Losuj wariant</button>' +
+        '</div>' +
+      '</div>' +
+      '<div class="var-tiers-box">' +
+        '<div class="var-tier-row">' +
+          '<span class="var-tier-lbl">Podstawowy (1–5) <strong>' + basicCnt + '/5</strong>:</span>' +
+          '<div class="var-pills">' + basicPills + '</div>' +
+        '</div>' +
+        '<div class="var-tier-row">' +
+          '<span class="var-tier-lbl">' + (advOpen ? '🔓 Zaawansowany (6–10):' : '🔒 Zaawansowany (6–10):') + '</span>' +
+          '<div class="var-pills">' + advPills + '</div>' +
+        '</div>' +
       '</div>' +
       '<span class="chip info">Etap ' + task.stage + ' · Wariant ' + (vIdx + 1) + ' z ' + task.variants.length + tierLabel + '</span>' +
       '<h2 style="margin-top:8px">' + esc(task.title) + '</h2>' +
@@ -633,7 +1146,7 @@ function renderPathTab() {
 
   var totalVariants = PATH_TASKS.reduce(function(acc, t) { return acc + t.variants.length; }, 0);
   var doneVariants = Object.keys(state.completedVariants).length;
-  var doneLessons = Object.keys(state.completedTasks).length;
+  var doneLessons = PATH_TASKS.filter(function(t) { return countBasicSolved(t.id) >= 5 || !!state.completedTasks[t.id]; }).length;
 
   var h = '';
   if (!state.diagDone) {
@@ -647,22 +1160,23 @@ function renderPathTab() {
 
   h += '<div class="card">' +
     '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">' +
-      '<div><h2 style="margin:0">Mapa Ścieżki SQL (dvdrental)</h2>' +
-      '<p class="small muted" style="margin:2px 0 0">Ukończone lekcje: <strong>' + doneLessons + '/' + PATH_TASKS.length + '</strong> · Rozwiązane warianty: <strong>' + doneVariants + '/' + totalVariants + '</strong></p></div>' +
+      '<div><h2 style="margin:0">Mapa Ścieżki SQL (Progresja SoloLearn)</h2>' +
+      '<p class="small muted" style="margin:2px 0 0">Zaliczone działy: <strong>' + doneLessons + '/' + PATH_TASKS.length + '</strong> · Rozwiązane warianty: <strong>' + doneVariants + '/' + totalVariants + '</strong>' +
+      (state.testerUnlockAll ? ' · <span class="chip mid">🔓 Tryb testerski aktywny</span>' : '') + '</p></div>' +
       '<button class="btn primary sm" data-act="continuePath">▶ Kontynuuj naukę</button>' +
     '</div>' +
     '<div class="bar"><i style="width:' + Math.round((doneLessons / PATH_TASKS.length) * 100) + '%"></i></div>' +
   '</div>';
 
   STAGES.forEach(function(st) {
-    var unlocked = st.id <= state.unlockedStage;
+    var stageOpen = isStageUnlocked(st.id);
     var tasksInStage = PATH_TASKS.filter(function(t) { return t.stage === st.id; });
-    var allDone = tasksInStage.every(function(t) { return state.completedTasks[t.id]; });
+    var allDone = tasksInStage.every(function(t) { return countBasicSolved(t.id) >= 5; });
 
-    h += '<div class="stage-box ' + (allDone ? 'completed' : unlocked ? 'unlocked' : '') + '">' +
+    h += '<div class="stage-box ' + (allDone ? 'completed' : stageOpen ? 'unlocked' : 'locked-stage') + '">' +
       '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px">' +
-        '<strong>' + esc(st.name) + '</strong>' +
-        '<span class="chip ' + (allDone ? 'done' : unlocked ? 'mid' : 'info') + '">' + (allDone ? 'Opanowany' : unlocked ? 'Aktywny' : 'Dostępny') + '</span>' +
+        '<strong>' + (stageOpen ? '' : '🔒 ') + esc(st.name) + '</strong>' +
+        '<span class="chip ' + (allDone ? 'done' : stageOpen ? 'mid' : 'open') + '">' + (allDone ? 'Opanowany' : stageOpen ? 'Odblokowany' : '🔒 Zablokowany') + '</span>' +
       '</div>' +
       '<p class="small muted" style="margin:4px 0 10px">' + esc(st.desc) + '</p>' +
       '<div class="node-list">';
@@ -672,16 +1186,27 @@ function renderPathTab() {
       for (var k = 0; k < t.variants.length; k++) {
         if (state.completedVariants[t.id + ':' + k]) vSolved++;
       }
-      var isDone = !!state.completedTasks[t.id];
-      h += '<button type="button" class="node-item" data-act="openPathTask" data-id="' + t.id + '">' +
+      var basicSolved = countBasicSolved(t.id);
+      var lessonOpen = isLessonUnlocked(t.id);
+      var tutDone = !!(state.tutorialsDone && state.tutorialsDone[t.id]);
+      var isMastered = basicSolved >= 5;
+
+      var statusChip = !lessonOpen
+        ? '<span class="chip open">🔒 Zablokowane (ukończ poprzedni dział 1–5)</span>'
+        : isMastered
+          ? '<span class="chip done">✅ Odblokowano 6–10 (' + vSolved + '/10)</span>'
+          : '<span class="chip info">' + (tutDone ? 'Rozwiąż 1–5 →' : '📖 Start (Slajdy) →') + '</span>';
+
+      h += '<button type="button" class="node-item' + (!lessonOpen ? ' locked' : '') + '" data-act="openPathTask" data-id="' + t.id + '">' +
         '<div>' +
-          '<span class="node-title">' + (isDone ? '✅ ' : '📘 ') + esc(t.title) + '</span>' +
+          '<span class="node-title">' + (!lessonOpen ? '🔒 ' : isMastered ? '✅ ' : '📘 ') + esc(t.title) + '</span>' +
           '<div class="node-meta">' +
-            '<span>Warianty: <strong>' + vSolved + '/' + t.variants.length + '</strong></span>' +
-            '<span>· Tabele: ' + t.tables.slice(0, 3).join(', ') + '</span>' +
+            '<span>Teoria: <strong>' + (tutDone ? '✓ 4/4' : '0/4') + '</strong></span>' +
+            '<span>· Podstawy (1–5): <strong>' + basicSolved + '/5</strong></span>' +
+            '<span>· Zaawansowane (6–10): <strong>' + (isAdvancedUnlocked(t.id) ? (vSolved - basicSolved) + '/5' : '🔒') + '</strong></span>' +
           '</div>' +
         '</div>' +
-        '<span class="chip ' + (isDone ? 'done' : 'info') + '">' + (isDone ? 'Ćwicz warianty' : 'Rozwiąż →') + '</span>' +
+        statusChip +
       '</button>';
     });
     h += '</div></div>';
@@ -867,11 +1392,124 @@ function renderSchemaTab() {
   return h;
 }
 
-// ZAKŁADKA 5: KONTO, KLUCZ API & BACKUP
+// MODAL LOGOWANIA TESTERÓW (NICK + 4-CYFROWY PIN)
+var SUPABASE_SQL_SNIPPET = [
+  'CREATE TABLE IF NOT EXISTS public.sql_profiles (',
+  '  nick TEXT PRIMARY KEY,',
+  '  pin_hash TEXT NOT NULL,',
+  '  xp INTEGER DEFAULT 0,',
+  '  streak INTEGER DEFAULT 1,',
+  '  solved_count INTEGER DEFAULT 0,',
+  '  state_json JSONB DEFAULT \'{}\'::jsonb,',
+  '  updated_at TIMESTAMPTZ DEFAULT now()',
+  ');',
+  'ALTER TABLE public.sql_profiles ENABLE ROW LEVEL SECURITY;',
+  'CREATE POLICY "Public test access" ON public.sql_profiles FOR ALL USING (true) WITH CHECK (true);'
+].join('\n');
+
+function renderAuthModal() {
+  if (!uiState.authModalOpen) return '';
+  var curNick = (state.userProfile && state.userProfile.nick) ? state.userProfile.nick : '';
+  return '<div class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="authModalTitle">' +
+    '<div class="modal-card">' +
+      '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:6px">' +
+        '<span class="chip info">👥 Konto Testera · Android & iOS</span>' +
+        '<button type="button" class="btn sm" data-act="closeAuthModal">✕ Pomiń</button>' +
+      '</div>' +
+      '<h2 id="authModalTitle" style="margin-top:4px">Dołącz do testów SQL Master!</h2>' +
+      '<p class="small muted">Podaj swój <strong>Nick</strong> (np. Wojtek) oraz <strong>4-cyfrowy PIN</strong> (do odzyskania konta na innym telefonie i zapisu wyniku w Rankingu).</p>' +
+      '<div style="margin-top:10px">' +
+        '<label class="small" for="authNickInp">Twój Nick gracza (2–24 znaki)</label>' +
+        '<input type="text" id="authNickInp" maxlength="24" autocomplete="username" placeholder="np. Wojtek" value="' + esc(curNick) + '">' +
+      '</div>' +
+      '<div style="margin-top:10px">' +
+        '<label class="small" for="authPinInp">4-cyfrowy PIN (np. 1234)</label>' +
+        '<input type="password" id="authPinInp" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" placeholder="••••">' +
+      '</div>' +
+      (uiState.authError ? '<div class="fb-box trap" style="margin-top:10px"><strong>⚠️ Uwaga:</strong> <span class="small">' + esc(uiState.authError) + '</span></div>' : '') +
+      '<div class="acts" style="margin-top:14px;justify-content:space-between">' +
+        '<button type="button" class="btn primary" style="flex:1" data-act="submitAuthModal">🚀 Zapisz i wejdź do gry</button>' +
+      '</div>' +
+    '</div>' +
+  '</div>';
+}
+
+// ZAKŁADKA 5: KONTO, RANKING SOLOLEARN, SUPABASE & AI
 function renderProfileTab() {
   var totalPathVars = PATH_TASKS.reduce(function(acc, t) { return acc + t.variants.length; }, 0);
-  var totalAllTasks = totalPathVars + DIAG_QUESTIONS.length + LEMUR_TASKS.length;
+  var lemurList = window.INTERVIEW_TASKS || window.LEMUR_TASKS || [];
+  var totalAllTasks = totalPathVars + DIAG_QUESTIONS.length + lemurList.length;
+  var curNick = (state.userProfile && state.userProfile.nick) ? state.userProfile.nick : (state.nickname || 'Gość (niezalogowany)');
+  var sbReady = isSupabaseConfigured();
+  var board = getDisplayLeaderboard();
+
+  var boardRows = board.map(function(row, idx) {
+    var isMe = row.nick && curNick && row.nick.toLowerCase() === curNick.toLowerCase();
+    var medal = idx === 0 ? '🥇 1' : idx === 1 ? '🥈 2' : idx === 2 ? '🥉 3' : String(idx + 1);
+    return '<tr class="' + (isMe ? 'lb-me' : '') + '">' +
+      '<td><strong>' + medal + '</strong></td>' +
+      '<td><strong>' + esc(row.nick) + '</strong>' + (isMe ? ' <span class="chip done" style="font-size:10px;padding:1px 6px">Ty</span>' : '') + '</td>' +
+      '<td>⚡ <strong>' + Number(row.xp || 0) + '</strong></td>' +
+      '<td>🔥 ' + Number(row.streak || 1) + 'd</td>' +
+      '<td>✅ ' + Number(row.solved_count || 0) + '</td>' +
+    '</tr>';
+  }).join('');
+
   return '<div class="card">' +
+    '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">' +
+      '<div>' +
+        '<span class="chip ' + (state.userProfile ? 'done' : 'mid') + '">' + (state.userProfile ? '✅ Profil aktywny (Nick + PIN)' : '👤 Tryb gościa') + '</span>' +
+        '<h2 style="margin:6px 0 2px">Gracz: ' + esc(curNick) + '</h2>' +
+        '<p class="small muted" style="margin:0">XP: <strong>' + state.xp + '</strong> · Rozwiązane zadania: <strong>' + getTotalSolvedCount() + '</strong>' +
+        (uiState.lastSyncTime ? ' · Ost. sync: <strong>' + esc(uiState.lastSyncTime) + '</strong>' : '') + '</p>' +
+      '</div>' +
+      '<div style="display:flex;gap:6px;flex-wrap:wrap">' +
+        '<button type="button" class="btn sm primary" data-act="syncNow">🔄 Synchronizuj postęp teraz</button>' +
+        '<button type="button" class="btn sm" data-act="openAuthModal">👤 Przełącz użytkownika (Nick + PIN)</button>' +
+      '</div>' +
+    '</div>' +
+    '<div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">' +
+      '<div>' +
+        '<strong>🔓 Tryb testerski (odblokuj wszystkie działy)</strong>' +
+        '<p class="small muted" style="margin:2px 0 0">Pozwala właścicielowi projektu jednym kliknięciem testować dowolną lekcję oraz warianty 6–10 bez blokad.</p>' +
+      '</div>' +
+      '<button type="button" class="btn sm ' + (state.testerUnlockAll ? 'success' : '') + '" data-act="toggleTesterMode">' +
+        (state.testerUnlockAll ? '🔓 Włączony (Kliknij, by włączyć blokady)' : '🔒 Wyłączony (Odblokuj wszystko)') +
+      '</button>' +
+    '</div>' +
+  '</div>' +
+
+  '<div class="card">' +
+    '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:6px">' +
+      '<h2 style="margin:0">🏆 Ranking Testerów (SoloLearn Leaderboard)</h2>' +
+      '<span class="chip ' + (uiState.leaderboardSource === 'supabase' ? 'done' : 'info') + '">' +
+        (uiState.leaderboardSource === 'supabase' ? '☁️ Żywy Ranking Supabase' : '📱 Ranking Lokalny / Demo') +
+      '</span>' +
+    '</div>' +
+    '<p class="small muted">Wspólna tablica wyników znajomych testujących aplikację na Androidzie i iOS.</p>' +
+    '<div class="tblwrap" style="max-height:320px">' +
+      '<table><thead><tr><th>#</th><th>Nick</th><th>XP</th><th>Streak</th><th>Zadania</th></tr></thead>' +
+      '<tbody>' + boardRows + '</tbody></table>' +
+    '</div>' +
+    '<details class="helper-fold" style="margin-top:12px"' + (!sbReady ? ' open' : '') + '>' +
+      '<summary>☁️ Konfiguracja darmowej bazy chmurowej Supabase (1 minuta)</summary>' +
+      '<p class="small muted" style="margin:6px 0">Aby udostępnić żywy ranking znajomym przez link, utwórz darmowy projekt na <code>supabase.com</code>, wklej w <strong>SQL Editorze</strong> poniższy 10-liniowy skrypt, a następnie podaj swój Project URL oraz klucz <code>anon public</code>:</p>' +
+      '<div class="theory-code" style="margin-bottom:8px"><code>' + esc(SUPABASE_SQL_SNIPPET) + '</code></div>' +
+      '<div class="acts" style="margin:0 0 10px">' +
+        '<button type="button" class="btn sm" data-act="copySupabaseSql">📋 Kopiuj skrypt SQL do Supabase</button>' +
+        (sbReady ? '<button type="button" class="btn sm primary" data-act="copyInviteLink">🔗 Kopiuj link zaproszenia dla znajomych</button>' : '') +
+      '</div>' +
+      '<label class="small" for="sbUrlInp">Supabase Project URL</label>' +
+      '<input type="text" id="sbUrlInp" placeholder="https://twoj-projekt.supabase.co" value="' + esc(SUPABASE_CONFIG.url) + '">' +
+      '<label class="small" for="sbKeyInp" style="display:block;margin-top:8px">Supabase Anon Public Key</label>' +
+      '<input type="password" id="sbKeyInp" placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6..." value="' + esc(SUPABASE_CONFIG.anonKey) + '">' +
+      '<div class="acts">' +
+        '<button type="button" class="btn primary sm" data-act="saveSupabaseConfig">💾 Zapisz połączenie Supabase i odśwież ranking</button>' +
+      '</div>' +
+    '</details>' +
+  '</div>' +
+
+  '<div class="card">' +
     '<h2>Konfiguracja Silnika AI (Tryb Hybrydowy)</h2>' +
     '<p class="small muted">Wszystkie ' + totalAllTasks + ' zadania na bazie <code>dvdrental</code> działają w 100% lokalnie i offline. Jeśli chcesz korzystać z podpowiedzi mentora AI, wybierz dostawcę:</p>' +
     '<label class="small">Dostawca AI</label>' +
@@ -886,7 +1524,7 @@ function renderProfileTab() {
   '</div>' +
   '<div class="card">' +
     '<h2>Kopia zapasowa postępów (.json)</h2>' +
-    '<p class="small muted">Twój obecny stan: <strong>' + state.xp + ' XP</strong> · Rozwiązane warianty Ścieżki: <strong>' + Object.keys(state.completedVariants).length + '/' + totalPathVars + '</strong> · Zadania Rekrutacyjne: <strong>' + Object.keys(state.completedLemur).length + '/' + LEMUR_TASKS.length + '</strong>.</p>' +
+    '<p class="small muted">Twój obecny stan: <strong>' + state.xp + ' XP</strong> · Rozwiązane warianty Ścieżki: <strong>' + Object.keys(state.completedVariants).length + '/' + totalPathVars + '</strong> · Zadania Rekrutacyjne: <strong>' + Object.keys(state.completedLemur).length + '/' + lemurList.length + '</strong>.</p>' +
     '<div class="acts">' +
       '<button class="btn sm primary" data-act="exportJson">⬇ Pobierz pełny backup (.json)</button>' +
     '</div>' +
@@ -911,11 +1549,12 @@ function render() {
   updateHeader();
   var v = document.getElementById('view');
   if (!v) return;
-  v.innerHTML = currentTab === 'path' ? renderPathTab()
-              : currentTab === 'diag' ? renderDiagTab()
-              : currentTab === 'lemur' ? renderLemurTab()
-              : currentTab === 'schema' ? renderSchemaTab()
-              : renderProfileTab();
+  var mainHtml = currentTab === 'path' ? renderPathTab()
+               : currentTab === 'diag' ? renderDiagTab()
+               : currentTab === 'lemur' ? renderLemurTab()
+               : currentTab === 'schema' ? renderSchemaTab()
+               : renderProfileTab();
+  v.innerHTML = mainHtml + renderAuthModal();
 
   document.querySelectorAll('.tab').forEach(function(b) {
     if (b.dataset.tab === currentTab) b.setAttribute('aria-current', 'page');
@@ -973,6 +1612,8 @@ document.addEventListener('click', async function(e) {
     uiState.schemaBoxOpen = false;
     if (currentTab === 'diag' && state.diagIdx < DIAG_QUESTIONS.length) {
       state.editorCode = '-- Zadanie diagnostyczne #' + (state.diagIdx + 1) + '\nSELECT ';
+    } else if (currentTab === 'profile') {
+      fetchLeaderboard();
     }
     render();
     window.scrollTo(0, 0);
@@ -1006,11 +1647,20 @@ document.addEventListener('click', async function(e) {
     render();
   }
   else if (act === 'openPathTask') {
-    state.activeTaskId = el.dataset.id;
+    var targetId = el.dataset.id;
+    if (!isLessonUnlocked(targetId)) {
+      toast('🔒 Zablokowane! Ukończ najpierw zadania podstawowe 1–5 w poprzednim dziale.');
+      return;
+    }
+    state.activeTaskId = targetId;
     state.activeVariantIdx = 0;
-    state.pathMode = 'solve';
     uiState.schemaBoxOpen = false;
     uiState.theoryBoxOpen = null;
+    uiState.tutorialSlideIdx = 0;
+    uiState.quizSelected = null;
+    uiState.quizPassed = !!(state.tutorialsDone && state.tutorialsDone[targetId]);
+    // Przy pierwszym wejściu w lekcję otwórz slajdy teorii SoloLearn (1-4)
+    state.pathMode = (state.tutorialsDone && state.tutorialsDone[targetId]) ? 'solve' : 'tutorial';
     var t = PATH_TASKS.find(function(x) { return x.id === state.activeTaskId; });
     if (t) state.editorCode = '-- ' + t.title + ' (Wariant 1)\nSELECT ';
     lastExecResult = null;
@@ -1021,12 +1671,71 @@ document.addEventListener('click', async function(e) {
     window.scrollTo(0, 0);
   }
   else if (act === 'continuePath') {
-    state.pathMode = 'solve';
+    // Znajdź pierwszą odblokowaną, jeszcze nieukończoną lekcję lub aktywną
+    var nextTask = PATH_TASKS.find(function(pt) {
+      return isLessonUnlocked(pt.id) && countBasicSolved(pt.id) < 5;
+    }) || PATH_TASKS.find(function(pt) { return pt.id === state.activeTaskId && isLessonUnlocked(pt.id); }) || PATH_TASKS[0];
+    state.activeTaskId = nextTask.id;
     uiState.schemaBoxOpen = false;
     uiState.theoryBoxOpen = null;
+    uiState.tutorialSlideIdx = 0;
+    uiState.quizSelected = null;
+    uiState.quizPassed = !!(state.tutorialsDone && state.tutorialsDone[nextTask.id]);
+    state.pathMode = (state.tutorialsDone && state.tutorialsDone[nextTask.id]) ? 'solve' : 'tutorial';
     lastExecResult = null;
     lastExpectedResult = null;
     lastFeedback = null;
+    saveState();
+    render();
+    window.scrollTo(0, 0);
+  }
+  else if (act === 'openTutorialSlides') {
+    uiState.tutorialSlideIdx = 0;
+    uiState.quizSelected = null;
+    uiState.quizPassed = !!(state.tutorialsDone && state.tutorialsDone[state.activeTaskId]);
+    state.pathMode = 'tutorial';
+    render();
+    window.scrollTo(0, 0);
+  }
+  else if (act === 'prevSlide') {
+    uiState.tutorialSlideIdx = Math.max(0, (uiState.tutorialSlideIdx || 0) - 1);
+    render();
+    window.scrollTo(0, 0);
+  }
+  else if (act === 'nextSlide') {
+    uiState.tutorialSlideIdx = Math.min(3, (uiState.tutorialSlideIdx || 0) + 1);
+    render();
+    window.scrollTo(0, 0);
+  }
+  else if (act === 'goToSlide') {
+    uiState.tutorialSlideIdx = Math.max(0, Math.min(3, Number(el.dataset.idx) || 0));
+    render();
+    window.scrollTo(0, 0);
+  }
+  else if (act === 'pickQuizOpt') {
+    var curLesson = PATH_TASKS.find(function(x) { return x.id === state.activeTaskId; }) || PATH_TASKS[0];
+    var slides = getLessonSlides(curLesson);
+    var lastSlide = slides[slides.length - 1];
+    var picked = Number(el.dataset.opt);
+    uiState.quizSelected = picked;
+    if (lastSlide && lastSlide.quiz && picked === lastSlide.quiz.correct) {
+      uiState.quizPassed = true;
+      if (!state.tutorialsDone[curLesson.id]) {
+        state.tutorialsDone[curLesson.id] = true;
+        state.xp += 15;
+        saveState();
+        syncProfileToCloud(true);
+        toast('🎉 Teoria zaliczona! +15 XP');
+      }
+    }
+    render();
+  }
+  else if (act === 'finishTutorial') {
+    state.pathMode = 'solve';
+    var fTask = PATH_TASKS.find(function(x) { return x.id === state.activeTaskId; }) || PATH_TASKS[0];
+    if (!state.editorCode || state.editorCode.indexOf('SELECT') === -1) {
+      state.editorCode = '-- ' + fTask.title + ' (Wariant ' + (state.activeVariantIdx + 1) + ')\nSELECT ';
+    }
     saveState();
     render();
     window.scrollTo(0, 0);
@@ -1041,10 +1750,18 @@ document.addEventListener('click', async function(e) {
     window.scrollTo(0, 0);
   }
   else if (act === 'pickVariant') {
-    state.activeVariantIdx = Number(el.dataset.idx) || 0;
+    var reqIdx = Number(el.dataset.idx) || 0;
+    var tVar = PATH_TASKS.find(function(x) { return x.id === state.activeTaskId; }) || PATH_TASKS[0];
+    if (reqIdx >= 5 && !isAdvancedUnlocked(tVar.id)) {
+      var lockMsg = 'Rozwiąż najpierw zadania podstawowe 1–5 w tym dziale, aby odblokować poziom 6–10!';
+      toast('🔒 ' + lockMsg);
+      lastFeedback = { type: 'warn', title: '🔒 Poziom Zaawansowany (6–10) jest jeszcze zablokowany', msg: lockMsg };
+      render();
+      return;
+    }
+    state.activeVariantIdx = reqIdx;
     uiState.schemaBoxOpen = false;
-    var tVar = PATH_TASKS.find(function(x) { return x.id === state.activeTaskId; });
-    if (tVar) state.editorCode = '-- ' + tVar.title + ' (Wariant ' + (state.activeVariantIdx + 1) + ')\nSELECT ';
+    state.editorCode = '-- ' + tVar.title + ' (Wariant ' + (state.activeVariantIdx + 1) + ')\nSELECT ';
     lastExecResult = null;
     lastExpectedResult = null;
     lastFeedback = null;
@@ -1053,17 +1770,17 @@ document.addEventListener('click', async function(e) {
   }
   else if (act === 'shuffleVariant') {
     var curTask = PATH_TASKS.find(function(x) { return x.id === state.activeTaskId; }) || PATH_TASKS[0];
-    var len = curTask.variants.length;
-    var nextIdx = Math.floor(Math.random() * len);
-    if (len > 1 && nextIdx === state.activeVariantIdx) {
-      nextIdx = (nextIdx + 1) % len;
+    var availLen = isAdvancedUnlocked(curTask.id) ? curTask.variants.length : Math.min(5, curTask.variants.length);
+    var nextIdx = Math.floor(Math.random() * availLen);
+    if (availLen > 1 && nextIdx === state.activeVariantIdx) {
+      nextIdx = (nextIdx + 1) % availLen;
     }
     state.activeVariantIdx = nextIdx;
     uiState.schemaBoxOpen = false;
     state.editorCode = '-- ' + curTask.title + ' (Wariant ' + (state.activeVariantIdx + 1) + ')\nSELECT ';
     lastExecResult = null;
     lastExpectedResult = null;
-    lastFeedback = { type: 'warn', title: '🎲 Wylosowano Wariant #' + (state.activeVariantIdx + 1) + ' z ' + curTask.variants.length, msg: 'Zmieniliśmy tabelę lub warunki zadania. Napisz nowe zapytanie!' };
+    lastFeedback = { type: 'warn', title: '🎲 Wylosowano Wariant #' + (state.activeVariantIdx + 1) + ' z ' + availLen + ' dostępnych', msg: 'Zmieniliśmy tabelę lub warunki zadania. Napisz nowe zapytanie!' };
     saveState();
     render();
   }
@@ -1076,20 +1793,35 @@ document.addEventListener('click', async function(e) {
     var cmp = compareResults(lastExecResult, expRes, variant.order);
     if (cmp.ok) {
       lastExpectedResult = null;
+      var wasAdvUnlocked = isAdvancedUnlocked(task.id);
       var vKey = task.id + ':' + vIdx;
       if (!state.completedVariants[vKey]) {
         state.completedVariants[vKey] = true;
         state.xp += 15;
       }
-      if (!state.completedTasks[task.id]) {
-        state.completedTasks[task.id] = true;
-        state.xp += 15;
+      var basicAfter = countBasicSolved(task.id);
+      var unlockBonusMsg = '';
+      if (basicAfter >= 5) {
+        if (!state.completedTasks[task.id]) {
+          state.completedTasks[task.id] = true;
+          state.xp += 15;
+        }
+        // Sprawdź czy cały etap ma ukończone lekcje podstawowe, by podbić unlockedStage
+        var stageLessons = PATH_TASKS.filter(function(pt) { return pt.stage === task.stage; });
+        var allStageBasicDone = stageLessons.every(function(pt) { return countBasicSolved(pt.id) >= 5; });
+        if (allStageBasicDone && task.stage >= state.unlockedStage && state.unlockedStage < 5) {
+          state.unlockedStage = task.stage + 1;
+        }
+        if (!wasAdvUnlocked) {
+          unlockBonusMsg = ' 🔓 Odblokowałeś Poziom Zaawansowany (Warianty 6–10) oraz kolejny dział na Mapie Ścieżki!';
+          toast('🔓 Odblokowano warianty 6–10 oraz następną lekcję!');
+        }
+      } else {
+        unlockBonusMsg = ' (Postęp podstaw: ' + basicAfter + '/5 do odblokowania poziomu 6–10 i kolejnej lekcji).';
       }
-      if (task.stage >= state.unlockedStage && state.unlockedStage < 5) {
-        state.unlockedStage = task.stage + 1;
-      }
-      lastFeedback = { type: 'ok', title: '✅ Wariant #' + (vIdx + 1) + ' zaliczony! (+XP)', msg: cmp.msg + ' Możesz kliknąć kolejny numer wariantu u góry karty, aby przećwiczyć inne tabele!' };
+      lastFeedback = { type: 'ok', title: '✅ Wariant #' + (vIdx + 1) + ' zaliczony! (+XP)', msg: cmp.msg + unlockBonusMsg };
       saveState();
+      syncProfileToCloud(true);
     } else {
       lastExpectedResult = lastExecResult.error ? null : expRes;
       var pathTrap = task.detectTrap ? task.detectTrap(state.editorCode, lastExecResult) : null;
@@ -1129,6 +1861,7 @@ document.addEventListener('click', async function(e) {
         state.editorCode = '-- Zadanie diagnostyczne #' + (state.diagIdx + 1) + '\nSELECT ';
       }
       saveState();
+      syncProfileToCloud(true);
       render();
     } else {
       lastExpectedResult = lastExecResult.error ? null : dExp;
@@ -1166,6 +1899,7 @@ document.addEventListener('click', async function(e) {
     state.pathMode = 'list';
     currentTab = 'path';
     saveState();
+    syncProfileToCloud(true);
     render();
     toast('Odblokowano Etap ' + st + ' w Ścieżce!');
   }
@@ -1228,6 +1962,7 @@ document.addEventListener('click', async function(e) {
       }
       lastFeedback = { type: 'ok', title: '🏆 Brawo! Zadanie rekrutacyjne zaliczone (+40 XP)', msg: lCmp.msg };
       saveState();
+      syncProfileToCloud(true);
     } else {
       lastExpectedResult = lastExecResult.error ? null : lExp;
       var trapMsg = lt.detectTrap ? lt.detectTrap(state.editorCode, lastExecResult) : null;
@@ -1288,6 +2023,81 @@ document.addEventListener('click', async function(e) {
     saveState();
     render();
   }
+  else if (act === 'openAuthModal') {
+    uiState.authModalOpen = true;
+    uiState.authError = '';
+    render();
+  }
+  else if (act === 'closeAuthModal') {
+    uiState.authModalOpen = false;
+    uiState.authError = '';
+    render();
+  }
+  else if (act === 'submitAuthModal') {
+    var nickInp = document.getElementById('authNickInp');
+    var pinInp = document.getElementById('authPinInp');
+    var rawN = nickInp ? nickInp.value : '';
+    var rawP = pinInp ? pinInp.value : '';
+    var res = await loginOrRegisterTester(rawN, rawP);
+    if (!res.ok) {
+      uiState.authError = res.msg;
+      render();
+    } else {
+      toast('👋 ' + res.msg);
+      render();
+    }
+  }
+  else if (act === 'syncNow') {
+    if (!state.userProfile || !state.userProfile.nick) {
+      uiState.authModalOpen = true;
+      render();
+      return;
+    }
+    toast('🔄 Synchronizuję postęp i pobieram ranking…');
+    await syncProfileToCloud(false);
+    render();
+  }
+  else if (act === 'toggleTesterMode') {
+    state.testerUnlockAll = !state.testerUnlockAll;
+    saveState();
+    toast(state.testerUnlockAll ? '🔓 Tryb testerski WŁĄCZONY — wszystkie lekcje i warianty 6–10 odblokowane!' : '🔒 Przywrócono standardowe blokady SoloLearn.');
+    render();
+  }
+  else if (act === 'saveSupabaseConfig') {
+    var uInp = document.getElementById('sbUrlInp');
+    var kInp = document.getElementById('sbKeyInp');
+    SUPABASE_CONFIG.url = (uInp ? uInp.value : '').trim().replace(/\/+$/, '');
+    SUPABASE_CONFIG.anonKey = (kInp ? kInp.value : '').trim();
+    try {
+      localStorage.setItem('sql_master_sb_url', SUPABASE_CONFIG.url);
+      localStorage.setItem('sql_master_sb_key', SUPABASE_CONFIG.anonKey);
+    } catch (e) {}
+    toast('☁️ Zapisano konfigurację Supabase! Pobieram ranking…');
+    await syncProfileToCloud(true);
+    render();
+  }
+  else if (act === 'copySupabaseSql') {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(SUPABASE_SQL_SNIPPET).then(function() {
+        toast('📋 Skopiowano skrypt CREATE TABLE! Wklej go w SQL Editorze w Supabase.');
+      }).catch(function() {
+        toast('Zaznacz i skopiuj kod SQL z ramki powyżej.');
+      });
+    } else {
+      toast('Zaznacz i skopiuj kod SQL z ramki powyżej.');
+    }
+  }
+  else if (act === 'copyInviteLink') {
+    var baseLink = window.location.origin + window.location.pathname;
+    var inviteUrl = isSupabaseConfigured()
+      ? baseLink + '?sb_url=' + encodeURIComponent(SUPABASE_CONFIG.url) + '&sb_key=' + encodeURIComponent(SUPABASE_CONFIG.anonKey)
+      : baseLink;
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(inviteUrl).then(function() {
+        toast('🔗 Skopiowano link zaproszenia dla znajomych!');
+      });
+    }
+  }
   else if (act === 'saveConfig') {
     var prov = document.getElementById('aiProvSel');
     var key = document.getElementById('apiKeyInp');
@@ -1336,6 +2146,7 @@ document.addEventListener('click', async function(e) {
 
 render();
 initDatabase();
+fetchLeaderboard();
 
 if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
   window.addEventListener('load', function() {

@@ -326,7 +326,503 @@ var DIAG_QUESTIONS = [
    (INTERVIEW_TASKS, eksportowane również jako window.LEMUR_TASKS)
    ========================================================================== */
 
+/* ==========================================================================
+   6. SLAJDY TEORII SOLOLEARN (4 OKNA PRZED KAŻDĄ Z 12 LEKCJI)
+   ========================================================================== */
+var LESSON_TUTORIALS = {
+  p1_1: [
+    {
+      title: 'Jak zbudować zapytanie?',
+      syntax: "SELECT kolumna1, kolumna2\nFROM tabela\nWHERE warunek1 AND (warunek2 OR warunek3)\nORDER BY kolumna1 ASC, kolumna2 DESC;",
+      bullets: [
+        '<strong><code>SELECT</code> + <code>FROM</code>:</strong> określają, <em>jakie kolumny</em> oraz <em>z której tabeli</em> chcesz pobrać.',
+        '<strong><code>WHERE</code> (sito wierszy):</strong> przepuszcza tylko wiersze spełniające warunek logiczny. Teksty i daty ujmuj w pojedyncze apostrofy <code>\'PG-13\'</code>.',
+        '<strong>Priorytet <code>AND</code> nad <code>OR</code>:</strong> <code>AND</code> wiąże silniej niż <code>OR</code>! Łącząc oba operatory, zawsze bierz alternatywę <code>OR</code> w nawiasy <code>(...)</code>.',
+        '<strong><code>ORDER BY</code>:</strong> sortuje wynik rosnąco (<code>ASC</code> – domyślnie) lub malejąco (<code>DESC</code>).'
+      ]
+    },
+    {
+      title: 'Kolejność pisania vs Kolejność wykonywania przez PostgreSQL',
+      focusWrite: ['SELECT', 'FROM', 'WHERE', 'ORDER BY'],
+      focusExec: [1, 2, 5, 7],
+      note: '<strong>Dlaczego to ważne w Lekcji 1.1?</strong> Silnik PostgreSQL najpierw otwiera tabelę (<code>1. FROM</code>), od razu odrzuca niepasujące wiersze sitem (<code>2. WHERE</code>), potem wybiera kolumny (<code>5. SELECT</code>), a dopiero niemal na samym końcu układa wiersze (<code>7. ORDER BY</code>). Dlatego w <code>WHERE</code> filtrujesz po kolumnach tabeli przed ich wyświetleniem!'
+    },
+    {
+      title: 'Przykład na żywo (dvdrental)',
+      code: "SELECT title, rating, length\nFROM film\nWHERE (rating = 'G' OR rating = 'PG')\n  AND length > 100\nORDER BY rating ASC, length DESC;",
+      lines: [
+        { line: 'SELECT title, rating, length', desc: 'Krok 5 silnika: zwraca trzy wybrane kolumny dla przefiltrowanych filmów.' },
+        { line: 'FROM film', desc: 'Krok 1 silnika: pobiera surowe wiersze z tabeli film.' },
+        { line: "WHERE (rating = 'G' OR rating = 'PG') AND length > 100", desc: 'Krok 2 silnika: zostawia tylko filmy familijne (G lub PG) trwające ponad 100 minut.' },
+        { line: 'ORDER BY rating ASC, length DESC;', desc: 'Krok 7 silnika: sortuje alfabetycznie po ratingu, a przy tym samym ratingu – od najdłuższego filmu.' }
+      ]
+    },
+    {
+      title: 'Sprawdź się przed zadaniami!',
+      quiz: {
+        question: 'Która klauzula jest wykonywana przez silnik PostgreSQL jako PIERWSZA pod maską w zapytaniu z SELECT, FROM, WHERE i ORDER BY?',
+        options: [
+          'SELECT — najpierw wybierane są kolumny do wyświetlenia',
+          'FROM — najpierw silnik ładuje tabelę źródłową, a zaraz potem filtruje wiersze w WHERE',
+          'ORDER BY — najpierw tabela jest sortowana przed filtrowaniem'
+        ],
+        correct: 1,
+        explanation: 'Dokładnie! PostgreSQL zaczyna od 1. FROM (pobranie tabeli), następnie 2. WHERE (odfiltrowanie wierszy), 5. SELECT (wybór kolumn) i 7. ORDER BY (sortowanie wyniku).'
+      }
+    }
+  ],
+  p1_2: [
+    {
+      title: 'Jak zbudować zapytanie?',
+      syntax: "SELECT kolumny\nFROM tabela\nWHERE kol IN ('A', 'B')\n  AND liczba BETWEEN 10 AND 50\n  AND tekst ILIKE 'wz%'\nORDER BY liczba DESC\nLIMIT 5;",
+      bullets: [
+        '<strong><code>IN (lista)</code>:</strong> sprawdza przynależność do zbioru wartości – zastępuje wielokrotne <code>OR</code>.',
+        '<strong><code>BETWEEN a AND b</code>:</strong> filtruje przedział domknięty (włącznie z brzegami <code>a</code> oraz <code>b</code>).',
+        '<strong><code>ILIKE \'wzorzec\'</code>:</strong> wyszukuje tekst bez względu na wielkość liter (<code>%</code> = dowolny ciąg znaków, <code>_</code> = pojedynczy znak).',
+        '<strong><code>LIMIT n</code>:</strong> zwraca tylko pierwszych <code>n</code> wierszy (zawsze łącz go z <code>ORDER BY</code>!).'
+      ]
+    },
+    {
+      title: 'Kolejność pisania vs Kolejność wykonywania przez PostgreSQL',
+      focusWrite: ['SELECT', 'FROM', 'WHERE', 'ORDER BY', 'LIMIT'],
+      focusExec: [1, 2, 5, 7, 8],
+      note: '<strong>Dlaczego to ważne w Lekcji 1.2?</strong> Zwróć uwagę na sam koniec potoku wykonawczego: <code>7. ORDER BY</code> wykonuje się <em>przed</em> <code>8. LIMIT</code>! Dzięki temu PostgreSQL najpierw ustawia wszystkie przefiltrowane wiersze w kolejności (np. od najdroższego), a dopiero w ostatnim kroku odcina górne <code>N</code> rekordów.'
+    },
+    {
+      title: 'Przykład na żywo (dvdrental)',
+      code: "SELECT title, rating, length\nFROM film\nWHERE rating IN ('G', 'PG')\n  AND length BETWEEN 100 AND 140\n  AND title NOT ILIKE 'al%'\nORDER BY length DESC\nLIMIT 4;",
+      lines: [
+        { line: "WHERE rating IN ('G', 'PG')", desc: 'Krok 2 silnika: zostawia filmy o ratingu G lub PG.' },
+        { line: 'AND length BETWEEN 100 AND 140', desc: 'Krok 2 silnika: zawęża do długości od 100 do 140 minut (włącznie).' },
+        { line: "AND title NOT ILIKE 'al%'", desc: 'Krok 2 silnika: wyklucza tytuły zaczynające się od liter AL (niezależnie od wielkości liter).' },
+        { line: 'ORDER BY length DESC LIMIT 4;', desc: 'Kroki 7 i 8 silnika: ustawia filmy od najdłuższego i odcina 4 pierwsze wiersze.' }
+      ]
+    },
+    {
+      title: 'Sprawdź się przed zadaniami!',
+      quiz: {
+        question: 'Dlaczego klauzula LIMIT znajduje się na samym końcu kolejności wykonywania (Krok 8 po ORDER BY)?',
+        options: [
+          'Aby najpierw posortować cały przefiltrowany wynik i dopiero z posortowanej listy odciąć TOP N wierszy',
+          'Ponieważ LIMIT działa przed WHERE i losuje wiersze z tabeli',
+          'Kolejność między ORDER BY a LIMIT jest losowa'
+        ],
+        correct: 0,
+        explanation: 'Brawo! Gdyby LIMIT działał przed ORDER BY, dostałbyś przypadkowe wiersze i dopiero je posortował. Wykonanie ORDER BY (7) przed LIMIT (8) gwarantuje prawdziwy ranking TOP N.'
+      }
+    }
+  ],
+  p1_3: [
+    {
+      title: 'Jak zbudować zapytanie?',
+      syntax: "SELECT DISTINCT\n  kolumna,\n  liczba / 60.0 AS alias_wyliczenia\nFROM tabela\nWHERE liczba / 60.0 > 1.5\nORDER BY alias_wyliczenia DESC;",
+      bullets: [
+        '<strong><code>SELECT DISTINCT</code>:</strong> usuwa zduplikowane wiersze z wyniku (zostawia unikalne kombinacje wszystkich wypisanych kolumn).',
+        '<strong>Wyliczenia i <code>AS alias</code>:</strong> w <code>SELECT</code> możesz wykonywać działania matematyczne i nadawać im czytelne nazwy.',
+        '<strong>Pułapka dzielenia całkowitego:</strong> <code>90 / 60</code> w SQL daje <code>1</code>! Aby otrzymać ułamek <code>1.5</code>, dziel przez liczbę z kropką: <code>length / 60.0</code>.'
+      ]
+    },
+    {
+      title: 'Kolejność pisania vs Kolejność wykonywania przez PostgreSQL',
+      focusWrite: ['SELECT', 'FROM', 'WHERE', 'ORDER BY'],
+      focusExec: [1, 2, 5, 6, 7],
+      note: '<strong>Klasyczna pułapka rekrutacyjna!</strong> Alias kolumny (np. <code>AS hours</code>) powstaje dopiero w kroku <code>5. SELECT</code>. Dlatego w kroku <code>2. WHERE</code> ten alias jeszcze <em>nie istnieje</em> (musisz tam powtórzyć całe wyrażenie), natomiast w kroku <code>7. ORDER BY</code> alias jest już znany i możesz po nim wygodnie sortować!'
+    },
+    {
+      title: 'Przykład na żywo (dvdrental)',
+      code: "SELECT DISTINCT\n  rating,\n  rental_rate * 1.23 AS price_gross\nFROM film\nWHERE rental_rate > 1.00\nORDER BY price_gross DESC;",
+      lines: [
+        { line: 'FROM film WHERE rental_rate > 1.00', desc: 'Kroki 1–2 silnika: ładuje tabelę film i zostawia wiersze z ceną netto > 1.00.' },
+        { line: 'SELECT ... rental_rate * 1.23 AS price_gross', desc: 'Krok 5 silnika: wylicza cenę brutto i nadaje jej alias price_gross.' },
+        { line: 'DISTINCT', desc: 'Krok 6 silnika: usuwa powtarzające się pary (rating, price_gross).' },
+        { line: 'ORDER BY price_gross DESC;', desc: 'Krok 7 silnika: sortuje po gotowym aliasie price_gross (który powstał w kroku 5).' }
+      ]
+    },
+    {
+      title: 'Sprawdź się przed zadaniami!',
+      quiz: {
+        question: 'W SELECT zdefiniowałeś alias `length / 60.0 AS hours`. Gdzie MOŻESZ użyć samej nazwy `hours` bez błędu w PostgreSQL?',
+        options: [
+          'Zarówno w WHERE, jak i w ORDER BY',
+          'W klauzuli ORDER BY (bo wykonuje się w kroku 7, po kroku 5 SELECT), ale NIE w WHERE (krok 2)',
+          'Tylko w klauzuli WHERE'
+        ],
+        correct: 1,
+        explanation: 'Świetnie! WHERE (krok 2) wykonuje się przed SELECT (krok 5), więc nie zna jeszcze aliasów. ORDER BY (krok 7) działa po SELECT, dlatego widzi wszystkie aliasy.'
+      }
+    }
+  ],
+  p2_1: [
+    {
+      title: 'Jak zbudować zapytanie?',
+      syntax: "SELECT\n  COUNT(*) AS wszystkie_wiersze,\n  COUNT(kolumna) AS niepuste_wiersze,\n  COUNT(DISTINCT kolumna) AS unikalne_wartosci\nFROM tabela\nGROUP BY klucz_grupy;",
+      bullets: [
+        '<strong><code>COUNT(*)</code>:</strong> liczy absolutnie wszystkie wiersze w grupie (nawet te zawierające <code>NULL</code>).',
+        '<strong><code>COUNT(kolumna)</code>:</strong> pomija wartości <code>NULL</code>! Liczy tylko wiersze, w których dana kolumna ma wartość.',
+        '<strong><code>COUNT(DISTINCT kolumna)</code>:</strong> liczy ile różnych (unikalnych) niepustych wartości występuje w kolumnie.',
+        '<strong><code>IS NULL</code> / <code>IS NOT NULL</code>:</strong> jedyny poprawny sposób filtrowania pustych wartości w <code>WHERE</code>.'
+      ]
+    },
+    {
+      title: 'Kolejność pisania vs Kolejność wykonywania przez PostgreSQL',
+      focusWrite: ['SELECT', 'FROM', 'WHERE', 'GROUP BY', 'ORDER BY'],
+      focusExec: [1, 2, 3, 5, 7],
+      note: '<strong>Dlaczego to ważne w Lekcji 2.1?</strong> Najpierw <code>2. WHERE</code> odrzuca niechciane wiersze (np. <code>WHERE return_date IS NULL</code>), następnie <code>3. GROUP BY</code> dzieli pozostałe wiersze na koszyki, a w kroku <code>5. SELECT</code> funkcje agregujące (<code>COUNT</code>) podliczają statystyki dla każdego koszyka.'
+    },
+    {
+      title: 'Przykład na żywo (dvdrental)',
+      code: "SELECT\n  staff_id,\n  COUNT(*) AS all_rentals,\n  COUNT(return_date) AS returned,\n  COUNT(*) - COUNT(return_date) AS missing\nFROM rental\nGROUP BY staff_id;",
+      lines: [
+        { line: 'FROM rental', desc: 'Krok 1 silnika: pobiera wszystkie wypożyczenia z tabeli rental.' },
+        { line: 'GROUP BY staff_id', desc: 'Krok 3 silnika: dzieli wypożyczenia na grupy według pracownika (staff_id).' },
+        { line: 'COUNT(*) AS all_rentals, COUNT(return_date) AS returned', desc: 'Krok 5 silnika: liczy wszystkie wypożyczenia pracownika oraz tylko te z wpisaną datą zwrotu.' },
+        { line: 'COUNT(*) - COUNT(return_date) AS missing', desc: 'Krok 5 silnika: różnica daje dokładną liczbę filmów wciąż niezwróconych (gdzie return_date IS NULL).' }
+      ]
+    },
+    {
+      title: 'Sprawdź się przed zadaniami!',
+      quiz: {
+        question: 'Tabela `rental` ma 20 wierszy, z czego w 4 wierszach `return_date` wynosi NULL. Co zwróci `SELECT COUNT(*), COUNT(return_date) FROM rental`?',
+        options: [
+          '20 oraz 20 (bo COUNT zawsze liczy wszystkie wiersze)',
+          '20 oraz 16 (bo COUNT(kolumna) pomija wartości NULL)',
+          '16 oraz 4'
+        ],
+        correct: 1,
+        explanation: 'Tak jest! COUNT(*) zlicza wszystkie 20 wierszy, natomiast COUNT(return_date) ignoruje 4 wiersze z wartością NULL i zwraca 16.'
+      }
+    }
+  ],
+  p2_2: [
+    {
+      title: 'Jak zbudować zapytanie?',
+      syntax: "SELECT kolumna_grupy, SUM(kwota) AS suma, AVG(dlugosc) AS srednia\nFROM tabela\nWHERE pojedynczy_wiersz > 0\nGROUP BY kolumna_grupy\nHAVING SUM(kwota) > 10.00\nORDER BY suma DESC;",
+      bullets: [
+        '<strong><code>GROUP BY</code>:</strong> zwija wiersze o tym samym kluczu w jeden wiersz podsumowania (koszyk).',
+        '<strong>Złota zasada:</strong> każda kolumna z <code>SELECT</code> niebędąca w funkcji agregującej (<code>SUM</code>, <code>COUNT</code>, <code>AVG</code>, <code>MIN</code>, <code>MAX</code>) musi być w <code>GROUP BY</code>.',
+        '<strong><code>WHERE</code> vs <code>HAVING</code>:</strong> <code>WHERE</code> filtruje pojedyncze wiersze <em>przed</em> grupowaniem; <code>HAVING</code> filtruje całe grupy <em>po</em> agregacji.'
+      ]
+    },
+    {
+      title: 'Kolejność pisania vs Kolejność wykonywania przez PostgreSQL',
+      focusWrite: ['SELECT', 'FROM', 'WHERE', 'GROUP BY', 'HAVING', 'ORDER BY'],
+      focusExec: [1, 2, 3, 4, 5, 7],
+      note: '<strong>Spójrz na kroki 2 → 3 → 4 → 5!</strong> W kroku <code>2. WHERE</code> grupy jeszcze nie istnieją, dlatego zapis <code>WHERE SUM(amount) > 10</code> wywoła błąd składni. Dopiero po kroku <code>3. GROUP BY</code> wchodzi <code>4. HAVING</code>, który odsiewa koszyki niespełniające warunku agregacji!'
+    },
+    {
+      title: 'Przykład na żywo (dvdrental)',
+      code: "SELECT customer_id, SUM(amount) AS total_paid, COUNT(*) AS cnt\nFROM payment\nWHERE amount >= 2.99\nGROUP BY customer_id\nHAVING SUM(amount) > 10.00\nORDER BY total_paid DESC;",
+      lines: [
+        { line: 'WHERE amount >= 2.99', desc: 'Krok 2 silnika: odrzuca drobne pojedyncze transakcje poniżej 2.99 jeszcze przed grupowaniem.' },
+        { line: 'GROUP BY customer_id', desc: 'Krok 3 silnika: grupuje pozostałe płatności w koszyki dla każdego klienta.' },
+        { line: 'HAVING SUM(amount) > 10.00', desc: 'Krok 4 silnika: zostawia tylko tych klientów, których suma w koszyku przekracza 10.00.' },
+        { line: 'SELECT ... ORDER BY total_paid DESC;', desc: 'Kroki 5 i 7 silnika: wyświetla wynikowe kolumny i sortuje od najlepszego klienta.' }
+      ]
+    },
+    {
+      title: 'Sprawdź się przed zadaniami!',
+      quiz: {
+        question: 'Chcesz odrzucić płatności mniejsze niż 2.00, a następnie zostawić tylko klientów, którzy wydali łącznie ponad 15.00. Jak rozdzielisz te warunki?',
+        options: [
+          'Oba warunki wpiszę w WHERE: `WHERE amount >= 2.00 AND SUM(amount) > 15.00`',
+          '`WHERE amount >= 2.00` (krok 2 przed GROUP BY) oraz `HAVING SUM(amount) > 15.00` (krok 4 po GROUP BY)',
+          'Oba warunki wpiszę w HAVING'
+        ],
+        correct: 1,
+        explanation: 'Perfekcyjnie! Pojedyncze wiersze filtrujemy w WHERE (krok 2), a zagregowane koszyki po GROUP BY (krok 3) filtrujemy w HAVING (krok 4).'
+      }
+    }
+  ],
+  p3_1: [
+    {
+      title: 'Jak zbudować zapytanie?',
+      syntax: "SELECT c.name, COUNT(f.film_id) AS film_cnt\nFROM category c\nJOIN film_category fc ON c.category_id = fc.category_id\nJOIN film f ON fc.film_id = f.film_id\nWHERE f.length > 60\nGROUP BY c.name;",
+      bullets: [
+        '<strong><code>JOIN ... ON ...</code> (<code>INNER JOIN</code>):</strong> łączy wiersze z dwóch tabel tam, gdzie klucze (np. <code>🔗 category_id</code>) są sobie równe.',
+        '<strong>Tylko wspólne dopasowania:</strong> jeśli wiersz nie ma pary w drugiej tabeli, <code>INNER JOIN</code> go pomija.',
+        '<strong>Aliasy tabel:</strong> nadawaj krótkie aliasy w <code>FROM</code>/<code>JOIN</code> (np. <code>category c</code>) i używaj ich w całym zapytaniu (<code>c.name</code>).'
+      ]
+    },
+    {
+      title: 'Kolejność pisania vs Kolejność wykonywania przez PostgreSQL',
+      focusWrite: ['SELECT', 'FROM', 'JOIN', 'WHERE', 'GROUP BY', 'ORDER BY'],
+      focusExec: [1, 2, 3, 5, 7],
+      note: '<strong>Dlaczego aliasy tabel z <code>FROM/JOIN</code> działają wszędzie?</strong> Ponieważ <code>1. FROM / JOIN</code> to absolutnie pierwszy krok wykonywany przez PostgreSQL! Gdy podasz <code>FROM customer c JOIN payment p</code> w kroku 1, aliasy <code>c</code> oraz <code>p</code> są od razu widoczne w <code>2. WHERE</code>, <code>3. GROUP BY</code>, <code>5. SELECT</code> i <code>7. ORDER BY</code>.'
+    },
+    {
+      title: 'Przykład na żywo (dvdrental)',
+      code: "SELECT c.name, COUNT(f.film_id) AS films, AVG(f.rental_rate) AS avg_rate\nFROM category c\nJOIN film_category fc ON c.category_id = fc.category_id\nJOIN film f ON fc.film_id = f.film_id\nWHERE f.length > 60\nGROUP BY c.name\nORDER BY films DESC;",
+      lines: [
+        { line: 'FROM category c JOIN film_category fc ... JOIN film f ...', desc: 'Krok 1 silnika: skleja 3 tabele po kluczach category_id oraz film_id.' },
+        { line: 'WHERE f.length > 60', desc: 'Krok 2 silnika: zostawia tylko połączone wiersze filmów dłuższych niż 60 minut.' },
+        { line: 'GROUP BY c.name', desc: 'Krok 3 silnika: grupuje wynik po nazwie kategorii.' },
+        { line: 'SELECT c.name, COUNT(...) ... ORDER BY films DESC;', desc: 'Kroki 5 i 7 silnika: oblicza liczbę filmów i średnią cenę dla każdej kategorii oraz sortuje.' }
+      ]
+    },
+    {
+      title: 'Sprawdź się przed zadaniami!',
+      quiz: {
+        question: 'Dlaczego alias tabeli nadany w `FROM customer c` możemy użyć w `WHERE c.store_id = 1`, podczas gdy aliasu kolumny z `SELECT` nie można użyć w `WHERE`?',
+        options: [
+          'Ponieważ FROM/JOIN wykonuje się jako Krok 1 (przed Krok 2 WHERE), a SELECT dopiero jako Krok 5',
+          'To kwestia przypadku w składni SQL',
+          'Aliasów tabel nie wolno używać w WHERE'
+        ],
+        correct: 0,
+        explanation: 'Dokładnie tak! Krok 1 (FROM/JOIN) tworzy przestrzeń nazw tabel dla całego zapytania, więc w Kroku 2 (WHERE) aliasy tabel są już doskonale znane.'
+      }
+    }
+  ],
+  p3_2: [
+    {
+      title: 'Jak zbudować zapytanie?',
+      syntax: "-- 1) Anti-Join (szukanie wierszy bez pary):\nSELECT c.customer_id, c.first_name\nFROM customer c\nLEFT JOIN rental r ON c.customer_id = r.customer_id\nWHERE r.rental_id IS NULL;\n\n-- 2) Pełna lista z 0 dla braków:\nSELECT c.first_name, COUNT(r.rental_id) AS cnt, COALESCE(SUM(p.amount), 0) AS total ...",
+      bullets: [
+        '<strong><code>LEFT JOIN</code>:</strong> zachowuje 100% wierszy z lewej tabeli. Gdy w prawej tabeli brak dopasowania, jej kolumny wypełniane są przez <code>NULL</code>.',
+        '<strong>Anti-Join (<code>WHERE prawa.id IS NULL</code>):</strong> wyłapuje rekordy z lewej tabeli, które nie mają ani jednego powiązania w prawej tabeli.',
+        '<strong><code>COUNT(prawa.id)</code> vs <code>COUNT(*)</code>:</strong> przy <code>LEFT JOIN</code> zawsze licz klucz prawej tabeli, aby dla braku pary otrzymać <code>0</code> (a nie <code>1</code>!).'
+      ]
+    },
+    {
+      title: 'Kolejność pisania vs Kolejność wykonywania przez PostgreSQL',
+      focusWrite: ['SELECT', 'FROM', 'JOIN', 'WHERE', 'GROUP BY'],
+      focusExec: [1, 2, 3, 5],
+      note: '<strong>Uwaga na pułapkę Krok 1 (<code>LEFT JOIN ON</code>) vs Krok 2 (<code>WHERE</code>)!</strong> Jeśli chcesz pokazać wszystkich klientów wraz z liczbą wypożyczeń w czerwcu (w tym <code>0</code>), warunek daty <code>r.rental_date >= \'2026-06-01\'</code> musisz wpisać wewnątrz <code>ON</code> (Krok 1). Wpisanie go w <code>WHERE</code> (Krok 2) wytnie wiersze z <code>NULL</code> i zamieni <code>LEFT JOIN</code> w <code>INNER JOIN</code>!'
+    },
+    {
+      title: 'Przykład na żywo (dvdrental)',
+      code: "SELECT\n  c.customer_id,\n  c.first_name,\n  COUNT(r.rental_id) AS june_cnt\nFROM customer c\nLEFT JOIN rental r\n  ON r.customer_id = c.customer_id\n  AND r.rental_date >= '2026-06-01'\nWHERE c.store_id = 2\nGROUP BY c.customer_id, c.first_name;",
+      lines: [
+        { line: "LEFT JOIN rental r ON r.customer_id = c.customer_id AND r.rental_date >= '2026-06-01'", desc: 'Krok 1 silnika: dokleja tylko czerwcowe wypożyczenia, ale zachowuje wszystkich klientów (reszta ma NULL).' },
+        { line: 'WHERE c.store_id = 2', desc: 'Krok 2 silnika: bezpiecznie filtruje lewą tabelę customer (sklep nr 2).' },
+        { line: 'GROUP BY c.customer_id, c.first_name', desc: 'Krok 3 silnika: grupuje po kliencie.' },
+        { line: 'COUNT(r.rental_id) AS june_cnt', desc: 'Krok 5 silnika: dla klientów z NULL w r.rental_id zwraca dokładne 0!' }
+      ]
+    },
+    {
+      title: 'Sprawdź się przed zadaniami!',
+      quiz: {
+        question: 'Robisz `customer c LEFT JOIN rental r ON c.customer_id = r.customer_id`. Co się stanie, jeśli w SELECT napiszesz `COUNT(*)` zamiast `COUNT(r.rental_id)`?',
+        options: [
+          'Klienci bez żadnego wypożyczenia otrzymają wynik 1 zamiast 0 (bo COUNT(*) policzy wiersz klienta z NULL-ami)',
+          'Zapytanie zwróci błąd składni',
+          'Wynik będzie identyczny w obu przypadkach'
+        ],
+        correct: 0,
+        explanation: 'Strzał w dziesiątkę! Po LEFT JOIN klient bez wypożyczeń nadal tworzy 1 wiersz (z NULL w kolumnach rental). COUNT(*) policzy ten wiersz jako 1, a COUNT(r.rental_id) pominie NULL i zwróci poprawne 0.'
+      }
+    }
+  ],
+  p4_1: [
+    {
+      title: 'Jak zbudować zapytanie?',
+      syntax: "SELECT\n  CASE\n    WHEN length < 70 THEN 'Krotki'\n    WHEN length <= 120 THEN 'Sredni'\n    ELSE 'Dlugi'\n  END AS segment,\n  COUNT(*) FILTER (WHERE rental_rate = 4.99) * 100.0 / COUNT(*) AS pct\nFROM film\nGROUP BY 1;",
+      bullets: [
+        '<strong><code>CASE WHEN ... THEN ... ELSE ... END</code>:</strong> tworzy nową kolumnę warunkową lub pozwala agregować wybrane wiersze.',
+        '<strong><code>FILTER (WHERE warunek)</code>:</strong> czytelna składnia PostgreSQL zliczająca do agregatu tylko wiersze spełniające warunek.',
+        '<strong><code>* 100.0</code> oraz <code>ROUND(x, 2)</code>:</strong> mnożenie przez <code>100.0</code> wymusza typ ułamkowy przy liczeniu procentów.'
+      ]
+    },
+    {
+      title: 'Kolejność pisania vs Kolejność wykonywania przez PostgreSQL',
+      focusWrite: ['SELECT', 'FROM', 'JOIN', 'GROUP BY', 'ORDER BY'],
+      focusExec: [1, 3, 5, 7],
+      note: '<strong>Dlaczego w <code>CASE WHEN</code> możemy używać funkcji agregujących?</strong> Ponieważ wyrażenia w <code>5. SELECT</code> wykonywane są już <em>po</em> <code>3. GROUP BY</code>! Dzięki temu w kroku 5 możesz zarówno sklasyfikować pojedyncze wiersze, jak i zbudować etykietę dla całej grupy, np. <code>CASE WHEN SUM(amount) > 35 THEN \'Lider\' ELSE \'Standard\' END</code>.'
+    },
+    {
+      title: 'Przykład na żywo (dvdrental)',
+      code: "SELECT\n  c.name,\n  COUNT(*) AS total,\n  COUNT(*) FILTER (WHERE f.rental_rate = 4.99) AS premium,\n  ROUND(COUNT(*) FILTER (WHERE f.rental_rate = 4.99) * 100.0 / COUNT(*), 2) AS premium_pct\nFROM category c\nJOIN film_category fc ON fc.category_id = c.category_id\nJOIN film f ON f.film_id = fc.film_id\nGROUP BY c.name\nORDER BY premium_pct DESC;",
+      lines: [
+        { line: 'FROM category c JOIN film_category fc ... JOIN film f ...', desc: 'Krok 1 silnika: łączy kategorie z przypisanymi filmami.' },
+        { line: 'GROUP BY c.name', desc: 'Krok 3 silnika: tworzy koszyk dla każdej kategorii.' },
+        { line: 'COUNT(*) FILTER (WHERE f.rental_rate = 4.99)', desc: 'Krok 5 silnika: wewnątrz każdej kategorii liczy tylko filmy z ceną 4.99.' },
+        { line: 'ROUND(... * 100.0 / COUNT(*), 2)', desc: 'Krok 5 silnika: wylicza dokładny udział procentowy i zaokrągla do 2 miejsc po przecinku.' }
+      ]
+    },
+    {
+      title: 'Sprawdź się przed zadaniami!',
+      quiz: {
+        question: 'Dlaczego licząc udział procentowy piszemy `COUNT(*) FILTER (...) * 100.0 / COUNT(*)` z kropką w `100.0`?',
+        options: [
+          'Ponieważ COUNT(*) zwraca liczbę całkowitą (BIGINT) i bez 100.0 dzielenie całkowite obcięłoby część ułamkową',
+          'Kropka w 100.0 jest wymagana przez klauzulę GROUP BY',
+          'Bez 100.0 funkcja FILTER nie zadziała'
+        ],
+        correct: 0,
+        explanation: 'Brawo! Dzielenie dwóch liczb całkowitych w SQL obcina ułamki. Mnożenie przez 100.0 zamienia licznik na typ NUMERIC i gwarantuje dokładny wynik zmiennoprzecinkowy.'
+      }
+    }
+  ],
+  p4_2: [
+    {
+      title: 'Jak zbudować zapytanie?',
+      syntax: "SELECT kolumna1, kolumna2 FROM tabela_A WHERE ...\nUNION ALL -- lub UNION / INTERSECT / EXCEPT\nSELECT kolumna1, kolumna2 FROM tabela_B WHERE ...\nORDER BY kolumna1;",
+      bullets: [
+        '<strong><code>UNION ALL</code> vs <code>UNION</code>:</strong> łączą wiersze dwóch zapytań pod sobą. <code>UNION ALL</code> zachowuje wszystkie wiersze (szybszy), a <code>UNION</code> usuwa duplikaty.',
+        '<strong><code>INTERSECT</code>:</strong> zwraca część wspólną (rekordy obecne jednocześnie w górnym i dolnym zapytaniu).',
+        '<strong><code>EXCEPT</code>:</strong> zwraca różnicę zbiorów (rekordy z pierwszego zapytania, które nie występują w drugim).'
+      ]
+    },
+    {
+      title: 'Kolejność pisania vs Kolejność wykonywania przez PostgreSQL',
+      focusWrite: ['SELECT', 'FROM', 'WHERE', 'ORDER BY'],
+      focusExec: [1, 2, 5, 6, 7],
+      note: '<strong>Jak PostgreSQL wykonuje operatory zbiorowe?</strong> Każde składowe zapytanie <code>SELECT</code> przechodzi niezależnie przez kroki <code>1. FROM</code> → <code>2. WHERE</code> → <code>3. GROUP BY</code> → <code>5. SELECT</code>. Następnie operator (<code>UNION</code> / <code>INTERSECT</code> / <code>EXCEPT</code>) łączy oba zbiory wynikowe, a wspólne <code>7. ORDER BY</code> na samym końcu sortuje połączoną tabelę!'
+    },
+    {
+      title: 'Przykład na żywo (dvdrental)',
+      code: "SELECT f.title\nFROM film f\nJOIN rental r ON r.film_id = f.film_id\nWHERE r.rental_date < '2026-06-01'\nINTERSECT\nSELECT f.title\nFROM film f\nJOIN rental r ON r.film_id = f.film_id\nWHERE r.rental_date >= '2026-06-01'\nORDER BY title;",
+      lines: [
+        { line: "SELECT f.title ... WHERE r.rental_date < '2026-06-01'", desc: 'Zapytanie 1 (Kroki 1–5): wyznacza zbiór tytułów wypożyczonych w maju.' },
+        { line: 'INTERSECT', desc: 'Operator zbiorowy: zostawia tylko tytuły występujące w OBU zbiorach.' },
+        { line: "SELECT f.title ... WHERE r.rental_date >= '2026-06-01'", desc: 'Zapytanie 2 (Kroki 1–5): wyznacza zbiór tytułów wypożyczonych w czerwcu.' },
+        { line: 'ORDER BY title;', desc: 'Krok 7 silnika: jedno wspólne sortowanie na samym końcu dla całego wyniku.' }
+      ]
+    },
+    {
+      title: 'Sprawdź się przed zadaniami!',
+      quiz: {
+        question: 'Gdzie umieszczamy klauzulę `ORDER BY`, gdy łączymy dwa zapytania za pomocą `UNION` lub `INTERSECT`?',
+        options: [
+          'Tylko raz, na samym końcu po drugim zapytaniu SELECT',
+          'Wewnątrz pierwszego zapytania przed słowem UNION',
+          'Przed każdym słowem SELECT'
+        ],
+        correct: 0,
+        explanation: 'Dokładnie! Najpierw oba zapytania zwracają swoje wiersze i są łączone przez UNION/INTERSECT, a pojedyncze ORDER BY na samym końcu sortuje finalny wynik.'
+      }
+    }
+  ],
+  p5_1: [
+    {
+      title: 'Jak zbudować zapytanie?',
+      syntax: "WITH ranked AS (\n  SELECT\n    rating, title, length,\n    DENSE_RANK() OVER (PARTITION BY rating ORDER BY length DESC) AS rnk\n  FROM film\n)\nSELECT rating, title, length\nFROM ranked\nWHERE rnk <= 2;",
+      bullets: [
+        '<strong>CTE (<code>WITH nazwa AS (...)</code>):</strong> definiuje czytelny krok pośredni (tymczasową tabelę), do której odwołujesz się w głównym <code>SELECT</code>.',
+        '<strong><code>OVER (PARTITION BY ... ORDER BY ...)</code>:</strong> liczy ranking osobno dla każdej partycji (np. każdego <code>rating</code>), nie zwijając wierszy.',
+        '<strong><code>ROW_NUMBER</code> (1,2,3) vs <code>RANK</code> (1,1,3) vs <code>DENSE_RANK</code> (1,1,2):</strong> wybierasz zależnie od tego, jak chcesz traktować remisy.'
+      ]
+    },
+    {
+      title: 'Kolejność pisania vs Kolejność wykonywania przez PostgreSQL',
+      focusWrite: ['SELECT', 'FROM', 'WHERE', 'GROUP BY', 'ORDER BY'],
+      focusExec: [1, 2, 3, 5, 7],
+      note: '<strong>Dlaczego funkcji okna NIE WOLNO wpisać bezpośrednio w <code>WHERE</code>?</strong> Spójrz na schemat: <code>2. WHERE</code> działa na samym początku, a funkcje okna (<code>ROW_NUMBER() OVER ...</code>) są obliczane dopiero w kroku <code>5. SELECT</code>! Dlatego funkcję okna wyliczamy w CTE (wewnętrzny Krok 5), a w zapytaniu zewnętrznym filtrujemy gotową kolumnę przez <code>WHERE rnk <= 2</code>!'
+    },
+    {
+      title: 'Przykład na żywo (dvdrental)',
+      code: "WITH ranked AS (\n  SELECT\n    customer_id, payment_id, amount,\n    ROW_NUMBER() OVER (\n      PARTITION BY customer_id\n      ORDER BY amount DESC, payment_id ASC\n    ) AS rn\n  FROM payment\n)\nSELECT customer_id, payment_id, amount\nFROM ranked\nWHERE rn <= 2;",
+      lines: [
+        { line: 'WITH ranked AS (...)', desc: 'Definiuje tabelę tymczasową CTE o nazwie ranked.' },
+        { line: 'PARTITION BY customer_id ORDER BY amount DESC, payment_id ASC', desc: 'Krok 5 wewnątrz CTE: numeruje płatności osobno dla każdego klienta od najwyższej kwoty.' },
+        { line: 'FROM ranked WHERE rn <= 2;', desc: 'Kroki 1–2 zapytania głównego: pobiera wynik z CTE i zostawia tylko 2 najwyższe płatności każdego klienta.' }
+      ]
+    },
+    {
+      title: 'Sprawdź się przed zadaniami!',
+      quiz: {
+        question: 'Dlaczego zapytanie `SELECT title FROM film WHERE ROW_NUMBER() OVER (ORDER BY length DESC) = 1` zakończy się błędem?',
+        options: [
+          'Ponieważ WHERE wykonuje się w Kroku 2, a funkcje okna obliczane są dopiero w Kroku 5 (SELECT) — należy użyć CTE',
+          'Ponieważ w PostgreSQL nie istnieje funkcja ROW_NUMBER()',
+          'Ponieważ brakuje klauzuli GROUP BY'
+        ],
+        correct: 0,
+        explanation: 'Znakomicie! Funkcje okna uruchamiają się dopiero w Kroku 5 (SELECT). Zamknięcie ich w CTE pozwala odfiltrować wynik w Kroku 2 (WHERE) zapytania zewnętrznego.'
+      }
+    }
+  ],
+  p5_2: [
+    {
+      title: 'Jak zbudować zapytanie?',
+      syntax: "WITH m_rev AS (\n  SELECT DATE_TRUNC('month', payment_date) AS m, SUM(amount) AS rev\n  FROM payment\n  GROUP BY 1\n)\nSELECT\n  m, rev,\n  LAG(rev) OVER (ORDER BY m) AS prev_rev,\n  SUM(rev) OVER (ORDER BY m) AS running_total\nFROM m_rev;",
+      bullets: [
+        '<strong><code>SUM(x) OVER (ORDER BY ...)</code>:</strong> liczy sumę narastającą (Running Total) wiersz po wierszu.',
+        '<strong><code>SUM(x) OVER ()</code>:</strong> puste nawiasy liczą sumę z całego zbioru (idealne do mianownika udziału procentowego).',
+        '<strong><code>LAG(kolumna) OVER (ORDER BY ...)</code>:</strong> pobiera wartość z poprzedniego wiersza (porównania okres-do-okresu MoM).'
+      ]
+    },
+    {
+      title: 'Kolejność pisania vs Kolejność wykonywania przez PostgreSQL',
+      focusWrite: ['SELECT', 'FROM', 'WHERE', 'GROUP BY', 'ORDER BY'],
+      focusExec: [1, 2, 3, 5, 7],
+      note: '<strong>Jak współgrają <code>3. GROUP BY</code> oraz funkcje okna w <code>5. SELECT</code>?</strong> Ponieważ <code>3. GROUP BY</code> wykonuje się przed <code>5. SELECT</code>, możesz w jednym zapytaniu najpierw pogrupować wiersze, a w <code>SELECT</code> użyć <code>SUM(COUNT(*)) OVER ()</code>! Podobnie przy <code>LAG()</code>: jeśli chcesz porównać czerwiec z majem, najpierw wylicz <code>LAG()</code> w CTE (Krok 5), a dopiero w zewnętrznym zapytaniu daj <code>WHERE miesiac = \'2026-06-01\'</code>!'
+    },
+    {
+      title: 'Przykład na żywo (dvdrental)',
+      code: "SELECT\n  rating,\n  COUNT(*) AS cnt,\n  ROUND(COUNT(*) * 100.0 / SUM(COUNT(*)) OVER (), 2) AS share_pct\nFROM film\nGROUP BY rating\nORDER BY cnt DESC;",
+      lines: [
+        { line: 'FROM film GROUP BY rating', desc: 'Kroki 1 i 3 silnika: dzieli filmy na grupy według ratingu.' },
+        { line: 'COUNT(*) AS cnt', desc: 'Krok 5a silnika (agregacja): liczy filmy w danym ratingu.' },
+        { line: 'SUM(COUNT(*)) OVER ()', desc: 'Krok 5b silnika (okno po agregacji): sumuje liczebności wszystkich ratingów (mianownik procentu).' },
+        { line: 'ORDER BY cnt DESC;', desc: 'Krok 7 silnika: sortuje wynik od najliczniejszego ratingu.' }
+      ]
+    },
+    {
+      title: 'Sprawdź się przed zadaniami!',
+      quiz: {
+        question: 'Chcesz porównać przychód z czerwca z majem używając `LAG(rev) OVER (ORDER BY m)`. Co się stanie, jeśli dasz `WHERE m = \'2026-06-01\'` w tym samym zapytaniu przed wyliczeniem `LAG()`?',
+        options: [
+          'WHERE (Krok 2) wytnie maj zanim uruchomi się LAG() w SELECT (Krok 5), więc poprzedni miesiąc wyniesie NULL!',
+          'LAG() i tak odczyta usunięte przez WHERE wiersze z maja',
+          'Zapytanie zwróci sumę z obu miesięcy'
+        ],
+        correct: 0,
+        explanation: 'Dokładnie! WHERE działa w Kroku 2, więc odetnie wiersz majowy zanim Krok 5 (SELECT) policzy LAG(). Dlatego LAG() liczymy w CTE, a filtr na czerwiec dajemy w zapytaniu zewnętrznym!'
+      }
+    }
+  ],
+  p5_3: [
+    {
+      title: 'Jak zbudować zapytanie?',
+      syntax: "SELECT\n  d::date AS dzien,\n  COUNT(r.rental_id) AS wypozyczenia,\n  COALESCE(SUM(p.amount), 0) AS przychod\nFROM generate_series('2026-05-01'::date, '2026-05-07'::date, '1 day') AS d\nLEFT JOIN rental r ON r.rental_date = d::date\nLEFT JOIN payment p ON p.rental_id = r.rental_id\nGROUP BY 1\nORDER BY 1;",
+      bullets: [
+        '<strong><code>generate_series(start, stop, krok)</code>:</strong> tworzy ciągłą tabelę dat lub liczb w sekcji <code>FROM</code> (brak dziur w kalendarzu!).',
+        '<strong><code>DATE_TRUNC(\'month\', data)</code>:</strong> zaokrągla datę w dół do początku miesiąca/tygodnia.',
+        '<strong><code>data + INTERVAL \'5 days\'</code>:</strong> bezpieczna arytmetyka kalendarzowa w PostgreSQL.'
+      ]
+    },
+    {
+      title: 'Kolejność pisania vs Kolejność wykonywania przez PostgreSQL',
+      focusWrite: ['SELECT', 'FROM', 'JOIN', 'GROUP BY', 'ORDER BY'],
+      focusExec: [1, 3, 5, 7],
+      note: '<strong>Dlaczego kalendarz <code>generate_series</code> dajemy w <code>1. FROM</code> przed <code>LEFT JOIN</code>?</strong> W kroku <code>1. FROM / LEFT JOIN</code> PostgreSQL generuje pełną oś czasu po lewej stronie i dokleja do niej zdarzenia. Następnie <code>3. GROUP BY</code> tworzy grupę dla każdego dnia kalendarza, a w <code>5. SELECT</code> funkcje <code>COUNT(r.rental_id)</code> oraz <code>COALESCE(SUM(...), 0)</code> zamieniają puste dni na eleganckie zera!'
+    },
+    {
+      title: 'Przykład na żywo (dvdrental)',
+      code: "SELECT\n  d::date AS d,\n  COUNT(r.rental_id) AS cnt,\n  SUM(COUNT(r.rental_id)) OVER (ORDER BY d) AS running_cnt\nFROM generate_series('2026-05-01'::date, '2026-05-07'::date, '1 day') AS d\nLEFT JOIN rental r ON r.rental_date = d::date\nGROUP BY d\nORDER BY d;",
+      lines: [
+        { line: "FROM generate_series('2026-05-01'::date, '2026-05-07'::date, '1 day') AS d", desc: 'Krok 1a silnika: tworzy 7 wierszy dla każdego dnia od 1 do 7 maja.' },
+        { line: 'LEFT JOIN rental r ON r.rental_date = d::date', desc: 'Krok 1b silnika: dopasowuje wypożyczenia do dni (dni bez ruchu dostają NULL).' },
+        { line: 'GROUP BY d', desc: 'Krok 3 silnika: grupuje wiersze po dniu kalendarzowym.' },
+        { line: 'COUNT(r.rental_id) AS cnt, SUM(COUNT(r.rental_id)) OVER (ORDER BY d)', desc: 'Krok 5 silnika: liczy wypożyczenia danego dnia (z zerami) oraz sumę narastającą od początku miesiąca.' }
+      ]
+    },
+    {
+      title: 'Sprawdź się przed zadaniami!',
+      quiz: {
+        question: 'Jak wyświetlić pełny 7-dniowy raport sprzedaży z zerami dla dni, w których żaden klient nic nie kupił?',
+        options: [
+          'Zrobić zwykłe `SELECT payment_date, SUM(amount) FROM payment GROUP BY payment_date`',
+          'Umieścić `generate_series(...) AS d` po lewej stronie `LEFT JOIN payment p ON p.payment_date = d::date` i użyć `COALESCE(SUM(p.amount), 0)`',
+          'Użyć INNER JOIN między generate_series a tabelą payment'
+        ],
+        correct: 1,
+        explanation: 'Rewelacja! Wygenerowany w FROM kalendarz połączony przez LEFT JOIN z tabelą transakcji gwarantuje obecność każdego dnia, a COALESCE(SUM(...), 0) zamienia brak sprzedaży na 0.'
+      }
+    }
+  ]
+};
+
+PATH_TASKS.forEach(function(t) {
+  if (LESSON_TUTORIALS[t.id]) {
+    t.slides = LESSON_TUTORIALS[t.id];
+  }
+});
+
 window.STAGES = STAGES;
 window.PATH_TASKS = PATH_TASKS;
 window.DIAG_QUESTIONS = DIAG_QUESTIONS;
+window.LESSON_TUTORIALS = LESSON_TUTORIALS;
+
 

@@ -1,4 +1,4 @@
-var CACHE_NAME = 'sql-master-pwa-v2';
+var CACHE_NAME = 'sql-master-v4';
 var LOCAL_ASSETS = [
   './',
   './index.html',
@@ -39,9 +39,16 @@ self.addEventListener('activate', function(event) {
 
 self.addEventListener('fetch', function(event) {
   var req = event.request;
+  var url = new URL(req.url);
+
+  // Strategia Network-Only dla zapytań do Supabase REST API (nigdy nie cachuj API rankingu/profili)
+  if (url.hostname.indexOf('supabase.co') > -1 || url.hostname.indexOf('supabase.in') > -1 || url.pathname.indexOf('/rest/v1/') > -1) {
+    event.respondWith(fetch(req));
+    return;
+  }
+
   if (req.method !== 'GET') return;
 
-  var url = new URL(req.url);
   var isSameOrigin = url.origin === self.location.origin;
   var isCdnCacheable = url.hostname.indexOf('cdn.jsdelivr.net') > -1 ||
                        url.hostname.indexOf('fonts.googleapis.com') > -1 ||
@@ -73,4 +80,3 @@ self.addEventListener('fetch', function(event) {
     })
   );
 });
-
