@@ -101,30 +101,52 @@ var PG_DVDRENTAL_DDL = DVDRENTAL_SEED_SQL
   .replace(/return_date TEXT/g, 'return_date DATE')
   .replace(/payment_date TEXT NOT NULL/g, 'payment_date DATE NOT NULL');
 
+let dbInitPromise = null;
+
 async function initDatabase() {
-  var statusEl = document.getElementById('dbStatus');
-  try {
-    if (statusEl) statusEl.textContent = 'Pobieranie silnika PostgreSQL (PGlite)…';
-    var mod = await import('https://cdn.jsdelivr.net/npm/@electric-sql/pglite/dist/index.js');
-    var PGlite = mod.PGlite;
-    db = new PGlite();
-    await db.exec(PG_DVDRENTAL_DDL);
-    if (window.INTERVIEW_SEED_SQL) {
-      await db.exec(window.INTERVIEW_SEED_SQL);
-    }
-    dbReady = true;
-    if (window.INTERVIEW_SCHEMA_META) {
-      for (var i = 0; i < window.INTERVIEW_SCHEMA_META.length; i++) {
-        var tblName = window.INTERVIEW_SCHEMA_META[i].table;
-        interviewSamples[tblName] = await runQuery('SELECT * FROM ' + tblName + ' LIMIT 5;');
+  if (db && dbReady) return db;
+  if (dbInitPromise !== null) return dbInitPromise;
+
+  dbInitPromise = (async function() {
+    var statusEl = document.getElementById('dbStatus');
+    var instance = null;
+    try {
+      if (statusEl) statusEl.textContent = 'Pobieranie silnika PostgreSQL (PGlite)…';
+      var mod = await import('https://cdn.jsdelivr.net/npm/@electric-sql/pglite/dist/index.js');
+      var PGlite = mod.PGlite;
+      instance = new PGlite();
+      await instance.exec(PG_DVDRENTAL_DDL);
+      if (window.INTERVIEW_SEED_SQL) {
+        await instance.exec(window.INTERVIEW_SEED_SQL);
       }
+      db = instance;
+      dbReady = true;
+      if (window.INTERVIEW_SCHEMA_META) {
+        for (var i = 0; i < window.INTERVIEW_SCHEMA_META.length; i++) {
+          var tblName = window.INTERVIEW_SCHEMA_META[i].table;
+          interviewSamples[tblName] = await runQuery('SELECT * FROM ' + tblName + ' LIMIT 5;');
+        }
+      }
+      if (statusEl) statusEl.textContent = 'Silnik PostgreSQL 16 (PGlite) gotowy';
+      render();
+      return db;
+    } catch (err) {
+      console.error('PGlite init error:', err);
+      if (instance && typeof instance.close === 'function') {
+        try {
+          await instance.close();
+        } catch (closeErr) {
+          console.error('Błąd podczas zamykania instancji PGlite:', closeErr);
+        }
+      }
+      db = null;
+      dbReady = false;
+      dbInitPromise = null;
+      if (statusEl) statusEl.textContent = 'Błąd inicjalizacji PostgreSQL WASM';
     }
-    if (statusEl) statusEl.textContent = 'Silnik PostgreSQL 16 (PGlite) gotowy';
-    render();
-  } catch (err) {
-    console.error('PGlite init error:', err);
-    if (statusEl) statusEl.textContent = 'Błąd inicjalizacji PostgreSQL WASM';
-  }
+  })();
+
+  return dbInitPromise;
 }
 
 async function runQuery(sql) {
