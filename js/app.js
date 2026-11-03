@@ -4,9 +4,12 @@
 /* ==========================================================================
    0. KONFIGURACJA CHMURY SUPABASE (REST API — RANKING I PROFILE TESTERÓW)
    ========================================================================== */
+const DEFAULT_SUPABASE_URL = 'https://hpfrcykbzuzucglorpkr.supabase.co';
+const DEFAULT_SUPABASE_KEY = 'sb_publishable_5klYjdIKjT35Zl2OtOyGQA_DGxdJCHh';
+
 const SUPABASE_CONFIG = {
-  url: localStorage.getItem('sql_master_sb_url') || '',
-  anonKey: localStorage.getItem('sql_master_sb_key') || ''
+  url: localStorage.getItem('sql_master_sb_url') || DEFAULT_SUPABASE_URL,
+  anonKey: localStorage.getItem('sql_master_sb_key') || DEFAULT_SUPABASE_KEY
 };
 
 try {
@@ -319,6 +322,15 @@ try {
     if (!state.completedLemur) state.completedLemur = {};
     if (!state.completedTasks) state.completedTasks = {};
     if (!state.tutorialsDone) state.tutorialsDone = {};
+    // Kompatybilność wsteczna: jeśli z poprzednich sesji zaliczono już zadanie podstawowe 1 (klucz ':0'),
+    // automatycznie oznacz rozgrzewkę R1-R3 jako zaliczoną, aby nie blokować dotychczasowego postępu.
+    (window.PATH_TASKS || []).forEach(function(pt) {
+      if (state.completedVariants[pt.id + ':0']) {
+        state.completedVariants[pt.id + ':r1'] = true;
+        state.completedVariants[pt.id + ':r2'] = true;
+        state.completedVariants[pt.id + ':r3'] = true;
+      }
+    });
   }
 } catch (e) {}
 
@@ -338,6 +350,8 @@ var uiState = {
   tutorialSlideIdx: 0,
   quizSelected: null,
   quizPassed: false,
+  sqlAnimStep: 0,
+  sqlAnimRunning: false,
   authModalOpen: !(state.userProfile && state.userProfile.nick),
   authError: '',
   leaderboard: null,
@@ -346,7 +360,42 @@ var uiState = {
   syncing: false
 };
 
-/* --- PROGRESJA SOLOLEARN: BLOKADY WARIANTÓW 6-10 ORAZ KOLEJNYCH LEKCJI --- */
+/* --- PROGRESJA SOLOLEARN: SEKWENCYJNE BLOKADY KROK PO KROKU (R1→R2→R3→1→...→10) --- */
+function getVariantKey(taskOrId, vIdx) {
+  var taskId = typeof taskOrId === 'string' ? taskOrId : (taskOrId && taskOrId.id);
+  var task = typeof taskOrId === 'object' && taskOrId
+    ? taskOrId
+    : (window.PATH_TASKS || []).find(function(t) { return t.id === taskId; });
+  if (task && task.variants && task.variants[vIdx] && task.variants[vIdx].keySuffix !== undefined) {
+    return task.id + ':' + task.variants[vIdx].keySuffix;
+  }
+  if (vIdx === 0) return taskId + ':r1';
+  if (vIdx === 1) return taskId + ':r2';
+  if (vIdx === 2) return taskId + ':r3';
+  return taskId + ':' + (vIdx - 3);
+}
+
+function isStepSolved(taskOrId, vIdx) {
+  var cv = (state && state.completedVariants) ? state.completedVariants : {};
+  return !!cv[getVariantKey(taskOrId, vIdx)];
+}
+
+function isStepUnlocked(taskOrId, vIdx) {
+  if (state && state.testerUnlockAll) return true;
+  if (vIdx <= 0) return true; // Rozgrzewka R1 odblokowana na starcie lekcji
+  if (isStepSolved(taskOrId, vIdx)) return true;
+  return isStepSolved(taskOrId, vIdx - 1);
+}
+
+function countWarmupSolved(taskId) {
+  var c = 0;
+  var cv = (state && state.completedVariants) ? state.completedVariants : {};
+  if (cv[taskId + ':r1']) c++;
+  if (cv[taskId + ':r2']) c++;
+  if (cv[taskId + ':r3']) c++;
+  return c;
+}
+
 function countBasicSolved(taskId) {
   var c = 0;
   var cv = (state && state.completedVariants) ? state.completedVariants : {};
@@ -356,9 +405,34 @@ function countBasicSolved(taskId) {
   return c;
 }
 
+function countAdvSolved(taskId) {
+  var c = 0;
+  var cv = (state && state.completedVariants) ? state.completedVariants : {};
+  for (var i = 5; i < 10; i++) {
+    if (cv[taskId + ':' + i]) c++;
+  }
+  return c;
+}
+
+function countTotalLessonSolved(taskId) {
+  return countWarmupSolved(taskId) + countBasicSolved(taskId) + countAdvSolved(taskId);
+}
+
+function isLessonCoreCompleted(taskId) {
+  return countWarmupSolved(taskId) >= 3 && countBasicSolved(taskId) >= 5;
+}
+
 function isAdvancedUnlocked(taskId) {
   if (state && state.testerUnlockAll) return true;
-  return countBasicSolved(taskId) >= 5;
+  return isLessonCoreCompleted(taskId);
+}
+
+function getFirstUnsolvedStepIdx(task) {
+  if (!task || !task.variants) return 0;
+  for (var i = 0; i < task.variants.length; i++) {
+    if (!isStepSolved(task, i)) return i;
+  }
+  return 0;
 }
 
 function isLessonUnlocked(taskId) {
@@ -367,8 +441,8 @@ function isLessonUnlocked(taskId) {
   if (idx <= 0) return true; // Lekcja 1.1 zawsze odblokowana na starcie
   var task = PATH_TASKS[idx];
   var prevTask = PATH_TASKS[idx - 1];
-  // Odblokowana, gdy poprzednia lekcja ma zaliczone min. 5 podstawowych wariantów (1-5)
-  if (countBasicSolved(prevTask.id) >= 5) return true;
+  // Odblokowana, gdy poprzednia lekcja ma zaliczoną rozgrzewkę R1–R3 oraz zadania podstawowe 1–5
+  if (isLessonCoreCompleted(prevTask.id)) return true;
   // Lub została odblokowana przez moduł Diagnozy (state.unlockedStage)
   if (state && state.diagDone && (state.unlockedStage || 1) > 1) {
     if (task.stage < state.unlockedStage) return true;
@@ -806,6 +880,82 @@ function buildTaskSchemaBox(tableNames, solSql) {
 }
 var renderTablesHelper = buildTaskSchemaBox;
 
+// Tworzy ludzki opis biznesowy ("💼 Po ludzku (Prośba od szefa)") nad każdym zadaniem
+function getBossPromptText(item) {
+  if (!item) return '';
+  if (item.bossPrompt) return item.bossPrompt;
+  var p = String(item.prompt || '');
+  // Dla zadań rekrutacyjnych i diagnostycznych oczyszczamy techniczne sformułowania w ludzką prośbę od menedżera
+  var clean = p
+    .replace(/\bZwróć kolumny?:\s*/gi, 'Przygotuj zestawienie zawierające: ')
+    .replace(/\bZwróć:\s*/gi, 'Pokaż w raporcie: ')
+    .replace(/\bPosortuj wynik\b/gi, 'Uporządkuj listę')
+    .replace(/\bNapisz zapytanie, które\b/gi, 'Potrzebuję raportu, który');
+  return 'Szef działu analiz prosi: „' + clean + '”';
+}
+
+function renderBossPromptBox(item) {
+  var txt = getBossPromptText(item);
+  if (!txt) return '';
+  return '<div class="boss-box">' +
+    '<div class="boss-hdr">💼 Po ludzku (Prośba od szefa):</div>' +
+    '<div class="boss-body">' + formatPrompt(txt) + '</div>' +
+  '</div>';
+}
+
+// 8-liniowa ściąga krok po kroku (kolejność pisania zapytania SQL) z podświetleniem klauzul użytych w zadaniu
+var CHEAT_SHEET_8_LINES = [
+  { kw: 'SELECT', insert: 'SELECT ', syntax: 'kol1, kol2, COUNT(*) AS ile', desc: 'co chcesz wyświetlić lub policzyć' },
+  { kw: 'FROM', insert: '\nFROM ', syntax: 'tabela', desc: 'z której głównej tabeli bierzesz dane' },
+  { kw: 'JOIN ... ON', insert: '\nJOIN ', syntax: 'tabela2 ON t1.id = t2.id', desc: '(opcjonalnie) doklejenie drugiej tabeli po wspólnym kluczu' },
+  { kw: 'WHERE', insert: '\nWHERE ', syntax: 'warunek_wierszy', desc: '(opcjonalnie) sito odrzucające pojedyncze wiersze PRZED grupowaniem' },
+  { kw: 'GROUP BY', insert: '\nGROUP BY ', syntax: 'kol1', desc: '(opcjonalnie) podział wierszy na koszyki do policzenia SUM/COUNT/AVG' },
+  { kw: 'HAVING', insert: '\nHAVING ', syntax: 'COUNT(*) > 5', desc: '(opcjonalnie) sito na całe koszyki PO zgrupowaniu' },
+  { kw: 'ORDER BY', insert: '\nORDER BY ', syntax: 'kol1 DESC', desc: '(opcjonalnie) sortowanie gotowego wyniku (ASC rosnąco / DESC malejąco)' },
+  { kw: 'LIMIT', insert: '\nLIMIT ', syntax: '10;', desc: '(opcjonalnie) odcięcie wyniku do N pierwszych wierszy' }
+];
+
+function isClauseUsedInSql(kw, sql) {
+  var s = String(sql || '').toUpperCase();
+  if (!s) return false;
+  if (kw === 'SELECT') return /\bSELECT\b/.test(s);
+  if (kw === 'FROM') return /\bFROM\b/.test(s);
+  if (kw === 'JOIN ... ON') return /\bJOIN\b/.test(s);
+  if (kw === 'WHERE') return /\bWHERE\b/.test(s);
+  if (kw === 'GROUP BY') return /\bGROUP\s+BY\b/.test(s);
+  if (kw === 'HAVING') return /\bHAVING\b/.test(s);
+  if (kw === 'ORDER BY') return /\bORDER\s+BY\b/.test(s);
+  if (kw === 'LIMIT') return /\bLIMIT\b/.test(s);
+  return false;
+}
+
+function renderStepByStepCheatSheet(solSql, lessonTheoryHtml, openByDefault) {
+  var isOpen = uiState.theoryBoxOpen !== null ? uiState.theoryBoxOpen : (openByDefault !== false);
+  var rowsHtml = CHEAT_SHEET_8_LINES.map(function(row, idx) {
+    var active = isClauseUsedInSql(row.kw, solSql);
+    return '<div class="cheat-row' + (active ? ' used' : '') + '">' +
+      '<span class="cheat-num">' + (idx + 1) + '.</span>' +
+      '<button type="button" class="cheat-kw-btn' + (active ? ' active' : '') + '" data-insert-sql="' + esc(row.insert) + '" title="Kliknij, aby wstawić ' + esc(row.kw) + ' do edytora">' +
+        '[' + esc(row.kw) + ']' +
+      '</button>' +
+      '<code class="cheat-syn">' + esc(row.syntax) + '</code>' +
+      '<span class="cheat-desc">→ ' + esc(row.desc) + (active ? ' <strong class="cheat-tag">✓ w tym zadaniu</strong>' : '') + '</span>' +
+    '</div>';
+  }).join('');
+
+  var extraLessonHtml = lessonTheoryHtml
+    ? '<div class="cheat-lesson-extra"><div class="small muted" style="margin-bottom:4px;font-weight:700">📌 Notatka do bieżącego działu:</div>' + lessonTheoryHtml + '</div>'
+    : '';
+
+  return '<details class="theory-box cheat-8-box"' + (isOpen ? ' open' : '') + '>' +
+    '<summary>🧭 Ściąga krok po kroku (kolejność pisania zapytania — kliknij klauzulę, by wstawić do edytora)</summary>' +
+    '<div class="theory-body">' +
+      '<div class="cheat-8-grid">' + rowsHtml + '</div>' +
+      extraLessonHtml +
+    '</div>' +
+  '</details>';
+}
+
 function buildInterviewSpecBox(tableNames) {
   var activeTables = Array.isArray(tableNames) ? tableNames : [];
   var ivMeta = window.INTERVIEW_SCHEMA_META || [];
@@ -889,9 +1039,30 @@ function renderSingleTable(resObj, maxRows) {
 function renderResultBox() {
   var h = '';
   if (lastFeedback) {
+    var nextBtnHtml = '';
+    if (lastFeedback.type === 'ok' && currentTab === 'path' && state.pathMode === 'solve') {
+      var curT = PATH_TASKS.find(function(t) { return t.id === state.activeTaskId; }) || PATH_TASKS[0];
+      var curVIdx = state.activeVariantIdx % curT.variants.length;
+      if (curVIdx + 1 < curT.variants.length) {
+        var nextVar = curT.variants[curVIdx + 1];
+        var nextLbl = nextVar.stepCode ? ('Zadanie ' + nextVar.stepCode) : ('Krok ' + (curVIdx + 2));
+        nextBtnHtml = '<div style="margin-top:10px">' +
+          '<button type="button" class="btn success next-step-cta" data-act="nextTaskStep">🚀 Następne zadanie (' + esc(nextLbl) + ') →</button>' +
+        '</div>';
+      } else {
+        var curLessonIdx = PATH_TASKS.findIndex(function(t) { return t.id === curT.id; });
+        var hasNextLesson = curLessonIdx >= 0 && curLessonIdx + 1 < PATH_TASKS.length;
+        nextBtnHtml = '<div style="margin-top:10px">' +
+          '<button type="button" class="btn success next-step-cta" data-act="nextLessonAfterComplete">' +
+            (hasNextLesson ? '🏆 Dział ukończony! Przejdź do następnej lekcji →' : '🏆 Cała Ścieżka ukończona! Wróć do Mapy →') +
+          '</button>' +
+        '</div>';
+      }
+    }
     h += '<div class="fb-box ' + lastFeedback.type + '">' +
       '<strong>' + esc(lastFeedback.title) + '</strong>' +
       '<p class="small" style="margin:4px 0 0;white-space:pre-wrap">' + esc(lastFeedback.msg) + '</p>' +
+      nextBtnHtml +
     '</div>';
   }
   if (lastExecResult) {
@@ -937,6 +1108,117 @@ var EXEC_ORDER_STEPS = [
   { num: 7, lbl: '7. ORDER BY', desc: 'Sortowanie wyniku (widzi aliasy!)' },
   { num: 8, lbl: '8. LIMIT', desc: 'Odcięcie pierwszych N wierszy' }
 ];
+
+var SQL_PIPELINE_SIM_STEPS = [
+  {
+    step: 1,
+    clause: '1. FROM film',
+    badge: '20 wierszy × 7 kolumn',
+    desc: 'Silnik otwiera pełną tabelę `film` i ładuje wszystkie 20 filmów wraz ze wszystkimi kolumnami do pamięci roboczej.',
+    preview: [
+      ['1', 'Academy Dinosaur', 'PG', '0.99', '86 min'],
+      ['3', 'Adaptation Holes', 'NC-17', '2.99', '50 min'],
+      ['4', 'Affair Prejudice', 'G', '2.99', '117 min'],
+      ['8', 'Airport Pollock', 'R', '4.99', '54 min'],
+      ['10', 'Aladdin Calendar', 'NC-17', '4.99', '63 min'],
+      ['18', 'Alter Victory', 'PG-13', '0.99', '57 min']
+    ],
+    cols: ['film_id', 'title', 'rating', 'rental_rate', 'length']
+  },
+  {
+    step: 2,
+    clause: "2. WHERE rental_rate >= 2.99",
+    badge: '14 wierszy → zostaje 6 wierszy (po filtrze)',
+    desc: 'Sito `WHERE` sprawdza każdy wiersz z osobna. Filmy za 0.99 $ odpadają natychmiast — przed jakimkolwiek grupowaniem!',
+    preview: [
+      ['3', 'Adaptation Holes', 'NC-17', '2.99', '50 min'],
+      ['4', 'Affair Prejudice', 'G', '2.99', '117 min'],
+      ['8', 'Airport Pollock', 'R', '4.99', '54 min'],
+      ['10', 'Aladdin Calendar', 'NC-17', '4.99', '63 min'],
+      ['12', 'Ali Forever', 'PG', '4.99', '150 min'],
+      ['15', 'Alien Center', 'NC-17', '2.99', '46 min']
+    ],
+    cols: ['film_id', 'title', 'rating', 'rental_rate', 'length']
+  },
+  {
+    step: 3,
+    clause: '3. GROUP BY rating (+ HAVING)',
+    badge: '6 wierszy → 3 koszyki (grupy)',
+    desc: 'Wiersze o tym samym `rating` trafiają do wspólnych koszyków. Od tej chwili pojedyncze tytuły znikają — mamy zagregowane grupy!',
+    preview: [
+      ['Koszyk NC-17', '3 filmy w grupie', 'śr. 3.66 $'],
+      ['Koszyk R', '2 filmy w grupie', 'śr. 4.99 $'],
+      ['Koszyk G / PG', '2 filmy w grupie', 'śr. 3.99 $']
+    ],
+    cols: ['rating (Grupa)', 'COUNT(*)', 'ROUND(AVG(rental_rate),2)']
+  },
+  {
+    step: 4,
+    clause: '4. SELECT rating, COUNT(*) AS ile_filmow',
+    badge: 'Wycięcie docelowych kolumn i nadanie aliasu AS',
+    desc: 'Dopiero TERAZ PostgreSQL wycina wybrane kolumny i tworzy alias `AS ile_filmow` (dlatego `WHERE` i `GROUP BY` nie widziały tego aliasu!).',
+    preview: [
+      ['NC-17', '3'],
+      ['R', '2'],
+      ['G', '1']
+    ],
+    cols: ['rating', 'ile_filmow']
+  },
+  {
+    step: 5,
+    clause: '5. ORDER BY ile_filmow DESC',
+    badge: 'Posortowany gotowy wynik (3 wiersze)',
+    desc: 'Na samym końcu silnik układa wynik malejąco po aliasie `ile_filmow` (który już istnieje po kroku SELECT) i zwraca tabelę użytkownikowi.',
+    preview: [
+      ['NC-17', '3'],
+      ['R', '2'],
+      ['G', '1']
+    ],
+    cols: ['rating', 'ile_filmow']
+  }
+];
+
+function renderSqlPipelineSimulator() {
+  var activeStep = uiState.sqlAnimStep || 1;
+  if (activeStep < 1 || activeStep > SQL_PIPELINE_SIM_STEPS.length) activeStep = 1;
+  var cur = SQL_PIPELINE_SIM_STEPS[activeStep - 1];
+
+  var pillsHtml = SQL_PIPELINE_SIM_STEPS.map(function(s) {
+    var cls = 'sim-step-pill' + (s.step === activeStep ? ' active' : '') + (s.step < activeStep ? ' done' : '');
+    return '<button type="button" class="' + cls + '" data-act="setSqlAnimStep" data-step="' + s.step + '">' +
+      esc(s.clause) +
+    '</button>';
+  }).join('<span class="sim-arr">→</span>');
+
+  var tblHtml = '<div class="tblwrap sim-tbl"><table><thead><tr>' +
+    cur.cols.map(function(c) { return '<th>' + esc(c) + '</th>'; }).join('') +
+    '</tr></thead><tbody>' +
+    cur.preview.map(function(r) {
+      return '<tr>' + r.map(function(v) { return '<td>' + esc(v) + '</td>'; }).join('') + '</tr>';
+    }).join('') +
+    '</tbody></table></div>';
+
+  return '<div class="sql-sim-box">' +
+    '<div class="sql-sim-hdr">' +
+      '<div>' +
+        '<strong>🎬 Interaktywny symulator potoku PostgreSQL (Krok ' + activeStep + '/' + SQL_PIPELINE_SIM_STEPS.length + ')</strong>' +
+        '<p class="small muted" style="margin:2px 0 0">Zobacz na żywo, jak silnik filtruje wiersze, tworzy grupy i wycina kolumny:</p>' +
+      '</div>' +
+      '<button type="button" class="btn sm primary" data-act="runSqlAnim">' +
+        (uiState.sqlAnimRunning ? '⏳ Animacja trwa…' : '▶ Uruchom animację krok po kroku') +
+      '</button>' +
+    '</div>' +
+    '<div class="sim-pills-row">' + pillsHtml + '</div>' +
+    '<div class="sim-stage-card">' +
+      '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;margin-bottom:6px">' +
+        '<code class="sim-clause-code">' + esc(cur.clause) + '</code>' +
+        '<span class="chip done">' + esc(cur.badge) + '</span>' +
+      '</div>' +
+      '<p class="small" style="margin:0 0 8px">' + formatPrompt(cur.desc) + '</p>' +
+      tblHtml +
+    '</div>' +
+  '</div>';
+}
 
 function renderTutorialView(task) {
   var slides = getLessonSlides(task);
@@ -992,6 +1274,7 @@ function renderTutorialView(task) {
         '</div>' +
       '</div>' +
       '<div class="fb-box warn" style="margin-top:10px">' + slide.note + '</div>' +
+      renderSqlPipelineSimulator() +
     '</div>';
   } else if (sIdx === 2) {
     bodyHtml = '<div class="tut-card-inner">' +
@@ -1067,7 +1350,7 @@ function renderTutorialView(task) {
   '</div>';
 }
 
-// ZAKŁADKA 1: ŚCIEŻKA (120 WARIANTÓW + SLAJDY SOLOLEARN + PROGRESJA BLOKAD)
+// ZAKŁADKA 1: ŚCIEŻKA (156 ZADAŃ: 36 ROZGRZEWEK R1–R3 + 120 ZADAŃ 1–10 + SLAJDY SOLOLEARN + SEKWENCYJNE BLOKADY)
 function renderPathTab() {
   var activeTask = PATH_TASKS.find(function(t) { return t.id === state.activeTaskId; }) || PATH_TASKS[0];
 
@@ -1077,64 +1360,82 @@ function renderPathTab() {
 
   if (state.pathMode === 'solve') {
     var task = activeTask;
-    var advOpen = isAdvancedUnlocked(task.id);
     var vIdx = state.activeVariantIdx % task.variants.length;
-    if (vIdx >= 5 && !advOpen) {
-      vIdx = 0;
-      state.activeVariantIdx = 0;
+    if (!isStepUnlocked(task, vIdx)) {
+      vIdx = getFirstUnsolvedStepIdx(task);
+      state.activeVariantIdx = vIdx;
     }
     var variant = task.variants[vIdx];
+    var warmupCnt = countWarmupSolved(task.id);
     var basicCnt = countBasicSolved(task.id);
+    var advCnt = countAdvSolved(task.id);
 
+    var warmupPills = '';
     var basicPills = '';
     var advPills = '';
     for (var i = 0; i < task.variants.length; i++) {
-      var vDone = !!state.completedVariants[task.id + ':' + i];
-      var isMix = i >= 5;
-      var isLockedVar = isMix && !advOpen;
-      var cls = 'var-pill ' + (isMix ? 'var-pill-mix ' : '') + (i === vIdx ? 'active ' : '') + (vDone ? 'done ' : '') + (isLockedVar ? 'locked' : '');
-      var ttl = isLockedVar
-        ? 'Zablokowane! Rozwiąż najpierw zadania podstawowe 1–5 (' + basicCnt + '/5).'
-        : 'Wariant ' + (i + 1) + (isMix ? ' (Poziom Zaawansowany 6–10)' : ' (Poziom Podstawowy 1–5)');
-      var btnHtml = '<button type="button" class="' + cls.trim() + '" data-act="pickVariant" data-idx="' + i + '" title="' + ttl + '">' +
-        (isLockedVar ? '🔒' : (i + 1)) +
+      var vItem = task.variants[i];
+      var vDone = isStepSolved(task, i);
+      var vUnlocked = isStepUnlocked(task, i);
+      var isWarm = vItem.tier === 'warmup' || i < 3;
+      var isMix = vItem.tier === 'adv' || i >= 8;
+      var stepCode = vItem.stepCode || (i < 3 ? ('R' + (i + 1)) : String(i - 2));
+      var statusTxt = vDone ? '✅ Zaliczone' : (i === vIdx ? '🎯 Teraz ćwiczysz' : (!vUnlocked ? '🔒 Zablokowane' : 'Dostępne'));
+      var cls = 'var-pill ' +
+        (isWarm ? 'var-pill-warm ' : '') +
+        (isMix ? 'var-pill-mix ' : '') +
+        (i === vIdx ? 'active ' : '') +
+        (vDone ? 'done ' : '') +
+        (!vUnlocked ? 'locked' : '');
+      var ttl = !vUnlocked
+        ? '🔒 Zablokowane! Rozwiąż najpierw poprzednie zadanie, aby odblokować ten krok!'
+        : (stepCode + ' · ' + statusTxt);
+      var pillContent = !vUnlocked
+        ? '🔒 ' + esc(stepCode)
+        : (vDone ? '✅ ' + esc(stepCode) : (i === vIdx ? '🎯 ' + esc(stepCode) : esc(stepCode)));
+      var btnHtml = '<button type="button" class="' + cls.trim() + '" data-act="pickVariant" data-idx="' + i + '" title="' + esc(ttl) + '">' +
+        pillContent +
       '</button>';
-      if (i < 5) basicPills += btnHtml;
+      if (i < 3) warmupPills += btnHtml;
+      else if (i < 8) basicPills += btnHtml;
       else advPills += btnHtml;
     }
 
-    var isTheoryOpen = uiState.theoryBoxOpen !== null ? uiState.theoryBoxOpen : false;
-    var theoryHtml = task.theory
-      ? '<details class="theory-box"' + (isTheoryOpen ? ' open' : '') + '>' +
-          '<summary>📘 Ściąga składniowa do tej lekcji (kliknij, aby rozwinąć/zwinąć)</summary>' +
-          '<div class="theory-body">' + task.theory + '</div>' +
-        '</details>'
-      : '';
-
-    var tierLabel = vIdx >= 5 ? ' · 🔥 Poziom Zaawansowany (6–10)' : ' · Poziom Podstawowy (1–5)';
+    var curStepCode = variant.stepCode || (vIdx < 3 ? ('R' + (vIdx + 1)) : String(vIdx - 2));
+    var tierBadge = vIdx < 3
+      ? '🔥 Rozgrzewka (' + curStepCode + ' z R1–R3)'
+      : (vIdx >= 8 ? '🚀 Zadania Zaawansowane (Zadanie ' + curStepCode + ' z 6–10 · Miks działów)' : '📘 Zadania Podstawowe (Zadanie ' + curStepCode + ' z 1–5)');
 
     return '<div class="card">' +
       '<div class="ws-bar">' +
         '<button type="button" class="btn sm" data-act="backToPathList">← Mapa Ścieżki</button>' +
         '<div style="display:flex;gap:6px;flex-wrap:wrap">' +
-          '<button type="button" class="btn sm" data-act="openTutorialSlides">📖 Teoria (Slajdy 1–4)</button>' +
-          '<button type="button" class="btn sm" data-act="shuffleVariant">🎲 Losuj wariant</button>' +
+          '<button type="button" class="btn sm" data-act="openTutorialSlides">📖 Teoria + Symulator (Slajdy 1–4)</button>' +
+          '<button type="button" class="btn sm" data-act="shuffleVariant">🎲 Losuj odblokowane</button>' +
         '</div>' +
       '</div>' +
       '<div class="var-tiers-box">' +
         '<div class="var-tier-row">' +
-          '<span class="var-tier-lbl">Podstawowy (1–5) <strong>' + basicCnt + '/5</strong>:</span>' +
+          '<span class="var-tier-lbl">🔥 Rozgrzewka (R1–R3) <strong>' + warmupCnt + '/3</strong>:</span>' +
+          '<div class="var-pills">' + warmupPills + '</div>' +
+        '</div>' +
+        '<div class="var-tier-row">' +
+          '<span class="var-tier-lbl">📘 Zadania Podstawowe (1–5) <strong>' + basicCnt + '/5</strong>:</span>' +
           '<div class="var-pills">' + basicPills + '</div>' +
         '</div>' +
         '<div class="var-tier-row">' +
-          '<span class="var-tier-lbl">' + (advOpen ? '🔓 Zaawansowany (6–10):' : '🔒 Zaawansowany (6–10):') + '</span>' +
+          '<span class="var-tier-lbl">🚀 Zadania Zaawansowane (6–10 — miks z poprzednimi działami) <strong>' + advCnt + '/5</strong>:</span>' +
           '<div class="var-pills">' + advPills + '</div>' +
         '</div>' +
+        '<div class="var-legend small muted">' +
+          '<span>✅ Zaliczone</span> · <span>🎯 Teraz ćwiczysz</span> · <span>🔒 Zablokowane (odblokowują się po kolei: R1 → R2 → R3 → 1 → ... → 10)</span>' +
+        '</div>' +
       '</div>' +
-      '<span class="chip info">Etap ' + task.stage + ' · Wariant ' + (vIdx + 1) + ' z ' + task.variants.length + tierLabel + '</span>' +
-      '<h2 style="margin-top:8px">' + esc(task.title) + '</h2>' +
-      theoryHtml +
+      '<span class="chip info">Etap ' + task.stage + ' · Krok ' + (vIdx + 1) + '/13 · ' + esc(tierBadge) + '</span>' +
+      '<h2 style="margin-top:8px">' + esc(task.title) + ' — Zadanie ' + esc(curStepCode) + '</h2>' +
+      renderBossPromptBox(variant) +
       '<div class="prompt-box">' + formatPrompt(variant.prompt) + '</div>' +
+      renderStepByStepCheatSheet(variant.sol, task.theory, false) +
       buildTaskSchemaBox(variant.tables || task.tables, variant.sol) +
       renderEditorWidget(task.cols, 'checkPathTask') +
       '<div class="acts" style="margin-top:12px;border-top:1px solid var(--line);padding-top:10px">' +
@@ -1145,8 +1446,8 @@ function renderPathTab() {
   }
 
   var totalVariants = PATH_TASKS.reduce(function(acc, t) { return acc + t.variants.length; }, 0);
-  var doneVariants = Object.keys(state.completedVariants).length;
-  var doneLessons = PATH_TASKS.filter(function(t) { return countBasicSolved(t.id) >= 5 || !!state.completedTasks[t.id]; }).length;
+  var doneVariants = PATH_TASKS.reduce(function(acc, t) { return acc + countTotalLessonSolved(t.id); }, 0);
+  var doneLessons = PATH_TASKS.filter(function(t) { return isLessonCoreCompleted(t.id) || !!state.completedTasks[t.id]; }).length;
 
   var h = '';
   if (!state.diagDone) {
@@ -1160,8 +1461,8 @@ function renderPathTab() {
 
   h += '<div class="card">' +
     '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">' +
-      '<div><h2 style="margin:0">Mapa Ścieżki SQL (Progresja SoloLearn)</h2>' +
-      '<p class="small muted" style="margin:2px 0 0">Zaliczone działy: <strong>' + doneLessons + '/' + PATH_TASKS.length + '</strong> · Rozwiązane warianty: <strong>' + doneVariants + '/' + totalVariants + '</strong>' +
+      '<div><h2 style="margin:0">Mapa Ścieżki SQL (Progresja Krok po Kroku)</h2>' +
+      '<p class="small muted" style="margin:2px 0 0">Zaliczone działy: <strong>' + doneLessons + '/' + PATH_TASKS.length + '</strong> · Rozwiązane zadania: <strong>' + doneVariants + '/' + totalVariants + '</strong>' +
       (state.testerUnlockAll ? ' · <span class="chip mid">🔓 Tryb testerski aktywny</span>' : '') + '</p></div>' +
       '<button class="btn primary sm" data-act="continuePath">▶ Kontynuuj naukę</button>' +
     '</div>' +
@@ -1171,7 +1472,7 @@ function renderPathTab() {
   STAGES.forEach(function(st) {
     var stageOpen = isStageUnlocked(st.id);
     var tasksInStage = PATH_TASKS.filter(function(t) { return t.stage === st.id; });
-    var allDone = tasksInStage.every(function(t) { return countBasicSolved(t.id) >= 5; });
+    var allDone = tasksInStage.every(function(t) { return isLessonCoreCompleted(t.id); });
 
     h += '<div class="stage-box ' + (allDone ? 'completed' : stageOpen ? 'unlocked' : 'locked-stage') + '">' +
       '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px">' +
@@ -1182,28 +1483,28 @@ function renderPathTab() {
       '<div class="node-list">';
 
     tasksInStage.forEach(function(t) {
-      var vSolved = 0;
-      for (var k = 0; k < t.variants.length; k++) {
-        if (state.completedVariants[t.id + ':' + k]) vSolved++;
-      }
+      var warmupSolved = countWarmupSolved(t.id);
       var basicSolved = countBasicSolved(t.id);
+      var advSolved = countAdvSolved(t.id);
+      var vSolved = warmupSolved + basicSolved + advSolved;
       var lessonOpen = isLessonUnlocked(t.id);
       var tutDone = !!(state.tutorialsDone && state.tutorialsDone[t.id]);
-      var isMastered = basicSolved >= 5;
+      var isMastered = isLessonCoreCompleted(t.id);
 
       var statusChip = !lessonOpen
-        ? '<span class="chip open">🔒 Zablokowane (ukończ poprzedni dział 1–5)</span>'
+        ? '<span class="chip open">🔒 Zablokowane (ukończ R1–R3 i 1–5 wyżej)</span>'
         : isMastered
-          ? '<span class="chip done">✅ Odblokowano 6–10 (' + vSolved + '/10)</span>'
-          : '<span class="chip info">' + (tutDone ? 'Rozwiąż 1–5 →' : '📖 Start (Slajdy) →') + '</span>';
+          ? '<span class="chip done">✅ Odblokowano 6–10 (' + vSolved + '/13)</span>'
+          : '<span class="chip info">' + (tutDone ? 'Krok po kroku (' + vSolved + '/13) →' : '📖 Start (Slajdy) →') + '</span>';
 
       h += '<button type="button" class="node-item' + (!lessonOpen ? ' locked' : '') + '" data-act="openPathTask" data-id="' + t.id + '">' +
         '<div>' +
           '<span class="node-title">' + (!lessonOpen ? '🔒 ' : isMastered ? '✅ ' : '📘 ') + esc(t.title) + '</span>' +
           '<div class="node-meta">' +
             '<span>Teoria: <strong>' + (tutDone ? '✓ 4/4' : '0/4') + '</strong></span>' +
-            '<span>· Podstawy (1–5): <strong>' + basicSolved + '/5</strong></span>' +
-            '<span>· Zaawansowane (6–10): <strong>' + (isAdvancedUnlocked(t.id) ? (vSolved - basicSolved) + '/5' : '🔒') + '</strong></span>' +
+            '<span>· 🔥 R1–R3: <strong>' + warmupSolved + '/3</strong></span>' +
+            '<span>· 📘 Podstawy 1–5: <strong>' + basicSolved + '/5</strong></span>' +
+            '<span>· 🚀 Zaawansowane 6–10: <strong>' + (isAdvancedUnlocked(t.id) ? advSolved + '/5' : '🔒') + '</strong></span>' +
           '</div>' +
         '</div>' +
         statusChip +
@@ -1240,7 +1541,9 @@ function renderDiagTab() {
     '</div>' +
     '<div class="bar"><i style="width:' + Math.round((state.diagIdx / DIAG_QUESTIONS.length) * 100) + '%"></i></div>' +
     '<h2>' + esc(q.title) + '</h2>' +
+    renderBossPromptBox(q) +
     '<div class="prompt-box">' + formatPrompt(q.prompt) + '</div>' +
+    renderStepByStepCheatSheet(q.sol, '', false) +
     buildTaskSchemaBox(q.tables, q.sol) +
     renderEditorWidget(null, 'submitDiag') +
     '<div class="acts" style="margin-top:12px;border-top:1px solid var(--line);padding-top:12px;justify-content:space-between">' +
@@ -1306,7 +1609,9 @@ function renderLemurTab() {
         '</div>' +
       '</div>' +
       '<h2>' + (isSolved ? '✅ ' : '') + esc(task.title) + '</h2>' +
+      renderBossPromptBox(task) +
       '<div class="prompt-box">' + formatPrompt(task.prompt) + '</div>' +
+      renderStepByStepCheatSheet(task.sol, '', false) +
       buildInterviewSpecBox(task.tables) +
       buildTaskSchemaBox(task.tables, task.sol) +
       renderEditorWidget(task.cols, 'checkLemurTask') +
@@ -1482,18 +1787,18 @@ function renderProfileTab() {
   '<div class="card">' +
     '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:6px">' +
       '<h2 style="margin:0">🏆 Ranking Testerów (SoloLearn Leaderboard)</h2>' +
-      '<span class="chip ' + (uiState.leaderboardSource === 'supabase' ? 'done' : 'info') + '">' +
-        (uiState.leaderboardSource === 'supabase' ? '☁️ Żywy Ranking Supabase' : '📱 Ranking Lokalny / Demo') +
+      '<span class="chip ' + (sbReady ? 'done' : 'info') + '">' +
+        (sbReady ? '🟢 Ranking Chmurowy LIVE (Supabase)' : '📱 Ranking Lokalny / Demo') +
       '</span>' +
     '</div>' +
-    '<p class="small muted">Wspólna tablica wyników znajomych testujących aplikację na Androidzie i iOS.</p>' +
+    '<p class="small muted">Wspólna tablica wyników znajomych testujących aplikację na Androidzie i iOS (projekt <code>SQLRanking</code> · tabela <code>public.sql_profiles</code>).</p>' +
     '<div class="tblwrap" style="max-height:320px">' +
       '<table><thead><tr><th>#</th><th>Nick</th><th>XP</th><th>Streak</th><th>Zadania</th></tr></thead>' +
       '<tbody>' + boardRows + '</tbody></table>' +
     '</div>' +
     '<details class="helper-fold" style="margin-top:12px"' + (!sbReady ? ' open' : '') + '>' +
-      '<summary>☁️ Konfiguracja darmowej bazy chmurowej Supabase (1 minuta)</summary>' +
-      '<p class="small muted" style="margin:6px 0">Aby udostępnić żywy ranking znajomym przez link, utwórz darmowy projekt na <code>supabase.com</code>, wklej w <strong>SQL Editorze</strong> poniższy 10-liniowy skrypt, a następnie podaj swój Project URL oraz klucz <code>anon public</code>:</p>' +
+      '<summary>☁️ Zaawansowane: własne połączenie Supabase (domyślnie aktywny serwer SQLRanking)</summary>' +
+      '<p class="small muted" style="margin:6px 0">Aplikacja jest już na stałe połączona z produkcyjną bazą chmurową <code>SQLRanking</code>. Poniższe pola służą wyłącznie do ewentualnej podmiany adresu projektu:</p>' +
       '<div class="theory-code" style="margin-bottom:8px"><code>' + esc(SUPABASE_SQL_SNIPPET) + '</code></div>' +
       '<div class="acts" style="margin:0 0 10px">' +
         '<button type="button" class="btn sm" data-act="copySupabaseSql">📋 Kopiuj skrypt SQL do Supabase</button>' +
@@ -1649,11 +1954,12 @@ document.addEventListener('click', async function(e) {
   else if (act === 'openPathTask') {
     var targetId = el.dataset.id;
     if (!isLessonUnlocked(targetId)) {
-      toast('🔒 Zablokowane! Ukończ najpierw zadania podstawowe 1–5 w poprzednim dziale.');
+      toast('🔒 Zablokowane! Ukończ najpierw rozgrzewkę R1–R3 oraz zadania podstawowe 1–5 w poprzednim dziale.');
       return;
     }
     state.activeTaskId = targetId;
-    state.activeVariantIdx = 0;
+    var t = PATH_TASKS.find(function(x) { return x.id === state.activeTaskId; });
+    state.activeVariantIdx = t ? getFirstUnsolvedStepIdx(t) : 0;
     uiState.schemaBoxOpen = false;
     uiState.theoryBoxOpen = null;
     uiState.tutorialSlideIdx = 0;
@@ -1661,8 +1967,10 @@ document.addEventListener('click', async function(e) {
     uiState.quizPassed = !!(state.tutorialsDone && state.tutorialsDone[targetId]);
     // Przy pierwszym wejściu w lekcję otwórz slajdy teorii SoloLearn (1-4)
     state.pathMode = (state.tutorialsDone && state.tutorialsDone[targetId]) ? 'solve' : 'tutorial';
-    var t = PATH_TASKS.find(function(x) { return x.id === state.activeTaskId; });
-    if (t) state.editorCode = '-- ' + t.title + ' (Wariant 1)\nSELECT ';
+    if (t) {
+      var curV = t.variants[state.activeVariantIdx] || t.variants[0];
+      state.editorCode = '-- ' + t.title + ' (Zadanie ' + (curV.stepCode || 'R1') + ')\nSELECT ';
+    }
     lastExecResult = null;
     lastExpectedResult = null;
     lastFeedback = null;
@@ -1673,15 +1981,18 @@ document.addEventListener('click', async function(e) {
   else if (act === 'continuePath') {
     // Znajdź pierwszą odblokowaną, jeszcze nieukończoną lekcję lub aktywną
     var nextTask = PATH_TASKS.find(function(pt) {
-      return isLessonUnlocked(pt.id) && countBasicSolved(pt.id) < 5;
+      return isLessonUnlocked(pt.id) && !isLessonCoreCompleted(pt.id);
     }) || PATH_TASKS.find(function(pt) { return pt.id === state.activeTaskId && isLessonUnlocked(pt.id); }) || PATH_TASKS[0];
     state.activeTaskId = nextTask.id;
+    state.activeVariantIdx = getFirstUnsolvedStepIdx(nextTask);
     uiState.schemaBoxOpen = false;
     uiState.theoryBoxOpen = null;
     uiState.tutorialSlideIdx = 0;
     uiState.quizSelected = null;
     uiState.quizPassed = !!(state.tutorialsDone && state.tutorialsDone[nextTask.id]);
     state.pathMode = (state.tutorialsDone && state.tutorialsDone[nextTask.id]) ? 'solve' : 'tutorial';
+    var nextVarObj = nextTask.variants[state.activeVariantIdx] || nextTask.variants[0];
+    state.editorCode = '-- ' + nextTask.title + ' (Zadanie ' + (nextVarObj.stepCode || 'R1') + ')\nSELECT ';
     lastExecResult = null;
     lastExpectedResult = null;
     lastFeedback = null;
@@ -1697,17 +2008,45 @@ document.addEventListener('click', async function(e) {
     render();
     window.scrollTo(0, 0);
   }
+  else if (act === 'setSqlAnimStep') {
+    clearInterval(window._sqlAnimTimer);
+    uiState.sqlAnimRunning = false;
+    uiState.sqlAnimStep = Math.max(1, Math.min(SQL_PIPELINE_SIM_STEPS.length, Number(el.dataset.step) || 1));
+    render();
+  }
+  else if (act === 'runSqlAnim') {
+    clearInterval(window._sqlAnimTimer);
+    uiState.sqlAnimRunning = true;
+    uiState.sqlAnimStep = 1;
+    render();
+    window._sqlAnimTimer = setInterval(function() {
+      if (uiState.sqlAnimStep < SQL_PIPELINE_SIM_STEPS.length) {
+        uiState.sqlAnimStep++;
+        render();
+      } else {
+        clearInterval(window._sqlAnimTimer);
+        uiState.sqlAnimRunning = false;
+        render();
+      }
+    }, 1400);
+  }
   else if (act === 'prevSlide') {
+    clearInterval(window._sqlAnimTimer);
+    uiState.sqlAnimRunning = false;
     uiState.tutorialSlideIdx = Math.max(0, (uiState.tutorialSlideIdx || 0) - 1);
     render();
     window.scrollTo(0, 0);
   }
   else if (act === 'nextSlide') {
+    clearInterval(window._sqlAnimTimer);
+    uiState.sqlAnimRunning = false;
     uiState.tutorialSlideIdx = Math.min(3, (uiState.tutorialSlideIdx || 0) + 1);
     render();
     window.scrollTo(0, 0);
   }
   else if (act === 'goToSlide') {
+    clearInterval(window._sqlAnimTimer);
+    uiState.sqlAnimRunning = false;
     uiState.tutorialSlideIdx = Math.max(0, Math.min(3, Number(el.dataset.idx) || 0));
     render();
     window.scrollTo(0, 0);
@@ -1731,16 +2070,24 @@ document.addEventListener('click', async function(e) {
     render();
   }
   else if (act === 'finishTutorial') {
+    clearInterval(window._sqlAnimTimer);
+    uiState.sqlAnimRunning = false;
     state.pathMode = 'solve';
     var fTask = PATH_TASKS.find(function(x) { return x.id === state.activeTaskId; }) || PATH_TASKS[0];
+    if (!isStepUnlocked(fTask, state.activeVariantIdx)) {
+      state.activeVariantIdx = getFirstUnsolvedStepIdx(fTask);
+    }
+    var fVar = fTask.variants[state.activeVariantIdx] || fTask.variants[0];
     if (!state.editorCode || state.editorCode.indexOf('SELECT') === -1) {
-      state.editorCode = '-- ' + fTask.title + ' (Wariant ' + (state.activeVariantIdx + 1) + ')\nSELECT ';
+      state.editorCode = '-- ' + fTask.title + ' (Zadanie ' + (fVar.stepCode || 'R1') + ')\nSELECT ';
     }
     saveState();
     render();
     window.scrollTo(0, 0);
   }
   else if (act === 'backToPathList') {
+    clearInterval(window._sqlAnimTimer);
+    uiState.sqlAnimRunning = false;
     state.pathMode = 'list';
     lastExecResult = null;
     lastExpectedResult = null;
@@ -1752,35 +2099,88 @@ document.addEventListener('click', async function(e) {
   else if (act === 'pickVariant') {
     var reqIdx = Number(el.dataset.idx) || 0;
     var tVar = PATH_TASKS.find(function(x) { return x.id === state.activeTaskId; }) || PATH_TASKS[0];
-    if (reqIdx >= 5 && !isAdvancedUnlocked(tVar.id)) {
-      var lockMsg = 'Rozwiąż najpierw zadania podstawowe 1–5 w tym dziale, aby odblokować poziom 6–10!';
+    if (!isStepUnlocked(tVar, reqIdx)) {
+      var lockMsg = 'Rozwiąż najpierw poprzednie zadanie, aby odblokować ten krok!';
       toast('🔒 ' + lockMsg);
-      lastFeedback = { type: 'warn', title: '🔒 Poziom Zaawansowany (6–10) jest jeszcze zablokowany', msg: lockMsg };
+      lastFeedback = { type: 'warn', title: '🔒 Ten krok jest jeszcze zablokowany', msg: lockMsg };
       render();
       return;
     }
     state.activeVariantIdx = reqIdx;
     uiState.schemaBoxOpen = false;
-    state.editorCode = '-- ' + tVar.title + ' (Wariant ' + (state.activeVariantIdx + 1) + ')\nSELECT ';
+    var pickedV = tVar.variants[state.activeVariantIdx] || tVar.variants[0];
+    state.editorCode = '-- ' + tVar.title + ' (Zadanie ' + (pickedV.stepCode || (reqIdx + 1)) + ')\nSELECT ';
     lastExecResult = null;
     lastExpectedResult = null;
     lastFeedback = null;
     saveState();
     render();
   }
+  else if (act === 'nextTaskStep') {
+    var curTaskStep = PATH_TASKS.find(function(x) { return x.id === state.activeTaskId; }) || PATH_TASKS[0];
+    var nextStepIdx = (state.activeVariantIdx + 1);
+    if (nextStepIdx < curTaskStep.variants.length) {
+      state.activeVariantIdx = nextStepIdx;
+      uiState.schemaBoxOpen = false;
+      var nextVObj = curTaskStep.variants[nextStepIdx];
+      state.editorCode = '-- ' + curTaskStep.title + ' (Zadanie ' + (nextVObj.stepCode || (nextStepIdx + 1)) + ')\nSELECT ';
+      lastExecResult = null;
+      lastExpectedResult = null;
+      lastFeedback = null;
+      saveState();
+      render();
+      window.scrollTo(0, 0);
+    }
+  }
+  else if (act === 'nextLessonAfterComplete') {
+    var curLessonIdx2 = PATH_TASKS.findIndex(function(x) { return x.id === state.activeTaskId; });
+    if (curLessonIdx2 >= 0 && curLessonIdx2 + 1 < PATH_TASKS.length) {
+      var nextL = PATH_TASKS[curLessonIdx2 + 1];
+      state.activeTaskId = nextL.id;
+      state.activeVariantIdx = getFirstUnsolvedStepIdx(nextL);
+      uiState.schemaBoxOpen = false;
+      uiState.theoryBoxOpen = null;
+      uiState.tutorialSlideIdx = 0;
+      uiState.quizSelected = null;
+      uiState.quizPassed = !!(state.tutorialsDone && state.tutorialsDone[nextL.id]);
+      state.pathMode = (state.tutorialsDone && state.tutorialsDone[nextL.id]) ? 'solve' : 'tutorial';
+      var nextLV = nextL.variants[state.activeVariantIdx] || nextL.variants[0];
+      state.editorCode = '-- ' + nextL.title + ' (Zadanie ' + (nextLV.stepCode || 'R1') + ')\nSELECT ';
+      lastExecResult = null;
+      lastExpectedResult = null;
+      lastFeedback = null;
+      saveState();
+      render();
+      window.scrollTo(0, 0);
+    } else {
+      state.pathMode = 'list';
+      lastExecResult = null;
+      lastExpectedResult = null;
+      lastFeedback = null;
+      saveState();
+      render();
+      window.scrollTo(0, 0);
+    }
+  }
   else if (act === 'shuffleVariant') {
     var curTask = PATH_TASKS.find(function(x) { return x.id === state.activeTaskId; }) || PATH_TASKS[0];
-    var availLen = isAdvancedUnlocked(curTask.id) ? curTask.variants.length : Math.min(5, curTask.variants.length);
-    var nextIdx = Math.floor(Math.random() * availLen);
+    var unlockedIndices = [];
+    for (var ui = 0; ui < curTask.variants.length; ui++) {
+      if (isStepUnlocked(curTask, ui)) unlockedIndices.push(ui);
+    }
+    var availLen = unlockedIndices.length || 1;
+    var nextIdx = unlockedIndices[Math.floor(Math.random() * availLen)] || 0;
     if (availLen > 1 && nextIdx === state.activeVariantIdx) {
-      nextIdx = (nextIdx + 1) % availLen;
+      var curPos = unlockedIndices.indexOf(nextIdx);
+      nextIdx = unlockedIndices[(curPos + 1) % availLen];
     }
     state.activeVariantIdx = nextIdx;
     uiState.schemaBoxOpen = false;
-    state.editorCode = '-- ' + curTask.title + ' (Wariant ' + (state.activeVariantIdx + 1) + ')\nSELECT ';
+    var shufV = curTask.variants[state.activeVariantIdx] || curTask.variants[0];
+    state.editorCode = '-- ' + curTask.title + ' (Zadanie ' + (shufV.stepCode || (nextIdx + 1)) + ')\nSELECT ';
     lastExecResult = null;
     lastExpectedResult = null;
-    lastFeedback = { type: 'warn', title: '🎲 Wylosowano Wariant #' + (state.activeVariantIdx + 1) + ' z ' + availLen + ' dostępnych', msg: 'Zmieniliśmy tabelę lub warunki zadania. Napisz nowe zapytanie!' };
+    lastFeedback = { type: 'warn', title: '🎲 Wylosowano odblokowane Zadanie ' + (shufV.stepCode || (nextIdx + 1)) + ' (' + availLen + ' dostępnych)', msg: 'Zmieniliśmy tabelę lub warunki zadania. Napisz nowe zapytanie!' };
     saveState();
     render();
   }
@@ -1793,33 +2193,39 @@ document.addEventListener('click', async function(e) {
     var cmp = compareResults(lastExecResult, expRes, variant.order);
     if (cmp.ok) {
       lastExpectedResult = null;
-      var wasAdvUnlocked = isAdvancedUnlocked(task.id);
-      var vKey = task.id + ':' + vIdx;
+      var wasCoreUnlocked = isLessonCoreCompleted(task.id);
+      var vKey = getVariantKey(task, vIdx);
+      var isWarmStep = variant.tier === 'warmup' || vIdx < 3;
       if (!state.completedVariants[vKey]) {
         state.completedVariants[vKey] = true;
-        state.xp += 15;
+        state.xp += isWarmStep ? 10 : 15;
       }
-      var basicAfter = countBasicSolved(task.id);
+      var coreAfter = isLessonCoreCompleted(task.id);
       var unlockBonusMsg = '';
-      if (basicAfter >= 5) {
+      if (coreAfter) {
         if (!state.completedTasks[task.id]) {
           state.completedTasks[task.id] = true;
           state.xp += 15;
         }
         // Sprawdź czy cały etap ma ukończone lekcje podstawowe, by podbić unlockedStage
         var stageLessons = PATH_TASKS.filter(function(pt) { return pt.stage === task.stage; });
-        var allStageBasicDone = stageLessons.every(function(pt) { return countBasicSolved(pt.id) >= 5; });
+        var allStageBasicDone = stageLessons.every(function(pt) { return isLessonCoreCompleted(pt.id); });
         if (allStageBasicDone && task.stage >= state.unlockedStage && state.unlockedStage < 5) {
           state.unlockedStage = task.stage + 1;
         }
-        if (!wasAdvUnlocked) {
-          unlockBonusMsg = ' 🔓 Odblokowałeś Poziom Zaawansowany (Warianty 6–10) oraz kolejny dział na Mapie Ścieżki!';
-          toast('🔓 Odblokowano warianty 6–10 oraz następną lekcję!');
+        if (!wasCoreUnlocked) {
+          unlockBonusMsg = '\n🔓 Brawo! Ukończyłeś R1–R3 oraz zadania podstawowe 1–5 — odblokowałeś Zadania Zaawansowane (6–10) oraz kolejny dział na Mapie Ścieżki!';
+          toast('🔓 Odblokowano zadania 6–10 oraz następną lekcję!');
         }
-      } else {
-        unlockBonusMsg = ' (Postęp podstaw: ' + basicAfter + '/5 do odblokowania poziomu 6–10 i kolejnej lekcji).';
       }
-      lastFeedback = { type: 'ok', title: '✅ Wariant #' + (vIdx + 1) + ' zaliczony! (+XP)', msg: cmp.msg + unlockBonusMsg };
+      if (vIdx + 1 < task.variants.length) {
+        var nextUnlockedStep = task.variants[vIdx + 1];
+        unlockBonusMsg += '\n👉 Odblokowano kolejny krok: Zadanie ' + (nextUnlockedStep.stepCode || (vIdx + 2)) + '. Kliknij zielony przycisk poniżej!';
+      } else {
+        unlockBonusMsg += '\n🏆 Wszystkie 13 zadań w tym dziale (R1–R3 oraz 1–10) zostały ukończone!';
+      }
+      var curLbl = variant.stepCode || (vIdx + 1);
+      lastFeedback = { type: 'ok', title: '✅ Zadanie ' + curLbl + ' zaliczone! (+' + (isWarmStep ? 10 : 15) + ' XP)', msg: cmp.msg + unlockBonusMsg };
       saveState();
       syncProfileToCloud(true);
     } else {
