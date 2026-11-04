@@ -1,4 +1,4 @@
-var CACHE_NAME = 'sql-master-v6';
+var CACHE_NAME = 'sql-master-v7';
 var LOCAL_ASSETS = [
   './',
   './index.html',

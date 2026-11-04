@@ -12,7 +12,7 @@
 - `js/data-tasks.js`: baza zadań Ścieżki — **156 zadań** (12 lekcji × [4 slajdy teorii + 3 zadania rozgrzewkowe `R1–R3` + 5 zadań podstawowych `1–5` + 5 zadań zaawansowanych `6–10` łączących poprzednie działy]) oraz Diagnozy (10 zadań)
 - `js/data-interview.js`: pula 60 zadań rekrutacyjnych w stylu DataLemur
 - `manifest.json`: konfiguracja instalacji PWA na ekranie głównym (iOS / Android) ze ścieżkami względnymi (`./`)
-- `sw.js`: Service Worker (`sql-master-v6`) obsługujący tryb offline dla plików statycznych i silnika WASM oraz strategię Network-Only dla `supabase.co`
+- `sw.js`: Service Worker (`sql-master-v7`) obsługujący tryb offline dla plików statycznych i silnika WASM oraz strategię Network-Only dla `supabase.co`
 - `docs/ARCHITEKTURA.md`: wizja i plan techniczny
 - `stan_projektu.md`: ten plik
 - `GEMINI.md`: zasady pracy agenta w VS Code
