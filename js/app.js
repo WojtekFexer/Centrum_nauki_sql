@@ -4,6 +4,7 @@
 /* ==========================================================================
    0. KONFIGURACJA CHMURY SUPABASE (REST API — RANKING I PROFILE TESTERÓW)
    ========================================================================== */
+const APP_VERSION = 'v8';
 const DEFAULT_SUPABASE_URL = 'https://hpfrcykbzuzucglorpkr.supabase.co';
 const DEFAULT_SUPABASE_KEY = 'sb_publishable_5klYjdIKjT35Zl2OtOyGQA_DGxdJCHh';
 
@@ -48,6 +49,35 @@ ALL_SCHEMA_META.forEach(function(m) {
 });
 
 var interviewSamples = {};
+var tableSamples = {};
+var expectedOutputCache = {};
+var expectedOutputPending = {};
+
+var DVDRENTAL_COL_TYPES = {
+  film_id: 'integer', title: 'text', rating: 'text', rental_rate: 'numeric(4,2)',
+  length: 'integer', release_year: 'integer', replacement_cost: 'numeric(5,2)',
+  category_id: 'integer', name: 'text', actor_id: 'integer', first_name: 'text',
+  last_name: 'text', customer_id: 'integer', store_id: 'integer', active: 'integer',
+  create_date: 'date', rental_id: 'integer', rental_date: 'date', return_date: 'date',
+  staff_id: 'integer', payment_id: 'integer', amount: 'numeric(5,2)', payment_date: 'date',
+  city: 'text', country: 'text'
+};
+
+function ensureExpectedOutput(solSql) {
+  var key = String(solSql || '').trim();
+  if (!key || !dbReady || !db) return;
+  if (expectedOutputCache[key] || expectedOutputPending[key]) return;
+  expectedOutputPending[key] = true;
+  runQuery(key).then(function(res) {
+    delete expectedOutputPending[key];
+    if (res && !res.error && res.columns) {
+      expectedOutputCache[key] = res;
+      render();
+    }
+  }).catch(function() {
+    delete expectedOutputPending[key];
+  });
+}
 
 // Przelicza oficjalną pozycję znaku (err.position z silnika PostgreSQL) na numer linii w edytorze
 function posToLineNumber(sql, charPos) {
@@ -147,11 +177,11 @@ async function initDatabase() {
       }
       db = instance;
       dbReady = true;
-      if (window.INTERVIEW_SCHEMA_META) {
-        for (var i = 0; i < window.INTERVIEW_SCHEMA_META.length; i++) {
-          var tblName = window.INTERVIEW_SCHEMA_META[i].table;
-          interviewSamples[tblName] = await runQuery('SELECT * FROM ' + tblName + ' LIMIT 5;');
-        }
+      for (var i = 0; i < ALL_SCHEMA_META.length; i++) {
+        var tblName = ALL_SCHEMA_META[i].table;
+        var sampleRes = await runQuery('SELECT * FROM ' + tblName + ' LIMIT 4;');
+        tableSamples[tblName] = sampleRes;
+        interviewSamples[tblName] = sampleRes;
       }
       if (statusEl) statusEl.textContent = 'Silnik PostgreSQL 16 (PGlite) gotowy';
       render();
@@ -263,7 +293,62 @@ function compareResults(userRes, expRes, checkOrder) {
       };
     }
   }
-  return { ok: true, msg: 'Brawo! Wynik Twojego zapytania w 100% pokrywa się z wzorcem na bazie dvdrental.' };
+  return { ok: true, msg: 'Brawo! Wynik Twojego zapytania w 100% pokrywa się z wzorcem.' };
+}
+
+function buildValidationChecklist(userRes, expRes, checkOrder) {
+  if (!userRes || userRes.error || !expRes || !expRes.columns) return null;
+  var uCols = userRes.columns || [];
+  var eCols = expRes.columns || [];
+  var uRows = userRes.values || [];
+  var eRows = expRes.values || [];
+
+  var colsOk = (uCols.length === eCols.length) && uCols.every(function(c, idx) {
+    return String(c).toLowerCase() === String(eCols[idx]).toLowerCase();
+  });
+
+  var rowsOk = uRows.length === eRows.length;
+
+  function normCell(v) {
+    if (v === null || v === undefined) return 'NULL';
+    if (typeof v === 'number') return Number(v.toFixed(2)).toString();
+    var num = Number(v);
+    if (!isNaN(num) && String(v).trim() !== '') return Number(num.toFixed(2)).toString();
+    return String(v).trim().toUpperCase();
+  }
+  function normRow(r) { return r.map(normCell).join('|'); }
+
+  var valsOk = false;
+  if (uCols.length === eCols.length && rowsOk) {
+    var uNorm = uRows.map(normRow);
+    var eNorm = eRows.map(normRow);
+    if (!checkOrder) {
+      uNorm = uNorm.slice().sort();
+      eNorm = eNorm.slice().sort();
+    }
+    valsOk = true;
+    for (var i = 0; i < eNorm.length; i++) {
+      if (uNorm[i] !== eNorm[i]) {
+        valsOk = false;
+        break;
+      }
+    }
+  }
+
+  return {
+    colsOk: colsOk,
+    colsMsg: colsOk
+      ? '✅ Zgodne nazwy kolumn (' + eCols.join(', ') + ')'
+      : '❌ Różnica w kolumnach (masz: [' + (uCols.join(', ') || 'brak') + '], oczekiwano: [' + eCols.join(', ') + '])',
+    rowsOk: rowsOk,
+    rowsMsg: rowsOk
+      ? '✅ Zgodna liczba wierszy (' + eRows.length + ')'
+      : '❌ Inna liczba wierszy (Twój wynik: ' + uRows.length + ', oczekiwano: ' + eRows.length + ')',
+    valsOk: valsOk,
+    valsMsg: valsOk
+      ? '✅ Dane w 100% zgodne'
+      : '❌ Różnice w wartościach lub sortowaniu'
+  };
 }
 
 /* ==========================================================================
@@ -343,9 +428,12 @@ var currentTab = 'path';
 var lastExecResult = null;
 var lastExpectedResult = null;
 var lastFeedback = null;
+var lastChecklist = null;
 var uiState = {
   schemaBoxOpen: false,
   theoryBoxOpen: null,
+  exampleOutOpen: true,
+  hintStep: 0,
   lemurDiffFilter: 'all',
   tutorialSlideIdx: 0,
   quizSelected: null,
@@ -821,17 +909,20 @@ function insertAtCursor(snippet) {
   saveState();
 }
 
-// Wyciąga nazwy tabel biorących udział w zadaniu (z zapytania wzorcowego sol lub tablicy tables)
+// Wyciąga nazwy tabel biorących udział w zadaniu (z tablicy tables lub z klauzul FROM/JOIN zapytania wzorcowego sol)
 function resolveTaskTables(tableNames, solSql) {
+  if (Array.isArray(tableNames) && tableNames.length) return tableNames.slice();
   var sql = typeof tableNames === 'string' ? tableNames : String(solSql || '');
+  var found = [];
   if (sql) {
-    var fromSol = ALL_SCHEMA_META.filter(function(m) {
-      return new RegExp('\\b' + m.table + '\\b', 'i').test(sql);
-    }).map(function(m) { return m.table; });
-    if (fromSol.length) return fromSol;
+    var knownSet = new Set(ALL_SCHEMA_META.map(function(m) { return m.table; }));
+    var re = /\b(?:FROM|JOIN)\s+([a-zA-Z_]\w*)/gi, m;
+    while ((m = re.exec(sql)) !== null) {
+      var cand = m[1].toLowerCase();
+      if (knownSet.has(cand) && found.indexOf(cand) === -1) found.push(cand);
+    }
   }
-  if (Array.isArray(tableNames) && tableNames.length) return tableNames;
-  return [];
+  return found;
 }
 
 function buildTaskSchemaBox(tableNames, solSql) {
@@ -856,22 +947,40 @@ function buildTaskSchemaBox(tableNames, solSql) {
     ? '<div class="join-keys-banner">🔗 Klucz łączenia tabel w tym zadaniu: <strong>' + sharedKeys.map(esc).join(', ') + '</strong></div>'
     : '';
 
-  return '<details class="helper-fold"' + (uiState.schemaBoxOpen ? ' open' : '') + '>' +
-    '<summary>👁 Podejrzyj i kliknij kolumny tabel w tym zadaniu (' + metas.map(function(m){return m.table;}).join(', ') + ')</summary>' +
-    '<p class="small muted" style="margin:6px 0 8px">💡 Kliknij dowolną nazwę tabeli lub kolumny poniżej, aby od razu wstawić ją do swojego kodu SQL:</p>' +
-    '<div style="display:flex;flex-direction:column;gap:8px">' +
+  return '<details class="helper-fold iv-spec-fold"' + (uiState.schemaBoxOpen ? ' open' : ' open') + '>' +
+    '<summary>🗄️ Specyfikacja tabel i przykładowe dane (Example Input: ' + metas.map(function(m){return m.table;}).join(', ') + ')</summary>' +
+    '<p class="small muted" style="margin:6px 0 8px">💡 Kliknij dowolną nazwę tabeli lub kolumny poniżej, aby wstawić ją do edytora SQL:</p>' +
+    '<div style="display:flex;flex-direction:column;gap:10px">' +
       metas.map(function(m) {
-        return '<div style="display:flex;flex-wrap:wrap;align-items:center;gap:5px">' +
-          '<button type="button" class="helper-tbl-btn" data-act="ins" data-val="' + esc(m.table) + '" data-insert-sql="' + esc(m.table) + '" title="Wstaw nazwę tabeli ' + esc(m.table) + '">📦 ' + esc(m.table) + '</button>' +
-          m.cols.map(function(c) {
-            var colName = typeof c === 'string' ? c : c.name;
-            var isKey = typeof c === 'string' ? /_id$/i.test(c) : !!c.isKey;
-            var cls = 'helper-col-btn' + (isKey ? ' col-key-chip' : '');
-            var ttl = isKey ? 'Klucz złączenia (JOIN ON)' : 'Wstaw kolumnę ' + esc(colName);
-            var lbl = (isKey ? '🔗 ' : '') + esc(colName);
-            return '<button type="button" class="' + cls + '" data-act="ins" data-val="' + esc(colName) + '" data-insert-sql="' + esc(colName) + '" title="' + ttl + '">' + lbl + '</button>';
-          }).join('') +
-          '<button type="button" class="btn sm" style="min-height:24px;padding:2px 8px;font-size:11px;margin-left:auto" data-act="peekTable" data-table="' + esc(m.table) + '">Podgląd 5 wierszy</button>' +
+        var sample = tableSamples[m.table] || interviewSamples[m.table];
+        var sampleHtml = '';
+        if (sample && sample.columns && sample.columns.length) {
+          var rowCnt = (sample.values || []).length;
+          sampleHtml = '<div class="example-input-box">' +
+            '<div class="example-input-hdr">📊 Przykładowe wiersze (Example Input — tabela <code>' + esc(m.table) + '</code>, pierwsze ' + Math.min(4, rowCnt) + ' wiersze):</div>' +
+            renderSingleTable(sample, 4) +
+          '</div>';
+        } else {
+          sampleHtml = '<div style="margin-top:6px"><button type="button" class="btn sm" data-act="peekTable" data-table="' + esc(m.table) + '">👁 Pobierz przykładowe wiersze (' + esc(m.table) + ')</button></div>';
+        }
+
+        return '<div class="iv-tbl-card">' +
+          '<div style="display:flex;flex-wrap:wrap;align-items:center;gap:5px">' +
+            '<button type="button" class="helper-tbl-btn" data-act="ins" data-val="' + esc(m.table) + '" data-insert-sql="' + esc(m.table) + '" title="Wstaw nazwę tabeli ' + esc(m.table) + '">📦 ' + esc(m.table) + '</button>' +
+            (m.desc ? '<span class="small muted" style="font-size:11.5px">· ' + esc(m.desc) + '</span>' : '') +
+          '</div>' +
+          '<div style="display:flex;flex-wrap:wrap;align-items:center;gap:5px;margin-top:6px">' +
+            m.cols.map(function(c) {
+              var colName = typeof c === 'string' ? c : c.name;
+              var colType = typeof c === 'string' ? (DVDRENTAL_COL_TYPES[c] || 'text') : (c.type || 'text');
+              var isKey = typeof c === 'string' ? /_id$/i.test(c) : !!c.isKey;
+              var cls = 'helper-col-btn' + (isKey ? ' col-key-chip' : '');
+              var ttl = (isKey ? 'Klucz złączenia (JOIN ON) · ' : 'Kolumna · ') + 'Typ: ' + colType;
+              var lbl = (isKey ? '🔗 ' : '') + esc(colName) + ' <span class="col-type-badge">' + esc(colType) + '</span>';
+              return '<button type="button" class="' + cls + '" data-act="ins" data-val="' + esc(colName) + '" data-insert-sql="' + esc(colName) + '" title="' + esc(ttl) + '">' + lbl + '</button>';
+            }).join('') +
+          '</div>' +
+          sampleHtml +
         '</div>';
       }).join('') +
     '</div>' +
@@ -880,27 +989,96 @@ function buildTaskSchemaBox(tableNames, solSql) {
 }
 var renderTablesHelper = buildTaskSchemaBox;
 
-// Tworzy ludzki opis biznesowy ("💼 Po ludzku (Prośba od szefa)") nad każdym zadaniem
-function getBossPromptText(item) {
-  if (!item) return '';
-  if (item.bossPrompt) return item.bossPrompt;
-  var p = String(item.prompt || '');
-  // Dla zadań rekrutacyjnych i diagnostycznych oczyszczamy techniczne sformułowania w ludzką prośbę od menedżera
-  var clean = p
-    .replace(/\bZwróć kolumny?:\s*/gi, 'Przygotuj zestawienie zawierające: ')
-    .replace(/\bZwróć:\s*/gi, 'Pokaż w raporcie: ')
-    .replace(/\bPosortuj wynik\b/gi, 'Uporządkuj listę')
-    .replace(/\bNapisz zapytanie, które\b/gi, 'Potrzebuję raportu, który');
-  return 'Szef działu analiz prosi: „' + clean + '”';
+function renderExampleOutputBox(solSql) {
+  if (!solSql) return '';
+  ensureExpectedOutput(solSql);
+  var key = String(solSql || '').trim();
+  var expRes = expectedOutputCache[key];
+
+  var innerHtml = '';
+  if (!expRes || !expRes.columns) {
+    innerHtml = '<p class="small muted" style="margin:6px 0">⏳ Generowanie podglądu oczekiwanego kształtu wyniku w PGlite…</p>';
+  } else {
+    var totalRows = (expRes.values || []).length;
+    var shownRows = Math.min(3, totalRows);
+    var moreNote = totalRows > 3
+      ? '<div class="example-output-more">... (łącznie oczekiwanych wierszy: <strong>' + totalRows + '</strong>)</div>'
+      : '<div class="example-output-more">Łącznie oczekiwanych wierszy w wyniku: <strong>' + totalRows + '</strong></div>';
+    innerHtml = '<p class="small muted" style="margin:4px 0 6px">Docelowe nagłówki kolumn: ' +
+      expRes.columns.map(function(c) { return '<code class="inline">' + esc(c) + '</code>'; }).join(', ') +
+      (shownRows > 0 ? ' (poniżej pierwsze ' + shownRows + ' wiersze wzorcowego wyniku):' : ':') + '</p>' +
+      renderSingleTable(expRes, 3) +
+      moreNote;
+  }
+
+  return '<details class="example-output-fold"' + (uiState.exampleOutOpen !== false ? ' open' : '') + '>' +
+    '<summary>🎯 Oczekiwany kształt wyniku (Example Output — pierwsze 3 wiersze)</summary>' +
+    '<div class="example-output-body">' + innerHtml + '</div>' +
+  '</details>';
 }
 
-function renderBossPromptBox(item) {
-  var txt = getBossPromptText(item);
-  if (!txt) return '';
-  return '<div class="boss-box">' +
-    '<div class="boss-hdr">💼 Po ludzku (Prośba od szefa):</div>' +
-    '<div class="boss-body">' + formatPrompt(txt) + '</div>' +
+// Renderuje zunifikowaną specyfikację zadania w standardzie DataLemur (📌 Polecenie + 📋 Wymagania i założenia + 🎯 Example Output)
+function renderTaskSpecBox(item, parentTask) {
+  if (!item) return '';
+  if ((!item.polecenie || !item.assumptions || !item.hints) && typeof window.buildDataLemurSpec === 'function') {
+    var spec = window.buildDataLemurSpec(item, parentTask || null);
+    item.polecenie = spec.polecenie;
+    item.assumptions = spec.assumptions;
+    item.hints = spec.hints;
+  }
+  var polecenieTxt = item.polecenie || item.prompt || '';
+  var assumptionsList = Array.isArray(item.assumptions) ? item.assumptions : [];
+
+  var assumptionsHtml = assumptionsList.length
+    ? '<div class="dl-assumptions-box">' +
+        '<div class="dl-sec-hdr">📋 Wymagania i założenia:</div>' +
+        '<ul class="dl-assumptions-list">' +
+          assumptionsList.map(function(a) { return '<li>' + a + '</li>'; }).join('') +
+        '</ul>' +
+      '</div>'
+    : '';
+
+  return '<div class="dl-spec-wrap">' +
+    '<div class="dl-prompt-box">' +
+      '<div class="dl-sec-hdr">📌 Polecenie:</div>' +
+      '<div class="dl-prompt-body">' + formatPrompt(polecenieTxt) + '</div>' +
+    '</div>' +
+    assumptionsHtml +
+    renderExampleOutputBox(item.sol) +
   '</div>';
+}
+
+function renderHintStepperBox(item, parentTask) {
+  if (!item || !uiState.hintStep || uiState.hintStep < 1) return '';
+  if (!item.hints && typeof window.buildDataLemurSpec === 'function') {
+    var spec = window.buildDataLemurSpec(item, parentTask || null);
+    item.hints = spec.hints;
+  }
+  var hints = Array.isArray(item.hints) ? item.hints : [item.hint || 'Sprawdź wymagane kolumny i warunki filtrowania.'];
+  var maxStep = Math.min(hints.length, uiState.hintStep);
+  var stepTitles = [
+    'Krok 1/3 · Wskazówka koncepcyjna (jak podejść do problemu)',
+    'Krok 2/3 · Wskazówka techniczna (klauzule i funkcje PostgreSQL)',
+    'Krok 3/3 · 🛡️ Jaka tu jest pułapka?'
+  ];
+
+  var cardsHtml = '';
+  for (var i = 0; i < maxStep; i++) {
+    cardsHtml += '<div class="hint-step-item' + (i === 2 ? ' trap-step' : '') + '">' +
+      '<div class="hint-step-hdr">' + esc(stepTitles[i] || ('Krok ' + (i + 1))) + '</div>' +
+      '<div class="hint-step-body">' + formatPrompt(hints[i]) + '</div>' +
+    '</div>';
+  }
+
+  return '<div class="hint-stepper-box">' + cardsHtml + '</div>';
+}
+
+function getHintButtonLabel() {
+  var st = uiState.hintStep || 0;
+  if (st === 0) return '💡 Podpowiedź (Krok 1/3)';
+  if (st === 1) return '💡 Podpowiedź (Krok 2/3 — Składnia)';
+  if (st === 2) return '🛡️ Podpowiedź (Krok 3/3 — Pułapka!)';
+  return '💡 Ukryj podpowiedzi (3/3)';
 }
 
 // 8-liniowa ściąga krok po kroku (kolejność pisania zapytania SQL) z podświetleniem klauzul użytych w zadaniu
@@ -956,46 +1134,25 @@ function renderStepByStepCheatSheet(solSql, lessonTheoryHtml, openByDefault) {
   '</details>';
 }
 
-function buildInterviewSpecBox(tableNames) {
-  var activeTables = Array.isArray(tableNames) ? tableNames : [];
-  var ivMeta = window.INTERVIEW_SCHEMA_META || [];
-  var metas = ivMeta.filter(function(m) { return activeTables.indexOf(m.table) > -1; });
-  if (!metas.length) return '';
+function buildInterviewSpecBox(tableNames, solSql) {
+  return buildTaskSchemaBox(tableNames, solSql);
+}
 
-  return '<div class="iv-spec-box">' +
-    '<div class="iv-spec-hdr">📋 Specyfikacja tabel i przykładowe dane</div>' +
-    '<p class="small muted" style="margin:2px 0 10px">Kliknij dowolną nazwę tabeli lub kolumny, aby wstawić ją do edytora SQL poniżej:</p>' +
-    metas.map(function(m) {
-      var sample = interviewSamples[m.table];
-      var sampleHtml = '';
-      if (sample && sample.columns && sample.columns.length) {
-        sampleHtml = '<details class="iv-sample-fold" open>' +
-          '<summary>Przykładowe wiersze z tabeli <code>' + esc(m.table) + '</code> (pierwsze ' + sample.values.length + ' wierszy)</summary>' +
-          renderSingleTable(sample, 5) +
-        '</details>';
-      } else {
-        sampleHtml = '<div style="margin-top:6px"><button type="button" class="btn sm" data-act="peekTable" data-table="' + esc(m.table) + '">👁 Podgląd 5 wierszy (' + esc(m.table) + ')</button></div>';
-      }
-
-      return '<div class="iv-tbl-card">' +
-        '<div class="iv-tbl-top">' +
-          '<button type="button" class="helper-tbl-btn" data-act="ins" data-val="' + esc(m.table) + '" data-insert-sql="' + esc(m.table) + '" title="Wstaw nazwę tabeli ' + esc(m.table) + '">📦 ' + esc(m.table) + '</button>' +
-          '<span class="small muted">' + esc(m.desc) + '</span>' +
-        '</div>' +
-        '<div class="tblwrap iv-schema-wrap"><table><thead><tr><th>Kolumna (kliknij, aby wstawić)</th><th>Typ danych SQL</th></tr></thead><tbody>' +
-          m.cols.map(function(c) {
-            var isKey = !!c.isKey;
-            var cls = 'helper-col-btn' + (isKey ? ' col-key-chip' : '');
-            var lbl = (isKey ? '🔗 ' : '') + esc(c.name);
-            return '<tr>' +
-              '<td><button type="button" class="' + cls + '" data-act="ins" data-val="' + esc(c.name) + '" data-insert-sql="' + esc(c.name) + '">' + lbl + '</button></td>' +
-              '<td><code>' + esc(c.type) + '</code></td>' +
-            '</tr>';
-          }).join('') +
-        '</tbody></table></div>' +
-        sampleHtml +
-      '</div>';
-    }).join('') +
+function renderValidationChecklistHtml(chk) {
+  if (!chk) return '';
+  return '<div class="val-checklist">' +
+    '<div class="val-hdr">🔍 Checklista walidacji wyniku (SQLBolt Style):</div>' +
+    '<div class="val-grid">' +
+      '<div class="val-item ' + (chk.colsOk ? 'ok' : 'bad') + '">' +
+        '<strong>1) Kolumny:</strong> <span>' + esc(chk.colsMsg) + '</span>' +
+      '</div>' +
+      '<div class="val-item ' + (chk.rowsOk ? 'ok' : 'bad') + '">' +
+        '<strong>2) Ziarno (liczba wierszy):</strong> <span>' + esc(chk.rowsMsg) + '</span>' +
+      '</div>' +
+      '<div class="val-item ' + (chk.valsOk ? 'ok' : 'bad') + '">' +
+        '<strong>3) Wartości i kolejność:</strong> <span>' + esc(chk.valsMsg) + '</span>' +
+      '</div>' +
+    '</div>' +
   '</div>';
 }
 
@@ -1064,6 +1221,9 @@ function renderResultBox() {
       '<p class="small" style="margin:4px 0 0;white-space:pre-wrap">' + esc(lastFeedback.msg) + '</p>' +
       nextBtnHtml +
     '</div>';
+  }
+  if (lastChecklist && lastExecResult && !lastExecResult.error) {
+    h += renderValidationChecklistHtml(lastChecklist);
   }
   if (lastExecResult) {
     if (lastExecResult.error) {
@@ -1433,14 +1593,15 @@ function renderPathTab() {
       '</div>' +
       '<span class="chip info">Etap ' + task.stage + ' · Krok ' + (vIdx + 1) + '/13 · ' + esc(tierBadge) + '</span>' +
       '<h2 style="margin-top:8px">' + esc(task.title) + ' — Zadanie ' + esc(curStepCode) + '</h2>' +
-      renderBossPromptBox(variant) +
-      '<div class="prompt-box">' + formatPrompt(variant.prompt) + '</div>' +
+      renderTaskSpecBox(variant, task) +
       renderStepByStepCheatSheet(variant.sol, task.theory, false) +
       buildTaskSchemaBox(variant.tables || task.tables, variant.sol) +
       renderEditorWidget(task.cols, 'checkPathTask') +
+      renderHintStepperBox(variant, task) +
       '<div class="acts" style="margin-top:12px;border-top:1px solid var(--line);padding-top:10px">' +
-        '<button class="btn sm" data-act="showSolution">💡 Pokaż wzorcowy kod</button>' +
-        '<button class="btn sm" data-act="aiHint">🤖 Podpowiedź AI</button>' +
+        '<button type="button" class="btn sm warn" data-act="stepHint">' + esc(getHintButtonLabel()) + '</button>' +
+        '<button type="button" class="btn sm" data-act="showSolution">💡 Pokaż wzorcowy kod</button>' +
+        '<button type="button" class="btn sm" data-act="aiHint">🤖 Podpowiedź AI</button>' +
       '</div>' +
     '</div>';
   }
@@ -1541,14 +1702,17 @@ function renderDiagTab() {
     '</div>' +
     '<div class="bar"><i style="width:' + Math.round((state.diagIdx / DIAG_QUESTIONS.length) * 100) + '%"></i></div>' +
     '<h2>' + esc(q.title) + '</h2>' +
-    renderBossPromptBox(q) +
-    '<div class="prompt-box">' + formatPrompt(q.prompt) + '</div>' +
+    renderTaskSpecBox(q, null) +
     renderStepByStepCheatSheet(q.sol, '', false) +
     buildTaskSchemaBox(q.tables, q.sol) +
     renderEditorWidget(null, 'submitDiag') +
+    renderHintStepperBox(q, null) +
     '<div class="acts" style="margin-top:12px;border-top:1px solid var(--line);padding-top:12px;justify-content:space-between">' +
-      '<button class="btn warn" data-act="skipDiag">⏭ Pomiń zadanie (Nie umiem jeszcze)</button>' +
-      '<button class="btn sm" data-act="resetDiag">Restart</button>' +
+      '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
+        '<button type="button" class="btn sm warn" data-act="stepHint">' + esc(getHintButtonLabel()) + '</button>' +
+        '<button type="button" class="btn warn" data-act="skipDiag">⏭ Pomiń zadanie (Nie umiem jeszcze)</button>' +
+      '</div>' +
+      '<button type="button" class="btn sm" data-act="resetDiag">Restart</button>' +
     '</div>' +
   '</div>';
 }
@@ -1609,15 +1773,15 @@ function renderLemurTab() {
         '</div>' +
       '</div>' +
       '<h2>' + (isSolved ? '✅ ' : '') + esc(task.title) + '</h2>' +
-      renderBossPromptBox(task) +
-      '<div class="prompt-box">' + formatPrompt(task.prompt) + '</div>' +
+      renderTaskSpecBox(task, null) +
       renderStepByStepCheatSheet(task.sol, '', false) +
-      buildInterviewSpecBox(task.tables) +
       buildTaskSchemaBox(task.tables, task.sol) +
       renderEditorWidget(task.cols, 'checkLemurTask') +
+      renderHintStepperBox(task, null) +
       '<div class="acts" style="margin-top:12px;border-top:1px solid var(--line);padding-top:10px">' +
-        '<button class="btn sm" data-act="showLemurSol">💡 Pokaż wzorcowe rozwiązanie</button>' +
-        '<button class="btn sm" data-act="lemurTrapHint">🛡️ Jaka tu jest pułapka?</button>' +
+        '<button type="button" class="btn sm warn" data-act="stepHint">' + esc(getHintButtonLabel()) + '</button>' +
+        '<button type="button" class="btn sm" data-act="lemurTrapHint">🛡️ Jaka tu jest pułapka?</button>' +
+        '<button type="button" class="btn sm" data-act="showLemurSol">💡 Pokaż wzorcowe rozwiązanie</button>' +
       '</div>' +
     '</div>';
   }
@@ -1763,7 +1927,10 @@ function renderProfileTab() {
   return '<div class="card">' +
     '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">' +
       '<div>' +
-        '<span class="chip ' + (state.userProfile ? 'done' : 'mid') + '">' + (state.userProfile ? '✅ Profil aktywny (Nick + PIN)' : '👤 Tryb gościa') + '</span>' +
+        '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">' +
+          '<span class="chip ' + (state.userProfile ? 'done' : 'mid') + '">' + (state.userProfile ? '✅ Profil aktywny (Nick + PIN)' : '👤 Tryb gościa') + '</span>' +
+          '<span class="chip info">📱 Wersja aplikacji: ' + esc(APP_VERSION) + '</span>' +
+        '</div>' +
         '<h2 style="margin:6px 0 2px">Gracz: ' + esc(curNick) + '</h2>' +
         '<p class="small muted" style="margin:0">XP: <strong>' + state.xp + '</strong> · Rozwiązane zadania: <strong>' + getTotalSolvedCount() + '</strong>' +
         (uiState.lastSyncTime ? ' · Ost. sync: <strong>' + esc(uiState.lastSyncTime) + '</strong>' : '') + '</p>' +
@@ -1885,6 +2052,8 @@ document.addEventListener('toggle', function(e) {
       uiState.schemaBoxOpen = e.target.open;
     } else if (e.target.classList.contains('theory-box')) {
       uiState.theoryBoxOpen = e.target.open;
+    } else if (e.target.classList.contains('example-output-fold')) {
+      uiState.exampleOutOpen = e.target.open;
     }
   }
 }, true);
@@ -1914,6 +2083,8 @@ document.addEventListener('click', async function(e) {
     lastFeedback = null;
     lastExecResult = null;
     lastExpectedResult = null;
+    lastChecklist = null;
+    uiState.hintStep = 0;
     uiState.schemaBoxOpen = false;
     if (currentTab === 'diag' && state.diagIdx < DIAG_QUESTIONS.length) {
       state.editorCode = '-- Zadanie diagnostyczne #' + (state.diagIdx + 1) + '\nSELECT ';
@@ -1931,23 +2102,30 @@ document.addEventListener('click', async function(e) {
   else if (act === 'ins') {
     insertAtCursor(el.dataset.val);
   }
+  else if (act === 'stepHint') {
+    uiState.hintStep = ((uiState.hintStep || 0) + 1) % 4;
+    render();
+  }
   else if (act === 'clearEd') {
     state.editorCode = '';
     lastExecResult = null;
     lastExpectedResult = null;
     lastFeedback = null;
+    lastChecklist = null;
     render();
   }
   else if (act === 'runOnly') {
     lastExecResult = await runQuery(state.editorCode);
     lastExpectedResult = null;
     lastFeedback = null;
+    lastChecklist = null;
     render();
   }
   else if (act === 'peekTable') {
     var tName = el.dataset.table;
     lastExecResult = await runQuery('SELECT * FROM ' + tName + ' LIMIT 5;');
     lastExpectedResult = null;
+    lastChecklist = null;
     lastFeedback = { type: 'warn', title: '👁 Podgląd tabeli ' + tName + ' (pierwsze 5 wierszy)', msg: 'Twój kod w edytorze pozostał bez zmian.' };
     render();
   }
@@ -1962,6 +2140,7 @@ document.addEventListener('click', async function(e) {
     state.activeVariantIdx = t ? getFirstUnsolvedStepIdx(t) : 0;
     uiState.schemaBoxOpen = false;
     uiState.theoryBoxOpen = null;
+    uiState.hintStep = 0;
     uiState.tutorialSlideIdx = 0;
     uiState.quizSelected = null;
     uiState.quizPassed = !!(state.tutorialsDone && state.tutorialsDone[targetId]);
@@ -1974,6 +2153,7 @@ document.addEventListener('click', async function(e) {
     lastExecResult = null;
     lastExpectedResult = null;
     lastFeedback = null;
+    lastChecklist = null;
     saveState();
     render();
     window.scrollTo(0, 0);
@@ -1987,6 +2167,7 @@ document.addEventListener('click', async function(e) {
     state.activeVariantIdx = getFirstUnsolvedStepIdx(nextTask);
     uiState.schemaBoxOpen = false;
     uiState.theoryBoxOpen = null;
+    uiState.hintStep = 0;
     uiState.tutorialSlideIdx = 0;
     uiState.quizSelected = null;
     uiState.quizPassed = !!(state.tutorialsDone && state.tutorialsDone[nextTask.id]);
@@ -1996,6 +2177,7 @@ document.addEventListener('click', async function(e) {
     lastExecResult = null;
     lastExpectedResult = null;
     lastFeedback = null;
+    lastChecklist = null;
     saveState();
     render();
     window.scrollTo(0, 0);
@@ -2089,9 +2271,11 @@ document.addEventListener('click', async function(e) {
     clearInterval(window._sqlAnimTimer);
     uiState.sqlAnimRunning = false;
     state.pathMode = 'list';
+    uiState.hintStep = 0;
     lastExecResult = null;
     lastExpectedResult = null;
     lastFeedback = null;
+    lastChecklist = null;
     saveState();
     render();
     window.scrollTo(0, 0);
@@ -2108,11 +2292,13 @@ document.addEventListener('click', async function(e) {
     }
     state.activeVariantIdx = reqIdx;
     uiState.schemaBoxOpen = false;
+    uiState.hintStep = 0;
     var pickedV = tVar.variants[state.activeVariantIdx] || tVar.variants[0];
     state.editorCode = '-- ' + tVar.title + ' (Zadanie ' + (pickedV.stepCode || (reqIdx + 1)) + ')\nSELECT ';
     lastExecResult = null;
     lastExpectedResult = null;
     lastFeedback = null;
+    lastChecklist = null;
     saveState();
     render();
   }
@@ -2122,11 +2308,13 @@ document.addEventListener('click', async function(e) {
     if (nextStepIdx < curTaskStep.variants.length) {
       state.activeVariantIdx = nextStepIdx;
       uiState.schemaBoxOpen = false;
+      uiState.hintStep = 0;
       var nextVObj = curTaskStep.variants[nextStepIdx];
       state.editorCode = '-- ' + curTaskStep.title + ' (Zadanie ' + (nextVObj.stepCode || (nextStepIdx + 1)) + ')\nSELECT ';
       lastExecResult = null;
       lastExpectedResult = null;
       lastFeedback = null;
+      lastChecklist = null;
       saveState();
       render();
       window.scrollTo(0, 0);
@@ -2140,6 +2328,7 @@ document.addEventListener('click', async function(e) {
       state.activeVariantIdx = getFirstUnsolvedStepIdx(nextL);
       uiState.schemaBoxOpen = false;
       uiState.theoryBoxOpen = null;
+      uiState.hintStep = 0;
       uiState.tutorialSlideIdx = 0;
       uiState.quizSelected = null;
       uiState.quizPassed = !!(state.tutorialsDone && state.tutorialsDone[nextL.id]);
@@ -2149,14 +2338,17 @@ document.addEventListener('click', async function(e) {
       lastExecResult = null;
       lastExpectedResult = null;
       lastFeedback = null;
+      lastChecklist = null;
       saveState();
       render();
       window.scrollTo(0, 0);
     } else {
       state.pathMode = 'list';
+      uiState.hintStep = 0;
       lastExecResult = null;
       lastExpectedResult = null;
       lastFeedback = null;
+      lastChecklist = null;
       saveState();
       render();
       window.scrollTo(0, 0);
@@ -2176,10 +2368,12 @@ document.addEventListener('click', async function(e) {
     }
     state.activeVariantIdx = nextIdx;
     uiState.schemaBoxOpen = false;
+    uiState.hintStep = 0;
     var shufV = curTask.variants[state.activeVariantIdx] || curTask.variants[0];
     state.editorCode = '-- ' + curTask.title + ' (Zadanie ' + (shufV.stepCode || (nextIdx + 1)) + ')\nSELECT ';
     lastExecResult = null;
     lastExpectedResult = null;
+    lastChecklist = null;
     lastFeedback = { type: 'warn', title: '🎲 Wylosowano odblokowane Zadanie ' + (shufV.stepCode || (nextIdx + 1)) + ' (' + availLen + ' dostępnych)', msg: 'Zmieniliśmy tabelę lub warunki zadania. Napisz nowe zapytanie!' };
     saveState();
     render();
@@ -2190,7 +2384,11 @@ document.addEventListener('click', async function(e) {
     var variant = task.variants[vIdx];
     lastExecResult = await runQuery(state.editorCode);
     var expRes = await runQuery(variant.sol);
+    if (expRes && !expRes.error && expRes.columns) {
+      expectedOutputCache[String(variant.sol || '').trim()] = expRes;
+    }
     var cmp = compareResults(lastExecResult, expRes, variant.order);
+    lastChecklist = buildValidationChecklist(lastExecResult, expRes, variant.order);
     if (cmp.ok) {
       lastExpectedResult = null;
       var wasCoreUnlocked = isLessonCoreCompleted(task.id);
@@ -2234,7 +2432,7 @@ document.addEventListener('click', async function(e) {
       if (pathTrap && task.gapId) registerGapTrap(task.gapId, task.title, pathTrap);
       var pathErrMsg = lastExecResult.error
         ? cmp.msg
-        : (pathTrap ? pathTrap : 'Odpowiedź nie pasuje do wzorca. Porównaj swój wynik z oczekiwanym wynikiem poniżej.');
+        : (pathTrap ? pathTrap : 'Odpowiedź nie pasuje do wzorca. Sprawdź 3-punktową checklistę walidacji oraz porównaj swój wynik z wzorcem poniżej.');
       lastFeedback = { type: 'trap', title: '❌ Wynik różni się od wzorca', msg: pathErrMsg };
     }
     render();
@@ -2245,7 +2443,8 @@ document.addEventListener('click', async function(e) {
     state.editorCode = formatSqlPretty(variant2.sol);
     lastExecResult = await runQuery(variant2.sol);
     lastExpectedResult = null;
-    lastFeedback = { type: 'warn', title: '💡 Wczytano wzorcowe rozwiązanie', msg: 'Przeanalizuj kod, a następnie przełącz się na kolejny Wariant (1..10), aby napisać podobne zapytanie samodzielnie.' };
+    lastChecklist = buildValidationChecklist(lastExecResult, lastExecResult, variant2.order);
+    lastFeedback = { type: 'warn', title: '💡 Wczytano wzorcowe rozwiązanie', msg: 'Przeanalizuj kod, a następnie przełącz się na kolejne zadanie, aby napisać podobne zapytanie samodzielnie.' };
     saveState();
     render();
   }
@@ -2253,16 +2452,22 @@ document.addEventListener('click', async function(e) {
     var dq = DIAG_QUESTIONS[state.diagIdx];
     lastExecResult = await runQuery(state.editorCode);
     var dExp = await runQuery(dq.sol);
+    if (dExp && !dExp.error && dExp.columns) {
+      expectedOutputCache[String(dq.sol || '').trim()] = dExp;
+    }
     var dCmp = compareResults(lastExecResult, dExp, dq.order);
+    lastChecklist = buildValidationChecklist(lastExecResult, dExp, dq.order);
     if (dCmp.ok) {
       state.diagScore++;
       state.xp += 15;
       toast('Dobrze! Pytanie ' + (state.diagIdx + 1) + '/10 zaliczone.');
       state.diagIdx++;
       uiState.schemaBoxOpen = false;
+      uiState.hintStep = 0;
       lastExecResult = null;
       lastExpectedResult = null;
       lastFeedback = null;
+      lastChecklist = null;
       if (state.diagIdx < DIAG_QUESTIONS.length) {
         state.editorCode = '-- Zadanie diagnostyczne #' + (state.diagIdx + 1) + '\nSELECT ';
       }
@@ -2273,7 +2478,7 @@ document.addEventListener('click', async function(e) {
       lastExpectedResult = lastExecResult.error ? null : dExp;
       var diagErrMsg = lastExecResult.error
         ? dCmp.msg
-        : 'Odpowiedź nie pasuje do wzorca. Porównaj swój wynik z oczekiwanym wynikiem poniżej.';
+        : 'Odpowiedź nie pasuje do wzorca. Sprawdź 3-punktową checklistę walidacji oraz porównaj swój wynik z wzorcem poniżej.';
       lastFeedback = { type: 'trap', title: 'Wynik niepoprawny', msg: diagErrMsg };
       render();
     }
@@ -2284,9 +2489,11 @@ document.addEventListener('click', async function(e) {
     registerGapTrap(sq.gap, sq.title, 'Zagadnienie pominięte podczas Diagnozy.');
     state.diagIdx++;
     uiState.schemaBoxOpen = false;
+    uiState.hintStep = 0;
     lastExecResult = null;
     lastExpectedResult = null;
     lastFeedback = null;
+    lastChecklist = null;
     if (state.diagIdx < DIAG_QUESTIONS.length) {
       state.editorCode = '-- Zadanie diagnostyczne #' + (state.diagIdx + 1) + '\nSELECT ';
     }
@@ -2314,10 +2521,12 @@ document.addEventListener('click', async function(e) {
     state.diagScore = 0;
     state.diagSkipped = [];
     uiState.schemaBoxOpen = false;
+    uiState.hintStep = 0;
     state.editorCode = '-- Zadanie diagnostyczne #1\nSELECT ';
     lastExecResult = null;
     lastExpectedResult = null;
     lastFeedback = null;
+    lastChecklist = null;
     saveState();
     render();
   }
@@ -2326,6 +2535,7 @@ document.addEventListener('click', async function(e) {
     lastExecResult = null;
     lastExpectedResult = null;
     lastFeedback = null;
+    lastChecklist = null;
     saveState();
     render();
   }
@@ -2337,20 +2547,24 @@ document.addEventListener('click', async function(e) {
     state.activeLemurId = el.dataset.id;
     state.lemurMode = 'solve';
     uiState.schemaBoxOpen = false;
+    uiState.hintStep = 0;
     var ltOpen = LEMUR_TASKS.find(function(x) { return x.id === state.activeLemurId; });
     state.editorCode = '-- ' + (ltOpen ? ltOpen.title : 'Zadanie rekrutacyjne') + '\nSELECT ';
     lastExecResult = null;
     lastExpectedResult = null;
     lastFeedback = null;
+    lastChecklist = null;
     saveState();
     render();
     window.scrollTo(0, 0);
   }
   else if (act === 'backToLemurList') {
     state.lemurMode = 'list';
+    uiState.hintStep = 0;
     lastExecResult = null;
     lastExpectedResult = null;
     lastFeedback = null;
+    lastChecklist = null;
     saveState();
     render();
     window.scrollTo(0, 0);
@@ -2359,7 +2573,11 @@ document.addEventListener('click', async function(e) {
     var lt = LEMUR_TASKS.find(function(x) { return x.id === state.activeLemurId; }) || LEMUR_TASKS[0];
     lastExecResult = await runQuery(state.editorCode);
     var lExp = await runQuery(lt.sol);
+    if (lExp && !lExp.error && lExp.columns) {
+      expectedOutputCache[String(lt.sol || '').trim()] = lExp;
+    }
     var lCmp = compareResults(lastExecResult, lExp, !!lt.order);
+    lastChecklist = buildValidationChecklist(lastExecResult, lExp, !!lt.order);
     if (lCmp.ok) {
       lastExpectedResult = null;
       if (!state.completedLemur[lt.id]) {
@@ -2383,7 +2601,7 @@ document.addEventListener('click', async function(e) {
         lastFeedback = {
           type: 'trap',
           title: '❌ Wynik niezgodny z wzorcem',
-          msg: lastExecResult.error ? lCmp.msg : 'Odpowiedź nie pasuje do wzorca. Porównaj swój wynik z oczekiwanym wynikiem poniżej.'
+          msg: lastExecResult.error ? lCmp.msg : 'Odpowiedź nie pasuje do wzorca. Sprawdź 3-punktową checklistę walidacji oraz porównaj swój wynik z wzorcem poniżej.'
         };
       }
     }
@@ -2394,12 +2612,14 @@ document.addEventListener('click', async function(e) {
     state.editorCode = formatSqlPretty(lt2.sol);
     lastExecResult = await runQuery(lt2.sol);
     lastExpectedResult = null;
+    lastChecklist = buildValidationChecklist(lastExecResult, lastExecResult, !!lt2.order);
     lastFeedback = { type: 'warn', title: '💡 Wzorcowe rozwiązanie (' + lt2.title + ')', msg: lt2.hint || lt2.gapHint };
     saveState();
     render();
   }
   else if (act === 'lemurTrapHint') {
     var lt3 = LEMUR_TASKS.find(function(x) { return x.id === state.activeLemurId; }) || LEMUR_TASKS[0];
+    uiState.hintStep = 3;
     lastFeedback = { type: 'warn', title: '🛡️ Wskazówka dotycząca pułapki (' + lt3.gapName + ')', msg: lt3.hint || lt3.gapHint };
     render();
   }
@@ -2555,8 +2775,21 @@ initDatabase();
 fetchLeaderboard();
 
 if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
+  var swRefreshing = false;
+  navigator.serviceWorker.addEventListener('controllerchange', function() {
+    if (swRefreshing) return;
+    swRefreshing = true;
+    window.location.reload();
+  });
+
   window.addEventListener('load', function() {
-    navigator.serviceWorker.register('./sw.js').catch(function() {});
+    navigator.serviceWorker.register('./sw.js').then(function(registration) {
+      document.addEventListener('visibilitychange', function() {
+        if (document.visibilityState === 'visible') {
+          registration.update().catch(function() {});
+        }
+      });
+    }).catch(function() {});
   });
 }
 })();

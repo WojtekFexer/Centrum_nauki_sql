@@ -2,29 +2,31 @@
 
 > Dołączaj ten plik na starcie każdej nowej rozmowy z Gemem 3. Czyta go też agent w VS Code. Aktualizuj go po każdej sesji. Odhaczaj `[x]` dopiero po własnym teście w przeglądarce.
 
-**Ostatnia aktualizacja:** 03.11.2026 (po Sesji 3)
+**Ostatnia aktualizacja:** 04.11.2026 (po Sesji 4 — DataLemur & SQLBolt Standard + PWA v8 Auto-Update)
 
 ## Pliki
-- `index.html`: czysty szkielet HTML aplikacji mobilnej PWA (z kompletem meta tagów dla iOS Safari i Android Chrome)
-- `css/style.css`: style aplikacji (motyw ciemny/jasny, animacje slajdów i symulatora potoku SQL, stepper zadań R1–R3 i 1–10, ściąga linia po linii, responsywność `100dvh`)
-- `js/app.js`: główna logika aplikacji, silnik PGlite (z blokadą Singleton `dbInitPromise`), slajdy SoloLearn z symulatorem, sekwencyjne blokady każdego zadania (`R1 → R2 → R3 → 1 → ... → 10`), logowanie `Nick + PIN` i synchronizacja z chmurą Supabase REST API
+- `index.html`: czysty szkielet HTML aplikacji mobilnej PWA (z kompletem meta tagów dla iOS Safari i Android Chrome oraz ścieżkami względnymi `./`)
+- `css/style.css`: style aplikacji (motyw ciemny/jasny, sekcje DataLemur `📌 Polecenie` + `📋 Wymagania i założenia`, podgląd `Example Input` / `Example Output`, 3-punktowa checklista walidacji SQLBolt, 3-stopniowe podpowiedzi `1/3..3/3`, responsywność `100dvh`)
+- `js/app.js`: główna logika aplikacji (`APP_VERSION = 'v8'`), silnik PGlite (z blokadą Singleton `dbInitPromise`), żywe tabele `Example Input` (`LIMIT 4`) i `Example Output` (`pierwsze 3 wiersze` + łączna liczba wierszy), 3-punktowa checklista walidacji (`Kolumny`, `Ziarno`, `Wartości i kolejność`), 3-stopniowe podpowiedzi (`💡 Podpowiedź Krok 1/3 → 2/3 → 3/3`), logowanie `Nick + PIN`, synchronizacja z chmurą Supabase REST API oraz auto-aktualizacja PWA (`controllerchange` + `visibilitychange`)
 - `js/data-dvdrental.js`: schemat (`SCHEMA_META`) i dane wsadowe (`DVDRENTAL_SEED_SQL`) 10 tabel bazy `dvdrental`
-- `js/data-tasks.js`: baza zadań Ścieżki — **156 zadań** (12 lekcji × [4 slajdy teorii + 3 zadania rozgrzewkowe `R1–R3` + 5 zadań podstawowych `1–5` + 5 zadań zaawansowanych `6–10` łączących poprzednie działy]) oraz Diagnozy (10 zadań)
-- `js/data-interview.js`: pula 60 zadań rekrutacyjnych w stylu DataLemur
+- `js/data-tasks.js`: baza zadań Ścieżki — **156 zadań** (12 lekcji × [4 slajdy teorii + 3 zadania rozgrzewkowe `R1–R3` + 5 zadań podstawowych `1–5` + 5 zadań zaawansowanych `6–10`]) oraz Diagnozy (**10 zadań**) wraz z generatorem `buildDataLemurSpec` (`📌 Polecenie`, `📋 Wymagania i założenia`, `hints[1..3]`)
+- `js/data-interview.js`: pula **60 zadań rekrutacyjnych** w stylu DataLemur zintegrowanych z `buildDataLemurSpec`
 - `manifest.json`: konfiguracja instalacji PWA na ekranie głównym (iOS / Android) ze ścieżkami względnymi (`./`)
-- `sw.js`: Service Worker (`sql-master-v7`) obsługujący tryb offline dla plików statycznych i silnika WASM oraz strategię Network-Only dla `supabase.co`
+- `sw.js`: Service Worker (`CACHE_VERSION = 'sql-master-v8'`) ze strategią **Network-First z fallbackiem do Cache** dla plików `.html/.js/.css`, **Cache-First** dla silnika WASM (`@electric-sql/pglite`) oraz **Network-Only** dla `supabase.co`
 - `docs/ARCHITEKTURA.md`: wizja i plan techniczny
 - `stan_projektu.md`: ten plik
 - `GEMINI.md`: zasady pracy agenta w VS Code
 
 ## Decyzje
 - **Silnik SQL (WDROŻONY):** `@electric-sql/pglite` (PostgreSQL 16 w WebAssembly) zabezpieczony wzorcem Singleton Promise Guard (`dbInitPromise`) przed podwójną inicjalizacją i wyciekiem pamięci.
-- **Sprawdzanie zadań (WDROŻONE):** twarde porównywanie tabeli wynikowej z zapytaniem wzorcowym w widoku obok siebie (`❌ Twój wynik` vs `✅ Oczekiwany wynik — Wzorzec`) oraz przycisk na żądanie `🛡️ Jaka tu jest pułapka?`.
+- **Standard prezentacji zadań DataLemur + SQLBolt (WDROŻONY DLA WSZYSTKICH 226 ZADAŃ):**
+  - Usunięto zduplikowany boks „💼 Po ludzku (Prośba od szefa)” na rzecz dwóch czystych sekcji: **`📌 Polecenie:`** (opis biznesowy naturalnym językiem bez gotowych wzorów SQL) oraz **`📋 Wymagania i założenia:`** (wypunktowana lista techniczna: tabele źródłowe, dokładne nazwy kolumn i aliasów w znacznikach `<code>`, reguły filtrowania/zaokrąglania/NULL oraz sortowanie i limit).
+  - **Żywy podgląd `Example Input` oraz `Example Output`:** pod każdą tabelą zadania automatycznie wyświetlane są 4 przykładowe wiersze z PGlite (`SELECT * FROM <tabela> LIMIT 4`) wraz z typami danych SQL i klikalnymi nazwami kolumn, a pod wymaganiami sekcja **`🎯 Oczekiwany kształt wyniku (Example Output — pierwsze 3 wiersze)`** z informacją o łącznej liczbie wierszy.
+  - **3-punktowa Checklista Walidacji (SQLBolt Style) i 3-stopniowe Podpowiedzi:** po każdym uruchomieniu sprawdzania wyświetlane są 3 wskaźniki (`1) Kolumny`, `2) Ziarno (liczba wierszy)`, `3) Wartości i kolejność`), a przycisk **`💡 Podpowiedź (Krok 1/3)`** odsłania kolejno wskazówkę koncepcyjną (`1/3`), techniczną (`2/3`) oraz analizę pułapki (`3/3`).
+- **Auto-aktualizacja PWA na telefonach (`v8`, WDROŻONA):** `sw.js` (`sql-master-v8`) wymusza `self.skipWaiting()` i `self.clients.claim()`, stosuje strategię Network-First dla kodu aplikacji (`.html`, `.js`, `.css`) i automatycznie przeładowuje aplikację po wykryciu nowej wersji (`controllerchange` + `registration.update()` przy `visibilitychange`).
 - **Onboarding i Progresja SoloLearn (WDROŻONA):**
   - Przed każdą z 12 lekcji 4 interaktywne slajdy teorii z animowanym symulatorem potoku wykonawczego PostgreSQL (`FROM` → `WHERE` → `GROUP BY` → `SELECT` → `ORDER BY`) i mini-quizem (+15 XP).
-  - W każdym z 12 działów dodano **3 zadania rozgrzewkowe (`R1–R3`)** wprowadzające od zera przed dotychczasową pulą zadań **1–5 (Podstawowe)** oraz **6–10 (Zaawansowane — miks z poprzednimi działami)** (łącznie 156 zadań w Ścieżce, po 13 na dział).
   - Ściśle sekwencyjne odblokowywanie każdego zadania po kolei (`R1 → R2 → R3 → 1 → 2 → ... → 10`) z przyciskiem `🚀 Następne zadanie →` po zaliczeniu oraz przełącznikiem `🔓 Tryb testerski` w zakładce `Konto & AI`.
-  - Nad każdym zadaniem boks `💼 Po ludzku (Prośba od szefa)`, a nad edytorem przejrzysta ściąga składni SQL rozpisana linia po linii prostym językiem.
 - **Konta użytkowników i Chmura Supabase (WDROŻONE):** bezhasłowe logowanie testerów przez `Nick + 4-cyfrowy PIN`, utworzona tabela `public.sql_profiles` w projekcie Supabase (`SQLRanking`: `https://hpfrcykbzuzucglorpkr.supabase.co`) i żywa tablica wyników (`🏆 Ranking Testerów`).
 
 ## Testy (w VS Code + Live Server)

@@ -493,26 +493,192 @@ input[type=text], input[type=password], select {
 .node-item.locked { opacity: 0.62; border-style: dashed; }
 .stage-box.locked-stage { opacity: 0.82; border-left: 4px solid var(--line); }
 
-/* Boss Prompt Box ("Po ludzku - Prośba od szefa") */
-.boss-box {
-  background: linear-gradient(135deg, rgba(245, 158, 11, 0.14), rgba(79, 117, 255, 0.08));
-  border: 1px solid rgba(245, 158, 11, 0.45);
-  border-left: 4px solid var(--mid);
-  border-radius: 12px;
-  padding: 10px 13px;
-  margin: 8px 0 10px;
+/* DataLemur-Style Task Specification (📌 Polecenie + 📋 Wymagania i założenia + 🎯 Example Output) */
+.dl-spec-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 10px 0 12px;
 }
-.boss-hdr {
-  font: 700 12px var(--body);
-  color: var(--mid);
+.dl-prompt-box {
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--accent);
+  border-radius: 12px;
+  padding: 12px 14px;
+}
+.dl-sec-hdr {
+  font: 700 12.5px var(--body);
+  color: var(--kw);
   text-transform: uppercase;
   letter-spacing: 0.03em;
+  margin-bottom: 5px;
+}
+.dl-prompt-body {
+  font-size: 14.5px;
+  color: var(--ink);
+  line-height: 1.55;
+}
+.dl-assumptions-box {
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--accent-2);
+  border-radius: 12px;
+  padding: 11px 14px;
+}
+.dl-assumptions-box .dl-sec-hdr {
+  color: var(--agg);
+}
+.dl-assumptions-list {
+  margin: 4px 0 0;
+  padding-left: 18px;
+  font-size: 13.5px;
+  line-height: 1.55;
+}
+.dl-assumptions-list li {
+  margin-bottom: 5px;
+}
+.dl-assumptions-list li:last-child {
+  margin-bottom: 0;
+}
+.dl-assumptions-list code {
+  font: 600 12px var(--mono);
+  background: var(--surface);
+  color: var(--al);
+  padding: 1px 6px;
+  border-radius: 5px;
+  border: 1px solid var(--line);
+}
+
+/* Example Output & Example Input Preview Boxes */
+details.example-output-fold {
+  background: var(--surface-2);
+  border: 1px solid rgba(16, 185, 129, 0.42);
+  border-left: 4px solid var(--done);
+  border-radius: 12px;
+  padding: 9px 13px;
+  font-size: 12.5px;
+}
+details.example-output-fold summary {
+  cursor: pointer;
+  font-weight: 700;
+  color: var(--done);
+  list-style: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+details.example-output-fold summary::-webkit-details-marker { display: none; }
+details.example-output-fold summary::after { content: "▼"; font-size: 10px; color: var(--muted); }
+details.example-output-fold[open] summary::after { content: "▲"; }
+.example-output-body {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+.example-output-more {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 4px;
+}
+.example-input-box {
+  margin-top: 8px;
+}
+.example-input-hdr {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--muted);
   margin-bottom: 4px;
 }
-.boss-body {
-  font-size: 13.5px;
+.col-type-badge {
+  font: 500 10px var(--mono);
+  color: var(--muted);
+  background: var(--code-bg);
+  padding: 1px 4px;
+  border-radius: 4px;
+  margin-left: 4px;
+  opacity: 0.88;
+}
+.helper-col-btn:hover .col-type-badge {
+  color: #fff;
+  background: rgba(0, 0, 0, 0.25);
+}
+
+/* SQLBolt-Style 3-Point Live Validation Checklist */
+.val-checklist {
+  margin-top: 12px;
+  padding: 10px 13px;
+  border-radius: 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+}
+.val-hdr {
+  font: 700 12px var(--body);
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  margin-bottom: 8px;
+}
+.val-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.val-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  font-size: 12.5px;
+  border: 1px solid var(--line);
+  background: var(--code-bg);
+}
+.val-item.ok {
+  border-color: rgba(16, 185, 129, 0.45);
+  background: var(--done-soft);
   color: var(--ink);
-  line-height: 1.48;
+}
+.val-item.bad {
+  border-color: rgba(239, 68, 68, 0.45);
+  background: var(--open-soft);
+  color: var(--ink);
+}
+
+/* 3-Step Progressive Hints ("Gimme a Hint" 1/3 -> 2/3 -> 3/3) */
+.hint-stepper-box {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+}
+.hint-step-item {
+  background: var(--surface-2);
+  border: 1px solid rgba(245, 158, 11, 0.45);
+  border-left: 4px solid var(--mid);
+  border-radius: 11px;
+  padding: 10px 13px;
+}
+.hint-step-item.trap-step {
+  border-color: rgba(239, 68, 68, 0.45);
+  border-left-color: var(--open);
+  background: var(--open-soft);
+}
+.hint-step-hdr {
+  font: 700 12px var(--body);
+  color: var(--mid);
+  margin-bottom: 4px;
+}
+.hint-step-item.trap-step .hint-step-hdr {
+  color: var(--open);
+}
+.hint-step-body {
+  font-size: 13px;
+  color: var(--ink);
+  line-height: 1.5;
+  white-space: pre-wrap;
 }
 
 /* 8-Line Step-by-Step Cheat Sheet */

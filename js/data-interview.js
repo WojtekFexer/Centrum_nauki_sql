@@ -1495,8 +1495,19 @@ var INTERVIEW_TASKS = [
   }
 ];
 
+if (typeof window.buildDataLemurSpec === 'function') {
+  INTERVIEW_TASKS.forEach(function(it) {
+    var spec = window.buildDataLemurSpec(it, null);
+    it.solutionSql = it.sol;
+    it.polecenie = spec.polecenie;
+    it.assumptions = spec.assumptions;
+    it.hints = spec.hints;
+  });
+}
+
 window.INTERVIEW_SEED_SQL = INTERVIEW_SEED_SQL;
 window.INTERVIEW_SCHEMA_META = INTERVIEW_SCHEMA_META;
 window.INTERVIEW_TASKS = INTERVIEW_TASKS;
 window.LEMUR_TASKS = INTERVIEW_TASKS;
+
 

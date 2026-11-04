@@ -822,7 +822,7 @@ var LESSON_WARMUPS = {
   p1_1: [
     {
       stepCode: 'R1', isWarmup: true,
-      bossPrompt: 'Szef pyta: „Wyciągnij mi z bazy samą listę tytułów wszystkich naszych filmów.”',
+      goal: 'Przygotuj pełną listę samych tytułów wszystkich filmów dostępnych w naszym katalogu.',
       prompt: 'Rozgrzewka R1 (1 kolumna): Z tabeli `film` wybierz samą kolumnę `title` (wszystkie wiersze, bez filtrowania).',
       sol: 'SELECT title FROM film;',
       order: false, tables: ['film'],
@@ -830,7 +830,7 @@ var LESSON_WARMUPS = {
     },
     {
       stepCode: 'R2', isWarmup: true,
-      bossPrompt: 'Szef pyta: „Pokaż mi listę wszystkich filmów, ale obok tytułu dorzuć też ich kategorię wiekową (rating).”',
+      goal: 'Przygotuj zestawienie wszystkich filmów z katalogu, pokazując dla każdego tytuł oraz kategorię wiekową.',
       prompt: 'Rozgrzewka R2 (2 kolumny): Z tabeli `film` wybierz po przecinku dwie kolumny: `title` oraz `rating`.',
       sol: 'SELECT title, rating FROM film;',
       order: false, tables: ['film'],
@@ -838,7 +838,7 @@ var LESSON_WARMUPS = {
     },
     {
       stepCode: 'R3', isWarmup: true,
-      bossPrompt: 'Szef pyta: „Potrzebuję listy filmów tylko dla młodzieży (rating PG-13) — pokaż ich tytuł, kategorię wiekową i cenę wypożyczenia.”',
+      goal: 'Wyciągnij z katalogu listę filmów przeznaczonych wyłącznie dla młodzieży (kategoria PG-13) wraz z ich kategorią wiekową i ceną wypożyczenia.',
       prompt: 'Rozgrzewka R3 (3 kolumny + prosty WHERE): Z tabeli `film` wybierz `title`, `rating` oraz `rental_rate` tylko dla filmów, gdzie `rating = \'PG-13\'`.',
       sol: "SELECT title, rating, rental_rate FROM film WHERE rating = 'PG-13';",
       order: false, tables: ['film'],
@@ -848,7 +848,7 @@ var LESSON_WARMUPS = {
   p1_2: [
     {
       stepCode: 'R1', isWarmup: true,
-      bossPrompt: 'Szef pyta: „Pokaż mi tylko 5 pierwszych filmów z katalogu (ID i tytuł), żebym szybko zobaczył jak wyglądają dane.”',
+      goal: 'Wyświetl 5 pierwszych filmów z katalogu (identyfikator oraz tytuł) uporządkowanych rosnąco według identyfikatora, aby szybko podejrzeć strukturę danych.',
       prompt: 'Rozgrzewka R1 (LIMIT): Z tabeli `film` wybierz `film_id` oraz `title`, posortuj rosnąco po `film_id` i ogranicz wynik do `5` wierszy (`LIMIT 5`).',
       sol: 'SELECT film_id, title FROM film ORDER BY film_id LIMIT 5;',
       order: true, tables: ['film'],
@@ -856,7 +856,7 @@ var LESSON_WARMUPS = {
     },
     {
       stepCode: 'R2', isWarmup: true,
-      bossPrompt: 'Szef pyta: „Wypisz tytuły i rating filmów, które mają kategorię G albo R — użyj krótkiego operatora listy IN.”',
+      goal: 'Wypisz tytuły oraz kategorie wiekowe filmów należących do kategorii familijnej (G) lub dla dorosłych (R).',
       prompt: 'Rozgrzewka R2 (IN): Z tabeli `film` wybierz `title` oraz `rating` dla filmów o ratingu z listy `(\'G\', \'R\')` za pomocą operatora `IN`.',
       sol: "SELECT title, rating FROM film WHERE rating IN ('G', 'R');",
       order: false, tables: ['film'],
@@ -864,7 +864,7 @@ var LESSON_WARMUPS = {
     },
     {
       stepCode: 'R3', isWarmup: true,
-      bossPrompt: 'Szef pyta: „Klienci szukają filmów trwających od godziny do półtorej (60–90 minut). Wyciągnij ich tytuły i czas trwania.”',
+      goal: 'Klienci szukają filmów trwających od godziny do półtorej (od 60 do 90 minut włącznie). Przygotuj listę ich tytułów oraz czasu trwania.',
       prompt: 'Rozgrzewka R3 (BETWEEN): Z tabeli `film` wybierz `title` oraz `length` dla filmów trwających od `60` do `90` minut włącznie (`BETWEEN 60 AND 90`).',
       sol: 'SELECT title, length FROM film WHERE length BETWEEN 60 AND 90;',
       order: false, tables: ['film'],
@@ -874,7 +874,7 @@ var LESSON_WARMUPS = {
   p1_3: [
     {
       stepCode: 'R1', isWarmup: true,
-      bossPrompt: 'Szef pyta: „Jakie w ogóle kategorie wiekowe (rating) występują w naszym katalogu filmów? Bez powtórzeń!”',
+      goal: 'Sprawdź, jakie unikalne kategorie wiekowe występują w naszym katalogu filmów (każda kategoria ma pojawić się na liście tylko raz).',
       prompt: 'Rozgrzewka R1 (DISTINCT 1 kolumna): Z tabeli `film` wypisz unikalne wartości kolumny `rating` (`SELECT DISTINCT rating`).',
       sol: 'SELECT DISTINCT rating FROM film;',
       order: false, tables: ['film'],
@@ -882,7 +882,7 @@ var LESSON_WARMUPS = {
     },
     {
       stepCode: 'R2', isWarmup: true,
-      bossPrompt: 'Szef pyta: „Jakie mamy progi cenowe wypożyczeń w katalogu? Pokaż unikalne stawki od najniższej do najwyższej.”',
+      goal: 'Wypisz wszystkie unikalne progi cenowe wypożyczeń występujące w katalogu, uporządkowane od najniższej do najwyższej stawki.',
       prompt: 'Rozgrzewka R2 (DISTINCT + ORDER BY): Z tabeli `film` wypisz unikalne stawki `rental_rate` (`SELECT DISTINCT rental_rate`) posortowane rosnąco.',
       sol: 'SELECT DISTINCT rental_rate FROM film ORDER BY rental_rate ASC;',
       order: true, tables: ['film'],
@@ -890,60 +890,60 @@ var LESSON_WARMUPS = {
     },
     {
       stepCode: 'R3', isWarmup: true,
-      bossPrompt: 'Szef pyta: „Symulujemy podwyżkę o 1 dolara dla filmów familijnych (G). Pokaż tytuł, obecną cenę i nową cenę po podwyżce.”',
+      goal: 'Symulujemy podwyżkę ceny wypożyczenia o 1 dolara dla filmów familijnych (kategoria G). Wyświetl tytuł filmu, obecną stawkę oraz wyliczoną nową stawkę po podwyżce.',
       prompt: 'Rozgrzewka R3 (Wyliczenie + AS): Z tabeli `film` wybierz `title`, `rental_rate` oraz `rental_rate + 1 AS new_rate` dla filmów o ratingu `\'G\'`.',
       sol: "SELECT title, rental_rate, rental_rate + 1 AS new_rate FROM film WHERE rating = 'G';",
       order: false, tables: ['film'],
-      hint: "Dodaj 1 do kolumny w SELECT: rental_rate + 1 AS new_rate."
+      hint: "Dodaj 1 do kolumny w SELECT i nadaj alias: rental_rate + 1 AS new_rate."
     }
   ],
   p2_1: [
     {
       stepCode: 'R1', isWarmup: true,
-      bossPrompt: 'Szef pyta: „Ile dokładnie wszystkich filmów mamy obecnie w bazie? Podaj mi jedną liczbę.”',
-      prompt: 'Rozgrzewka R1 (COUNT(*)): Policz wszystkie wiersze w tabeli `film` za pomocą `SELECT COUNT(*) FROM film;`.',
+      goal: 'Oblicz łączną liczbę wszystkich filmów znajdujących się obecnie w katalogu.',
+      prompt: 'Rozgrzewka R1 (COUNT(*)): Policz wszystkie wiersze w tabeli `film` i nazwij kolumnę wynikową `total_films`.',
       sol: 'SELECT COUNT(*) AS total_films FROM film;',
       order: false, tables: ['film'],
-      hint: 'Użyj funkcji agregującej COUNT(*): SELECT COUNT(*) FROM film;'
+      hint: 'Użyj funkcji agregującej z aliasem: SELECT COUNT(*) AS total_films FROM film;'
     },
     {
       stepCode: 'R2', isWarmup: true,
-      bossPrompt: 'Szef pyta: „Ile wypożyczeń mieliśmy łącznie, a przy ilu z nich wpisano już datę zwrotu filmu?”',
-      prompt: 'Rozgrzewka R2 (COUNT(*) vs COUNT(kolumna)): Z tabeli `rental` zwróć w jednym wierszu dwie kolumny: `COUNT(*)` oraz `COUNT(return_date)`.',
+      goal: 'Porównaj w jednym wierszu ogólną liczbę wszystkich zarejestrowanych wypożyczeń z liczbą wypożyczeń, które zostały już zwrócone (mają wpisaną datę zwrotu).',
+      prompt: 'Rozgrzewka R2 (COUNT(*) vs COUNT(kolumna)): Z tabeli `rental` zwróć w jednym wierszu dwie kolumny: `COUNT(*) AS all_cnt` oraz `COUNT(return_date) AS returned_cnt`.',
       sol: 'SELECT COUNT(*) AS all_cnt, COUNT(return_date) AS returned_cnt FROM rental;',
       order: false, tables: ['rental'],
-      hint: 'Wpisz: SELECT COUNT(*), COUNT(return_date) FROM rental;'
+      hint: 'Wpisz: SELECT COUNT(*) AS all_cnt, COUNT(return_date) AS returned_cnt FROM rental;'
     },
     {
       stepCode: 'R3', isWarmup: true,
-      bossPrompt: 'Szef pyta: „Ilu różnych (unikalnych) klientów zapłaciło nam chociaż raz?”',
-      prompt: 'Rozgrzewka R3 (COUNT(DISTINCT)): Z tabeli `payment` policz unikalnych klientów mających płatność: `SELECT COUNT(DISTINCT customer_id) FROM payment;`.',
+      goal: 'Ustal, ilu różnych (unikalnych) klientów dokonało u nas przynajmniej jednej płatności.',
+      prompt: 'Rozgrzewka R3 (COUNT(DISTINCT)): Z tabeli `payment` policz unikalnych klientów mających płatność jako `uniq_customers`.',
       sol: 'SELECT COUNT(DISTINCT customer_id) AS uniq_customers FROM payment;',
       order: false, tables: ['payment'],
-      hint: 'Wpisz słowo DISTINCT wewnątrz nawiasu: COUNT(DISTINCT customer_id).'
+      hint: 'Użyj słowa DISTINCT wewnątrz nawiasu i nadaj alias: COUNT(DISTINCT customer_id) AS uniq_customers.'
     }
   ],
   p2_2: [
     {
       stepCode: 'R1', isWarmup: true,
-      bossPrompt: 'Szef pyta: „Jaki jest nasz łączny przychód ze wszystkich płatności w bazie?”',
-      prompt: 'Rozgrzewka R1 (SUM): Z tabeli `payment` oblicz łączną sumę wszystkich kwot (`SELECT SUM(amount) FROM payment;`).',
+      goal: 'Oblicz całkowity przychód ze wszystkich płatności zarejestrowanych w bazie danych.',
+      prompt: 'Rozgrzewka R1 (SUM): Z tabeli `payment` oblicz łączną sumę wszystkich kwot `amount` jako `total_revenue`.',
       sol: 'SELECT SUM(amount) AS total_revenue FROM payment;',
       order: false, tables: ['payment'],
-      hint: 'Użyj funkcji SUM(amount) na tabeli payment.'
+      hint: 'Użyj funkcji SUM(amount) AS total_revenue na tabeli payment.'
     },
     {
       stepCode: 'R2', isWarmup: true,
-      bossPrompt: 'Szef pyta: „Policz mi, ile filmów przypada na każdą kategorię wiekową (rating).”',
-      prompt: 'Rozgrzewka R2 (GROUP BY): Z tabeli `film` wybierz `rating` oraz liczbę filmów `COUNT(*)`, grupując wynik po `GROUP BY rating`.',
+      goal: 'Policz, ile filmów przypada na każdą kategorię wiekową w katalogu.',
+      prompt: 'Rozgrzewka R2 (GROUP BY): Z tabeli `film` wybierz `rating` oraz liczbę filmów `COUNT(*) AS film_cnt`, grupując wynik po `rating`.',
       sol: 'SELECT rating, COUNT(*) AS film_cnt FROM film GROUP BY rating;',
       order: false, tables: ['film'],
-      hint: 'Każda kolumna przed funkcją COUNT(*) musi znaleźć się w GROUP BY rating.'
+      hint: 'Wybierz rating, COUNT(*) AS film_cnt i pogrupuj przez GROUP BY rating.'
     },
     {
       stepCode: 'R3', isWarmup: true,
-      bossPrompt: 'Szef pyta: „Podlicz sumę wpłat dla każdego pracownika i pokaż tylko tych, którzy zebrali ponad 20 dolarów.”',
-      prompt: 'Rozgrzewka R3 (GROUP BY + HAVING): Z tabeli `payment` wybierz `staff_id` oraz `SUM(amount)` pogrupowane po `staff_id`, zostawiając grupy z `HAVING SUM(amount) > 20`.',
+      goal: 'Podlicz łączną wartość wpłat przyjętych przez każdego pracownika i pozostaw w zestawieniu tylko tych pracowników, którzy zebrali łącznie ponad 20 dolarów.',
+      prompt: 'Rozgrzewka R3 (GROUP BY + HAVING): Z tabeli `payment` wybierz `staff_id` oraz `SUM(amount) AS total_sales` pogrupowane po `staff_id`, zostawiając grupy z sumą powyżej `20`.',
       sol: 'SELECT staff_id, SUM(amount) AS total_sales FROM payment GROUP BY staff_id HAVING SUM(amount) > 20;',
       order: false, tables: ['payment'],
       hint: 'Po GROUP BY staff_id dopisz HAVING SUM(amount) > 20;'
@@ -952,7 +952,7 @@ var LESSON_WARMUPS = {
   p3_1: [
     {
       stepCode: 'R1', isWarmup: true,
-      bossPrompt: 'Szef pyta: „Wypisz imię i nazwisko każdego naszego pracownika, a obok dopisz miasto oddziału, w którym pracuje.”',
+      goal: 'Przygotuj listę wszystkich pracowników wraz z nazwą miasta oddziału sklepu, w którym pracują.',
       prompt: 'Rozgrzewka R1 (JOIN 2 tabel): Połącz `staff s` z `store st` po kluczu `ON s.store_id = st.store_id` i wybierz `s.first_name`, `s.last_name`, `st.city`.',
       sol: 'SELECT s.first_name, s.last_name, st.city FROM staff s JOIN store st ON s.store_id = st.store_id;',
       order: false, tables: ['staff', 'store'],
@@ -960,7 +960,7 @@ var LESSON_WARMUPS = {
     },
     {
       stepCode: 'R2', isWarmup: true,
-      bossPrompt: 'Szef pyta: „Pokaż pierwsze 5 wypożyczeń wraz z imieniem klienta, który wypożyczył film.”',
+      goal: 'Wyświetl pierwsze 5 wypożyczeń z bazy wraz z imieniem klienta, który dokonał danego wypożyczenia.',
       prompt: 'Rozgrzewka R2 (JOIN + ORDER BY + LIMIT): Połącz `customer c` oraz `rental r` (`ON c.customer_id = r.customer_id`). Wybierz `c.first_name`, `r.rental_id`, `r.rental_date`, posortuj po `r.rental_id` i daj `LIMIT 5`.',
       sol: 'SELECT c.first_name, r.rental_id, r.rental_date FROM customer c JOIN rental r ON c.customer_id = r.customer_id ORDER BY r.rental_id LIMIT 5;',
       order: true, tables: ['customer', 'rental'],
@@ -968,7 +968,7 @@ var LESSON_WARMUPS = {
     },
     {
       stepCode: 'R3', isWarmup: true,
-      bossPrompt: 'Szef pyta: „Kto robił u nas duże zakupy? Pokaż imię i nazwisko klienta oraz kwotę dla pojedynczych płatności powyżej 7 dolarów.”',
+      goal: 'Wyszukaj pojedyncze płatności przekraczające 7 dolarów i wyświetl imię oraz nazwisko klienta obok kwoty transakcji.',
       prompt: 'Rozgrzewka R3 (JOIN + WHERE): Połącz `customer c` i `payment p` (`ON c.customer_id = p.customer_id`). Wypisz `c.first_name`, `c.last_name`, `p.amount` dla `p.amount > 7.00`.',
       sol: 'SELECT c.first_name, c.last_name, p.amount FROM customer c JOIN payment p ON c.customer_id = p.customer_id WHERE p.amount > 7.00;',
       order: false, tables: ['customer', 'payment'],
@@ -978,7 +978,7 @@ var LESSON_WARMUPS = {
   p3_2: [
     {
       stepCode: 'R1', isWarmup: true,
-      bossPrompt: 'Szef pyta: „Pokaż wszystkich klientów ze sklepu nr 1 wraz z ID ich wypożyczeń — nawet jeśli klient jeszcze nic nie wypożyczył!”',
+      goal: 'Wypisz wszystkich klientów przypisanych do sklepu nr 1 wraz z identyfikatorami ich wypożyczeń — zachowując na liście także tych klientów, którzy nigdy nic nie wypożyczyli.',
       prompt: 'Rozgrzewka R1 (LEFT JOIN): Połącz `customer c` przez `LEFT JOIN` z `rental r` (`ON c.customer_id = r.customer_id`) dla `c.store_id = 1`. Zwróć `c.customer_id`, `c.first_name`, `r.rental_id` posortowane po `c.customer_id, r.rental_id`.',
       sol: 'SELECT c.customer_id, c.first_name, r.rental_id FROM customer c LEFT JOIN rental r ON c.customer_id = r.customer_id WHERE c.store_id = 1 ORDER BY c.customer_id, r.rental_id;',
       order: true, tables: ['customer', 'rental'],
@@ -986,68 +986,68 @@ var LESSON_WARMUPS = {
     },
     {
       stepCode: 'R2', isWarmup: true,
-      bossPrompt: 'Szef pyta: „W pierwszych 5 wypożyczeniach zamień puste daty zwrotu (NULL) na czytelny napis \'Brak zwrotu\'.”',
-      prompt: 'Rozgrzewka R2 (COALESCE): Z tabeli `rental` wybierz `rental_id`, `rental_date` oraz `COALESCE(return_date::text, \'Brak zwrotu\') AS status`, posortuj po `rental_id` i daj `LIMIT 5`.',
+      goal: 'Dla pierwszych 5 wypożyczeń wyświetl identyfikator, datę wypożyczenia oraz status zwrotu, w którym brakująca data zwrotu zostanie zastąpiona czytelnym napisem „Brak zwrotu”.',
+      prompt: 'Rozgrzewka R2 (COALESCE): Z tabeli `rental` wybierz `rental_id`, `rental_date` oraz status zwrotu `status` (podmień `NULL` w `return_date` na `\'Brak zwrotu\'`), posortuj po `rental_id` i daj `LIMIT 5`.',
       sol: "SELECT rental_id, rental_date, COALESCE(return_date::text, 'Brak zwrotu') AS status FROM rental ORDER BY rental_id LIMIT 5;",
       order: true, tables: ['rental'],
-      hint: "Funkcja COALESCE(return_date::text, 'Brak zwrotu') podmienia NULL na podany tekst."
+      hint: "Funkcja COALESCE(return_date::text, 'Brak zwrotu') AS status podmienia NULL na podany tekst."
     },
     {
       stepCode: 'R3', isWarmup: true,
-      bossPrompt: 'Szef pyta: „Wypisz każdą kategorię z katalogu i policz ile ma filmów — pamiętaj o LEFT JOIN, żeby żadna kategoria nie zniknęła.”',
-      prompt: 'Rozgrzewka R3 (LEFT JOIN + COUNT klucza): Połącz `category c` przez `LEFT JOIN` z `film_category fc` (`ON c.category_id = fc.category_id`). Zwróć `c.name` oraz `COUNT(fc.film_id)` pogrupowane po `c.name`.',
+      goal: 'Podlicz liczbę filmów przypisanych do każdej kategorii z katalogu, upewniając się, że kategorie bez żadnego filmu również pojawią się w raporcie z wartością 0.',
+      prompt: 'Rozgrzewka R3 (LEFT JOIN + COUNT klucza): Połącz `category c` przez `LEFT JOIN` z `film_category fc` (`ON c.category_id = fc.category_id`). Zwróć `c.name` oraz `COUNT(fc.film_id) AS films_cnt` pogrupowane po `c.name`.',
       sol: 'SELECT c.name, COUNT(fc.film_id) AS films_cnt FROM category c LEFT JOIN film_category fc ON c.category_id = fc.category_id GROUP BY c.name;',
       order: false, tables: ['category', 'film_category'],
-      hint: 'Licz kolumnę prawej tabeli COUNT(fc.film_id), aby dla braku dopasowania dostać 0.'
+      hint: 'Licz kolumnę prawej tabeli COUNT(fc.film_id) AS films_cnt, aby dla braku dopasowania dostać 0.'
     }
   ],
   p4_1: [
     {
       stepCode: 'R1', isWarmup: true,
-      bossPrompt: 'Szef pyta: „W tabeli klientów mamy kolumnę active z jedynkami i zerami. Dorób obok czytelną kolumnę ze słowem \'Aktywny\' lub \'Nieaktywny\'.”',
-      prompt: 'Rozgrzewka R1 (CASE WHEN): Z tabeli `customer` wybierz `first_name`, `active` oraz `CASE WHEN active = 1 THEN \'Aktywny\' ELSE \'Nieaktywny\' END AS status`.',
+      goal: 'Dla każdego klienta przygotuj czytelną etykietę tekstową informującą, czy jego konto jest aktywne („Aktywny” dla wartości 1, „Nieaktywny” w przeciwnym razie).',
+      prompt: 'Rozgrzewka R1 (CASE WHEN): Z tabeli `customer` wybierz `first_name`, `active` oraz kolumnę warunkową `status` (`\'Aktywny\'` gdy `active = 1`, w przeciwnym razie `\'Nieaktywny\'`).',
       sol: "SELECT first_name, active, CASE WHEN active = 1 THEN 'Aktywny' ELSE 'Nieaktywny' END AS status FROM customer;",
       order: false, tables: ['customer'],
-      hint: "Każdy blok CASE WHEN ... THEN ... ELSE ... musisz zamknąć słowem END."
+      hint: "Każdy blok CASE WHEN ... THEN ... ELSE ... musisz zamknąć słowem END AS status."
     },
     {
       stepCode: 'R2', isWarmup: true,
-      bossPrompt: 'Szef pyta: „Pokaż mi obok siebie liczbę wszystkich filmów oraz liczbę filmów o ratingu PG-13.”',
-      prompt: 'Rozgrzewka R2 (FILTER WHERE): Z tabeli `film` zwróć w jednym wierszu `COUNT(*)` oraz `COUNT(*) FILTER (WHERE rating = \'PG-13\')`.',
+      goal: 'Zestaw obok siebie w jednym wierszu ogólną liczbę wszystkich filmów w katalogu oraz liczbę filmów należących do kategorii wiekowej PG-13.',
+      prompt: 'Rozgrzewka R2 (FILTER WHERE): Z tabeli `film` zwróć w jednym wierszu `COUNT(*) AS all_films` oraz liczbę filmów o ratingu `\'PG-13\'` jako `pg13_films`.',
       sol: "SELECT COUNT(*) AS all_films, COUNT(*) FILTER (WHERE rating = 'PG-13') AS pg13_films FROM film;",
       order: false, tables: ['film'],
-      hint: "Składnia PG: COUNT(*) FILTER (WHERE rating = 'PG-13')."
+      hint: "Składnia PG: COUNT(*) AS all_films, COUNT(*) FILTER (WHERE rating = 'PG-13') AS pg13_films."
     },
     {
       stepCode: 'R3', isWarmup: true,
-      bossPrompt: 'Szef pyta: „Jaki dokładnie procent naszych klientów ma aktywne konto? Zaokrąglij wynik do 2 miejsc po przecinku.”',
-      prompt: 'Rozgrzewka R3 (Procent * 100.0 + ROUND): Z tabeli `customer` oblicz `ROUND(COUNT(*) FILTER (WHERE active = 1) * 100.0 / COUNT(*), 2) AS active_pct`.',
+      goal: 'Oblicz, jaki procent wszystkich klientów w bazie ma obecnie aktywne konto (wynik zaokrąglij do 2 miejsc po przecinku).',
+      prompt: 'Rozgrzewka R3 (Procent * 100.0 + ROUND): Z tabeli `customer` oblicz procent aktywnych klientów (`active = 1`) zaokrąglony do 2 miejsc jako `active_pct`.',
       sol: 'SELECT ROUND(COUNT(*) FILTER (WHERE active = 1) * 100.0 / COUNT(*), 2) AS active_pct FROM customer;',
       order: false, tables: ['customer'],
-      hint: 'Pamiętaj o mnożeniu przez 100.0 (z kropką) wewnątrz ROUND(..., 2).'
+      hint: 'Pamiętaj o mnożeniu przez 100.0 (z kropką) wewnątrz ROUND(..., 2) AS active_pct.'
     }
   ],
   p4_2: [
     {
       stepCode: 'R1', isWarmup: true,
-      bossPrompt: 'Szef pyta: „Sklej mi w jedną prostą listę pod sobą imiona pracowników oraz nazwy miast naszych sklepów (bez usuwania powtórzeń).”',
-      prompt: 'Rozgrzewka R1 (UNION ALL): Połącz operatorem `UNION ALL` zapytanie `SELECT first_name FROM staff` oraz `SELECT city FROM store`.',
+      goal: 'Połącz w jedną wspólną kolumnę pod sobą imiona wszystkich pracowników oraz nazwy miast naszych sklepów (bez usuwania duplikatów).',
+      prompt: 'Rozgrzewka R1 (UNION ALL): Połącz operatorem `UNION ALL` zapytanie wybierające `first_name` z `staff` oraz `city` ze `store`.',
       sol: 'SELECT first_name FROM staff UNION ALL SELECT city FROM store;',
       order: false, tables: ['staff', 'store'],
       hint: 'Wpisz oba SELECT-y i rozdziel je słowami UNION ALL.'
     },
     {
       stepCode: 'R2', isWarmup: true,
-      bossPrompt: 'Szef pyta: „Połącz w jedną unikalną listę imiona pracowników oraz imiona aktywnych klientów ze sklepu nr 1.”',
-      prompt: 'Rozgrzewka R2 (UNION bez duplikatów): Połącz przez `UNION` zapytanie `SELECT first_name FROM staff` oraz `SELECT first_name FROM customer WHERE store_id = 1 AND active = 1`.',
+      goal: 'Utwórz unikalną listę imion występujących wśród naszych pracowników lub wśród aktywnych klientów sklepu nr 1 (bez powtórzeń).',
+      prompt: 'Rozgrzewka R2 (UNION bez duplikatów): Połącz przez `UNION` imiona `first_name` z tabeli `staff` oraz `first_name` z tabeli `customer` (dla `store_id = 1 AND active = 1`).',
       sol: 'SELECT first_name FROM staff UNION SELECT first_name FROM customer WHERE store_id = 1 AND active = 1;',
       order: false, tables: ['staff', 'customer'],
       hint: 'Operator UNION automatycznie usunie ewentualne duplikaty imion.'
     },
     {
       stepCode: 'R3', isWarmup: true,
-      bossPrompt: 'Szef pyta: „Sprawdź za pomocą różnicy zbiorów (EXCEPT), które ID kategorii z tabeli category nie mają przypisanego ani jednego filmu w film_category.”',
-      prompt: 'Rozgrzewka R3 (EXCEPT): Od `SELECT category_id FROM category` odejmij przez `EXCEPT` zapytanie `SELECT category_id FROM film_category`.',
+      goal: 'Za pomocą operacji różnicy zbiorów wskaż identyfikatory kategorii, które nie mają przypisanego ani jednego filmu.',
+      prompt: 'Rozgrzewka R3 (EXCEPT): Od identyfikatorów `category_id` z tabeli `category` odejmij przez `EXCEPT` identyfikatory `category_id` występujące w `film_category`.',
       sol: 'SELECT category_id FROM category EXCEPT SELECT category_id FROM film_category;',
       order: false, tables: ['category', 'film_category'],
       hint: 'Użyj operatora EXCEPT pomiędzy dwoma zapytaniami SELECT category_id.'
@@ -1056,24 +1056,24 @@ var LESSON_WARMUPS = {
   p5_1: [
     {
       stepCode: 'R1', isWarmup: true,
-      bossPrompt: 'Szef pyta: „Wypisz 5 najdłuższych filmów i nadaj im kolejne numery od 1 do 5 w osobnej kolumnie rankingowej.”',
-      prompt: 'Rozgrzewka R1 (ROW_NUMBER): Z tabeli `film` wybierz `title`, `length` oraz `ROW_NUMBER() OVER (ORDER BY length DESC, title ASC) AS rn`, posortuj po `length DESC, title ASC` i daj `LIMIT 5`.',
+      goal: 'Wypisz 5 najdłuższych filmów z katalogu i nadaj im kolejne numery pozycji od 1 do 5 w osobnej kolumnie.',
+      prompt: 'Rozgrzewka R1 (ROW_NUMBER): Z tabeli `film` wybierz `title`, `length` oraz numer wiersza `rn` (według `length DESC, title ASC`), posortuj wynik po `length DESC, title ASC` i ogranicz do `5` wierszy.',
       sol: 'SELECT title, length, ROW_NUMBER() OVER (ORDER BY length DESC, title ASC) AS rn FROM film ORDER BY length DESC, title ASC LIMIT 5;',
       order: true, tables: ['film'],
-      hint: 'Użyj funkcji okna ROW_NUMBER() OVER (ORDER BY length DESC, title ASC).'
+      hint: 'Użyj funkcji okna ROW_NUMBER() OVER (ORDER BY length DESC, title ASC) AS rn.'
     },
     {
       stepCode: 'R2', isWarmup: true,
-      bossPrompt: 'Szef pyta: „Dla filmów G oraz PG nadaj miejsce w rankingu cenowym (DENSE_RANK) osobno wewnątrz każdej kategorii wiekowej.”',
-      prompt: 'Rozgrzewka R2 (PARTITION BY + DENSE_RANK): Z tabeli `film` dla `rating IN (\'G\', \'PG\')` wybierz `rating`, `title`, `rental_rate` oraz `DENSE_RANK() OVER (PARTITION BY rating ORDER BY rental_rate DESC) AS rnk`.',
+      goal: 'Dla filmów z kategorii G oraz PG wyznacz gęsty ranking cenowy (bez dziur w numeracji przy remisach) liczony osobno wewnątrz każdej kategorii wiekowej.',
+      prompt: 'Rozgrzewka R2 (PARTITION BY + DENSE_RANK): Z tabeli `film` dla `rating IN (\'G\', \'PG\')` wybierz `rating`, `title`, `rental_rate` oraz miejsce w rankingu cenowym `rnk` wewnątrz każdego `rating`.',
       sol: "SELECT rating, title, rental_rate, DENSE_RANK() OVER (PARTITION BY rating ORDER BY rental_rate DESC) AS rnk FROM film WHERE rating IN ('G', 'PG');",
       order: false, tables: ['film'],
       hint: 'Wewnątrz OVER (...) wpisz PARTITION BY rating ORDER BY rental_rate DESC.'
     },
     {
       stepCode: 'R3', isWarmup: true,
-      bossPrompt: 'Szef pyta: „Zbuduj prostą tabelę pomocniczą CTE z filmami dłuższymi niż 150 minut, a następnie wyświetl je od najdłuższego.”',
-      prompt: 'Rozgrzewka R3 (CTE WITH): Zdefiniuj `WITH long_films AS (SELECT title, length FROM film WHERE length > 150)` i wybierz z `long_films` kolumny `title, length` posortowane malejąco po `length`.',
+      goal: 'Zdefiniuj pomocnicze zapytanie tymczasowe (CTE) zawierające filmy dłuższe niż 150 minut, a następnie wyświetl z niego tytuły i czasy trwania od najdłuższego.',
+      prompt: 'Rozgrzewka R3 (CTE WITH): Zbuduj CTE `long_films` wybierające `title, length` z `film` dla `length > 150`, a w głównym zapytaniu zwróć `title, length` posortowane malejąco po `length`.',
       sol: 'WITH long_films AS (SELECT title, length FROM film WHERE length > 150) SELECT title, length FROM long_films ORDER BY length DESC;',
       order: true, tables: ['film'],
       hint: 'Zacznij zapytanie od WITH long_films AS (...), a po nawiasie napisz główny SELECT.'
@@ -1082,24 +1082,24 @@ var LESSON_WARMUPS = {
   p5_2: [
     {
       stepCode: 'R1', isWarmup: true,
-      bossPrompt: 'Szef pyta: „Pokaż wszystkie płatności klienta nr 1, a obok każdej płatności wyświetl łączną sumę jego wszystkich wydatków.”',
-      prompt: 'Rozgrzewka R1 (Puste okno OVER ()): Z tabeli `payment` dla `customer_id = 1` wybierz `payment_id`, `amount` oraz `SUM(amount) OVER () AS total_cust`.',
+      goal: 'Wyświetl wszystkie pojedyncze płatności klienta nr 1, a obok każdej transakcji dołącz w osobnej kolumnie łączną sumę wszystkich wydatków tego klienta.',
+      prompt: 'Rozgrzewka R1 (Puste okno OVER ()): Z tabeli `payment` dla `customer_id = 1` wybierz `payment_id`, `amount` oraz łączną sumę wydatków tego klienta w każdym wierszu jako `total_cust`.',
       sol: 'SELECT payment_id, amount, SUM(amount) OVER () AS total_cust FROM payment WHERE customer_id = 1;',
       order: false, tables: ['payment'],
-      hint: 'Puste nawiasy w SUM(amount) OVER () liczą sumę ze wszystkich wierszy wynikowych.'
+      hint: 'Puste nawiasy w SUM(amount) OVER () AS total_cust liczą sumę ze wszystkich wierszy wynikowych.'
     },
     {
       stepCode: 'R2', isWarmup: true,
-      bossPrompt: 'Szef pyta: „Dla klienta nr 2 pokaż jak narastała suma jego wpłat z każdą kolejną transakcją (Running Total).”',
-      prompt: 'Rozgrzewka R2 (Suma narastająca): Z tabeli `payment` dla `customer_id = 2` wybierz `payment_id`, `payment_date`, `amount` oraz `SUM(amount) OVER (ORDER BY payment_date, payment_id) AS run_sum` posortowane po `payment_date, payment_id`.',
+      goal: 'Dla klienta nr 2 prześledź historię wpłat i pokaż, jak narastała łączna suma jego wydatków z każdą kolejną transakcją (suma krocząca).',
+      prompt: 'Rozgrzewka R2 (Suma narastająca): Z tabeli `payment` dla `customer_id = 2` wybierz `payment_id`, `payment_date`, `amount` oraz sumę narastającą `run_sum` (w kolejności `payment_date, payment_id`).',
       sol: 'SELECT payment_id, payment_date, amount, SUM(amount) OVER (ORDER BY payment_date, payment_id) AS run_sum FROM payment WHERE customer_id = 2 ORDER BY payment_date, payment_id;',
       order: true, tables: ['payment'],
       hint: 'Dodanie ORDER BY wewnątrz OVER (...) zamienia zwykłą sumę w sumę narastającą.'
     },
     {
       stepCode: 'R3', isWarmup: true,
-      bossPrompt: 'Szef pyta: „Dla klienta nr 2 wyświetl obok bieżącej kwoty płatności również kwotę jego poprzedniej płatności (LAG).”',
-      prompt: 'Rozgrzewka R3 (LAG): Z tabeli `payment` dla `customer_id = 2` wybierz `payment_id`, `amount` oraz `LAG(amount) OVER (ORDER BY payment_date, payment_id) AS prev_amt` posortowane po `payment_date, payment_id`.',
+      goal: 'Dla klienta nr 2 zestaw kwotę każdej bieżącej płatności z kwotą jego bezpośrednio poprzedniej transakcji.',
+      prompt: 'Rozgrzewka R3 (LAG): Z tabeli `payment` dla `customer_id = 2` wybierz `payment_id`, `amount` oraz kwotę poprzedniej płatności `prev_amt` (według `payment_date, payment_id`).',
       sol: 'SELECT payment_id, amount, LAG(amount) OVER (ORDER BY payment_date, payment_id) AS prev_amt FROM payment WHERE customer_id = 2 ORDER BY payment_date, payment_id;',
       order: true, tables: ['payment'],
       hint: 'Funkcja LAG(amount) OVER (ORDER BY payment_date, payment_id) pobiera kwotę z poprzedniego wiersza.'
@@ -1108,38 +1108,406 @@ var LESSON_WARMUPS = {
   p5_3: [
     {
       stepCode: 'R1', isWarmup: true,
-      bossPrompt: 'Szef pyta: „Wygeneruj mi w SQL szybką listę numerów od 1 do 5 bez używania żadnej tabeli.”',
-      prompt: 'Rozgrzewka R1 (generate_series liczb): Wygeneruj liczby od `1` do `5` zapytaniem `SELECT generate_series(1, 5) AS nr;`.',
+      goal: 'Wygeneruj jednokolumnową serię kolejnych liczb całkowitych od 1 do 5 bez odpytywania żadnej fizycznej tabeli.',
+      prompt: 'Rozgrzewka R1 (generate_series liczb): Wygeneruj liczby od `1` do `5` w kolumnie o aliasie `nr`.',
       sol: 'SELECT generate_series(1, 5) AS nr;',
       order: true, tables: ['category'],
       hint: 'Wpisz dokładnie: SELECT generate_series(1, 5) AS nr;'
     },
     {
       stepCode: 'R2', isWarmup: true,
-      bossPrompt: 'Szef pyta: „Potrzebuję kalendarza 5 kolejnych dni od 1 do 5 maja 2026 roku.”',
-      prompt: 'Rozgrzewka R2 (generate_series dat): Wygeneruj daty od `\'2026-05-01\'` do `\'2026-05-05\'` z krokiem `\'1 day\'`: `SELECT d::date AS dzien FROM generate_series(\'2026-05-01\'::date, \'2026-05-05\'::date, \'1 day\') AS d;`.',
+      goal: 'Wygeneruj kalendarz obejmujący 5 kolejnych dni od 1 do 5 maja 2026 roku.',
+      prompt: 'Rozgrzewka R2 (generate_series dat): Wygeneruj kolejne daty od `\'2026-05-01\'` do `\'2026-05-05\'` z krokiem jednodniowym w kolumnie `dzien`.',
       sol: "SELECT d::date AS dzien FROM generate_series('2026-05-01'::date, '2026-05-05'::date, '1 day') AS d;",
       order: true, tables: ['rental'],
       hint: "Użyj generate_series('2026-05-01'::date, '2026-05-05'::date, '1 day') AS d."
     },
     {
       stepCode: 'R3', isWarmup: true,
-      bossPrompt: 'Szef pyta: „Dla pierwszych 5 płatności pokaż datę wpłaty, pierwszy dzień miesiąca tej wpłaty oraz datę o tydzień późniejszą.”',
-      prompt: 'Rozgrzewka R3 (DATE_TRUNC + INTERVAL): Z tabeli `payment` wybierz `payment_id`, `payment_date`, `DATE_TRUNC(\'month\', payment_date)::date AS miesiac` oraz `(payment_date + INTERVAL \'7 days\')::date AS plus_7d`, posortowane po `payment_id` z `LIMIT 5`.',
+      goal: 'Dla pierwszych 5 płatności wyznacz datę transakcji, pierwszy dzień miesiąca tej wpłaty oraz termin przypadający dokładnie 7 dni później.',
+      prompt: 'Rozgrzewka R3 (DATE_TRUNC + INTERVAL): Z tabeli `payment` wybierz `payment_id`, `payment_date`, początek miesiąca jako `miesiac` oraz datę przesuniętą o 7 dni do przodu jako `plus_7d` (posortuj po `payment_id`, `LIMIT 5`).',
       sol: "SELECT payment_id, payment_date, DATE_TRUNC('month', payment_date)::date AS miesiac, (payment_date + INTERVAL '7 days')::date AS plus_7d FROM payment ORDER BY payment_id LIMIT 5;",
       order: true, tables: ['payment'],
-      hint: "Połącz DATE_TRUNC('month', payment_date)::date oraz (payment_date + INTERVAL '7 days')::date."
+      hint: "Połącz DATE_TRUNC('month', payment_date)::date AS miesiac oraz (payment_date + INTERVAL '7 days')::date AS plus_7d."
     }
   ]
 };
 
-function generateHumanBossPrompt(rawPrompt) {
-  var clean = String(rawPrompt || '')
+/* ==========================================================================
+   8. GENERATOR SPECYFIKACJI ZADAŃ W STYLU DATALEMUR + SQLBOLT
+      (📌 Polecenie + 📋 Wymagania i założenia + 3-stopniowe podpowiedzi)
+   ========================================================================== */
+function splitSqlTopLevel(str) {
+  var res = [], cur = '', depth = 0, inStr = false;
+  var s = String(str || '');
+  for (var i = 0; i < s.length; i++) {
+    var ch = s[i];
+    if (ch === "'" && s[i - 1] !== '\\') inStr = !inStr;
+    if (!inStr) {
+      if (ch === '(') depth++;
+      else if (ch === ')' && depth > 0) depth--;
+      else if (ch === ',' && depth === 0) {
+        res.push(cur.trim());
+        cur = '';
+        continue;
+      }
+    }
+    cur += ch;
+  }
+  if (cur.trim()) res.push(cur.trim());
+  return res;
+}
+
+function extractMainSelectClause(sql) {
+  var s = String(sql || '').trim().replace(/;+\s*$/, '');
+  var depth = 0, inStr = false;
+  var lastSelectPos = -1;
+  for (var i = 0; i < s.length; i++) {
+    var ch = s[i];
+    if (ch === "'" && s[i - 1] !== '\\') inStr = !inStr;
+    if (!inStr) {
+      if (ch === '(') depth++;
+      else if (ch === ')' && depth > 0) depth--;
+      else if (depth === 0) {
+        var rest = s.slice(i);
+        var m = /^SELECT\b/i.exec(rest);
+        if (m && (i === 0 || /[\s)]/.test(s[i - 1]))) {
+          lastSelectPos = i;
+          break;
+        }
+      }
+    }
+  }
+  if (lastSelectPos < 0) return { selectList: '', tail: s };
+  var afterSelect = s.slice(lastSelectPos + 6).trim();
+  afterSelect = afterSelect.replace(/^DISTINCT(?:\s+ON\s*\([^)]+\))?\s+/i, '');
+
+  var d2 = 0, inS2 = false, fromPos = -1;
+  for (var j = 0; j < afterSelect.length; j++) {
+    var c2 = afterSelect[j];
+    if (c2 === "'" && afterSelect[j - 1] !== '\\') inS2 = !inS2;
+    if (!inS2) {
+      if (c2 === '(') d2++;
+      else if (c2 === ')' && d2 > 0) d2--;
+      else if (d2 === 0) {
+        var r2 = afterSelect.slice(j);
+        if (/^FROM\b/i.test(r2) && (j === 0 || /\s/.test(afterSelect[j - 1]))) {
+          fromPos = j;
+          break;
+        }
+      }
+    }
+  }
+  if (fromPos < 0) return { selectList: afterSelect, tail: '' };
+  return {
+    selectList: afterSelect.slice(0, fromPos).trim(),
+    tail: afterSelect.slice(fromPos).trim()
+  };
+}
+
+function describeSelectExpression(expr, alias) {
+  var e = String(expr || '').trim();
+  if (/^COUNT\s*\(\s*\*\s*\)\s*FILTER/i.test(e)) return 'warunkowa liczba wierszy spełniających kryterium';
+  if (/^COUNT\s*\(\s*DISTINCT\b/i.test(e)) return 'liczba unikalnych wartości';
+  if (/^COUNT\s*\(\s*\*\s*\)/i.test(e)) return 'liczba wierszy';
+  if (/^COUNT\s*\(/i.test(e)) return 'liczba niepustych wartości';
+  if (/^COALESCE\s*\(\s*SUM\b/i.test(e)) return 'suma wartości (0 w przypadku braku dopasowań)';
+  if (/^ROUND\s*\(\s*AVG\b/i.test(e)) return 'średnia wartość zaokrąglona do 2 miejsc po przecinku';
+  if (/^ROUND\s*\([\s\S]*100\.0/i.test(e)) return 'udział procentowy zaokrąglony do 2 miejsc po przecinku';
+  if (/^ROUND\s*\(/i.test(e)) return 'wartość wyliczona zaokrąglona do 2 miejsc po przecinku';
+  if (/^SUM\s*\([\s\S]*\)\s*OVER\s*\(/i.test(e)) return 'suma okienkowa / narastająca (funkcja okna)';
+  if (/^AVG\s*\([\s\S]*\)\s*OVER\s*\(/i.test(e)) return 'średnia w oknie analitycznym';
+  if (/^ROW_NUMBER\s*\(\s*\)\s*OVER/i.test(e)) return 'kolejny numer wiersza w oknie';
+  if (/^DENSE_RANK\s*\(\s*\)\s*OVER/i.test(e)) return 'miejsce w gęstym rankingu (bez przeskoków przy remisach)';
+  if (/^RANK\s*\(\s*\)\s*OVER/i.test(e)) return 'miejsce w rankingu z przeskokami';
+  if (/^LAG\s*\(/i.test(e)) return 'wartość z poprzedniego wiersza/okresu';
+  if (/^LEAD\s*\(/i.test(e)) return 'wartość z następnego wiersza/okresu';
+  if (/^SUM\s*\(/i.test(e)) return 'suma wartości';
+  if (/^AVG\s*\(/i.test(e)) return 'średnia wartość';
+  if (/^MIN\s*\(/i.test(e)) return 'wartość minimalna';
+  if (/^MAX\s*\(/i.test(e)) return 'wartość maksymalna';
+  if (/^CASE\s+WHEN\b/i.test(e)) return 'etykieta wyliczana warunkowo';
+  if (/^COALESCE\s*\(/i.test(e)) return 'wartość z zastąpieniem braków danych (NULL)';
+  if (/^DATE_TRUNC\s*\(/i.test(e)) return 'data przycięta do początku okresu (np. miesiąca)';
+  if (/generate_series/i.test(e)) return 'wygenerowana seria wartości';
+  if (/[+\-*/]|::/.test(e)) return 'wyliczona wartość kolumny';
+  var cleanCol = e.replace(/^[a-zA-Z_]\w*\./, '');
+  if (cleanCol !== alias) return 'wartość z kolumny <code>' + cleanCol + '</code>';
+  return '';
+}
+
+function parseSqlDetails(solSql, fallbackTables) {
+  var s = String(solSql || '').trim();
+  var main = extractMainSelectClause(s);
+  var rawCols = splitSqlTopLevel(main.selectList);
+  var outCols = rawCols.map(function(colExpr) {
+    var asMatch = /\bAS\s+([a-zA-Z_]\w*)\s*$/i.exec(colExpr);
+    var alias = '';
+    var exprPart = colExpr;
+    if (asMatch) {
+      alias = asMatch[1];
+      exprPart = colExpr.slice(0, asMatch.index).trim();
+    } else {
+      var dotMatch = /(?:^|\.)([a-zA-Z_]\w*)\s*$/.exec(colExpr);
+      alias = dotMatch ? dotMatch[1] : colExpr;
+    }
+    return {
+      name: alias,
+      expr: exprPart,
+      desc: describeSelectExpression(exprPart, alias)
+    };
+  });
+
+  var tables = [];
+  if (Array.isArray(fallbackTables) && fallbackTables.length) {
+    tables = fallbackTables.slice();
+  } else {
+    var allKnown = ['film', 'category', 'film_category', 'actor', 'film_actor', 'customer', 'rental', 'payment', 'staff', 'store', 'emp_salaries', 'dept_budgets', 'saas_users', 'app_transactions', 'user_events', 'product_orders'];
+    var tblRegex = /\b(?:FROM|JOIN)\s+([a-zA-Z_]\w*)/gi, tm;
+    while ((tm = tblRegex.exec(s)) !== null) {
+      var cand = tm[1].toLowerCase();
+      if (allKnown.indexOf(cand) > -1 && tables.indexOf(cand) === -1) tables.push(cand);
+    }
+  }
+
+  var orderMatch = /\bORDER\s+BY\s+([\s\S]+?)(?:\s+LIMIT\s+\d+|\s*;?\s*$)/i.exec(main.tail || s);
+  var orderBy = orderMatch ? orderMatch[1].trim() : null;
+  var limitMatch = /\bLIMIT\s+(\d+)/i.exec(main.tail || s);
+  var limit = limitMatch ? Number(limitMatch[1]) : null;
+
+  var hasRound2 = /\bROUND\s*\([\s\S]+?,\s*2\s*\)/i.test(s);
+  var hasCoalesce = /\bCOALESCE\s*\(/i.test(s);
+  var hasDistinct = /\bDISTINCT\b/i.test(s);
+  var hasLeftJoin = /\bLEFT\s+(?:OUTER\s+)?JOIN\b/i.test(s);
+  var hasJoin = /\bJOIN\b/i.test(s);
+  var hasGroupBy = /\bGROUP\s+BY\b/i.test(s);
+  var hasHaving = /\bHAVING\b/i.test(s);
+  var hasWindow = /\bOVER\s*\(/i.test(s);
+  var hasCte = /^\s*WITH\b/i.test(s);
+  var hasSetOp = /\b(UNION\s+ALL|UNION|INTERSECT|EXCEPT)\b/i.test(s);
+
+  return {
+    tables: tables,
+    columns: outCols,
+    orderBy: orderBy,
+    limit: limit,
+    hasRound2: hasRound2,
+    hasCoalesce: hasCoalesce,
+    hasDistinct: hasDistinct,
+    hasLeftJoin: hasLeftJoin,
+    hasJoin: hasJoin,
+    hasGroupBy: hasGroupBy,
+    hasHaving: hasHaving,
+    hasWindow: hasWindow,
+    hasCte: hasCte,
+    hasSetOp: hasSetOp
+  };
+}
+
+function stripBalancedParensWithSql(text) {
+  var s = String(text || '');
+  var out = '';
+  var i = 0;
+  var sqlTest = /(?:`|\bSELECT\b|\bFROM\b|\bWHERE\b|\bGROUP\s+BY\b|\bHAVING\b|\bORDER\s+BY\b|\bLIMIT\b|\bJOIN\b|\bLEFT\s+JOIN\b|\bON\b|\bCOUNT\s*\(|\bSUM\s*\(|\bAVG\s*\(|\bMIN\s*\(|\bMAX\s*\(|\bROUND\s*\(|\bCOALESCE\s*\(|\bCASE\s+WHEN\b|\bFILTER\s*\(|\bROW_NUMBER\b|\bDENSE_RANK\b|\bRANK\b|\bLAG\b|\bLEAD\b|\bOVER\s*\(|\bPARTITION\s+BY\b|\bDATE_TRUNC\b|\bINTERVAL\b|\bgenerate_series\b|::|\*\s*100\.0|\bASC\b|\bDESC\b|\bIS\s+NULL\b|\bIS\s+NOT\s+NULL\b|\bILIKE\b|\bLIKE\b|\bBETWEEN\b|\bUNION\b|\bEXCEPT\b|\bINTERSECT\b|[a-z_]+\.[a-z_]+|[a-z_]+\s*[=<>!]+\s*['0-9])/i;
+
+  while (i < s.length) {
+    if (s[i] === '(') {
+      var depth = 1;
+      var j = i + 1;
+      while (j < s.length && depth > 0) {
+        if (s[j] === '(') depth++;
+        else if (s[j] === ')') depth--;
+        j++;
+      }
+      var group = s.slice(i, j);
+      var inner = group.slice(1, -1);
+      if (sqlTest.test(inner)) {
+        i = j;
+        continue;
+      } else {
+        out += group;
+        i = j;
+        continue;
+      }
+    }
+    out += s[i];
+    i++;
+  }
+  return out;
+}
+
+function buildCleanPolecenie(item) {
+  if (item.goal) return item.goal;
+  var raw = String(item.prompt || '');
+  var s = raw
     .replace(/^Rozgrzewka\s+R\d+\s*\([^)]*\):\s*/i, '')
-    .replace(/^Wyzwanie(?:\s*\([^)]*\))?:\s*/i, '')
-    .replace(/`([^`]+)`/g, '$1')
-    .replace(/\s*\([^)]*(?:COUNT|SUM|AVG|MIN|MAX|ROW_NUMBER|DENSE_RANK|LAG|COALESCE|FILTER|BETWEEN|ILIKE|DISTINCT|generate_series|DATE_TRUNC|INTERVAL|::)[^)]*\)/gi, '');
-  return 'Szef prosi: „' + clean.trim() + '”';
+    .replace(/^Wyzwanie(?:\s*\([^)]*\))?:\s*/i, '');
+
+  s = stripBalancedParensWithSql(s);
+
+  s = s.replace(/`([^`]+)`/g, function(_, code) {
+    var c = code.trim();
+    if (/^(?:SELECT|FROM|WHERE|GROUP|HAVING|ORDER|LIMIT|WITH|CASE|COUNT|SUM|AVG|MIN|MAX|ROUND|COALESCE|ROW_NUMBER|DENSE_RANK|RANK|LAG|LEAD|DATE_TRUNC|generate_series)\b/i.test(c)) {
+      return '';
+    }
+    if (/[()*\/+]|::|\bAS\b|\bOVER\b|\bFILTER\b|\bJOIN\b|\bASC\b|\bDESC\b/i.test(c)) {
+      var asM = /\bAS\s+([a-zA-Z_]\w*)\s*$/i.exec(c);
+      return asM ? asM[1] : '';
+    }
+    return c.replace(/^[a-zA-Z_]\w*\./, '');
+  });
+
+  s = s
+    .replace(/\s*=\s*(?=[,;.]|\s|$)/g, '')
+    .replace(/\bza pomocą\s*(?=[.,;]|$)/gi, '')
+    .replace(/\bprzez\s+(?:LEFT\s+JOIN|JOIN|UNION\s+ALL|UNION|EXCEPT|INTERSECT)\b/gi, 'z tabelą')
+    .replace(/\s+,/g, ',')
+    .replace(/,\s*,+/g, ',')
+    .replace(/\s+\./g, '.')
+    .replace(/\(\s*\)/g, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+
+  var sentences = s.split(/(?<=\.)\s+/);
+  if (sentences.length > 1) {
+    var filtered = sentences.filter(function(sent, idx) {
+      if (idx === 0) return true;
+      if (/^(?:Posortuj|Ogranicz\s+wynik\s+do|Daj\s+LIMIT)\b/i.test(sent.trim())) return false;
+      return true;
+    });
+    if (filtered.length) s = filtered.join(' ');
+  }
+
+  return s;
+}
+
+function buildDataLemurAssumptions(item, details) {
+  var bullets = [];
+
+  if (details.tables && details.tables.length) {
+    var tblTags = details.tables.map(function(t) { return '<code>' + t + '</code>'; }).join(', ');
+    if (/generate_series/i.test(item.sol) && !/\bJOIN\b/i.test(item.sol)) {
+      bullets.push('Źródło danych: funkcja generatora serii <code>generate_series(...)</code>.');
+    } else {
+      bullets.push('Tabele źródłowe: ' + tblTags + '.');
+    }
+  }
+
+  if (details.columns && details.columns.length) {
+    var colItems = details.columns.map(function(c) {
+      return '<code>' + c.name + '</code>' + (c.desc ? ' (' + c.desc + ')' : '');
+    });
+    bullets.push('Wymagane kolumny w wyniku (dokładne nazwy/aliasy): ' + colItems.join(', ') + '.');
+  }
+
+  var rules = [];
+  if (details.hasRound2) {
+    rules.push('wartości ułamkowe/procentowe zaokrąglij do <strong>2 miejsc po przecinku</strong> (<code>ROUND(..., 2)</code>)');
+  }
+  if (details.hasCoalesce) {
+    rules.push('brakujące wartości (<code>NULL</code>) zastąp wartością domyślną za pomocą <code>COALESCE(...)</code>');
+  }
+  if (details.hasLeftJoin) {
+    rules.push('zachowaj wszystkie rekordy z tabeli nadrzędnej nawet przy braku dopasowania (<code>LEFT JOIN</code>)');
+  }
+  if (details.hasDistinct) {
+    rules.push('wyeliminuj duplikaty za pomocą klauzuli <code>DISTINCT</code>');
+  }
+  if (rules.length) {
+    bullets.push('Zasady obliczeń i braków danych: ' + rules.join('; ') + '.');
+  }
+
+  if (details.orderBy || details.limit) {
+    var sortParts = [];
+    if (details.orderBy) {
+      var cleanOrder = details.orderBy.replace(/^[a-zA-Z_]\w*\./g, '').replace(/,\s*[a-zA-Z_]\w*\./g, ', ');
+      sortParts.push('posortuj wynik według <code>' + cleanOrder + '</code>');
+    }
+    if (details.limit) {
+      sortParts.push('ogranicz liczbę zwracanych wierszy do <code>LIMIT ' + details.limit + '</code>');
+    }
+    var sortStr = sortParts.join(' oraz ');
+    bullets.push('Sortowanie i limit: ' + sortStr.charAt(0).toUpperCase() + sortStr.slice(1) + '.');
+  } else if (item.order === false) {
+    bullets.push('Kolejność wierszy w wyniku nie ma znaczenia (dowolne sortowanie).');
+  }
+
+  return bullets;
+}
+
+function buildProgressiveHints(item, parentTask, details) {
+  var step1 = '';
+  if (details.hasCte && details.hasWindow) {
+    step1 = 'Rozbij problem na dwa etapy: najpierw w bloku pomocniczym CTE (WITH) wylicz wartość funkcji okna dla każdego wiersza, a następnie w głównym zapytaniu przefiltruj lub posortuj wynik.';
+  } else if (details.hasWindow) {
+    step1 = 'W tym zadaniu nie chcemy zwijać wierszy przez GROUP BY — użyj funkcji okna z klauzulą OVER (...), aby dodać kolumnę analityczną obok szczegółów każdego wiersza.';
+  } else if (details.hasLeftJoin && details.hasGroupBy) {
+    step1 = 'Zacznij od tabeli głównej po lewej stronie i dołącz drugą tabelę przez LEFT JOIN, aby nie zgubić rekordów z zerową aktywnością. Następnie pogrupuj wynik i policz agregaty.';
+  } else if (details.hasJoin && details.hasGroupBy) {
+    step1 = 'Połącz wymagane tabele po kluczu obcym (JOIN ... ON), pogrupuj wiersze według kolumn wymiarowych (GROUP BY), a następnie wylicz funkcje agregujące.';
+  } else if (details.hasGroupBy && details.hasHaving) {
+    step1 = 'Najpierw odfiltruj pojedyncze wiersze przed grupowaniem (jeśli dotyczy), podziel dane na grupy przez GROUP BY, a na końcu odfiltruj całe grupy za pomocą warunku w HAVING.';
+  } else if (details.hasGroupBy) {
+    step1 = 'Podziel tabelę na koszyki za pomocą GROUP BY i dla każdej grupy wylicz wymaganą funkcję agregującą (np. COUNT, SUM, AVG).';
+  } else if (details.hasSetOp) {
+    step1 = 'Napisz dwa niezależne zapytania SELECT zwracające dokładnie taką samą liczbę i typ kolumn, a następnie połącz je operatorem zbiorowym.';
+  } else if (details.hasJoin) {
+    step1 = 'Połącz tabele klauzulą JOIN ... ON po wspólnym identyfikatorze, wybierz wymagane kolumny z odpowiednimi prefiksami tabel i zastosuj filtr WHERE.';
+  } else {
+    step1 = 'Zidentyfikuj tabelę źródłową w FROM, przefiltruj wiersze warunkiem w WHERE, a następnie wypisz w SELECT wymagane kolumny we właściwej kolejności.';
+  }
+
+  var usedClauses = [];
+  if (details.hasCte) usedClauses.push('WITH cte AS (...)');
+  usedClauses.push('SELECT ' + details.columns.map(function(c) { return c.name; }).join(', '));
+  if (details.tables.length) usedClauses.push('FROM ' + details.tables[0]);
+  if (details.hasLeftJoin) usedClauses.push('LEFT JOIN ... ON ...');
+  else if (details.hasJoin) usedClauses.push('JOIN ... ON ...');
+  if (/\bWHERE\b/i.test(item.sol)) usedClauses.push('WHERE ...');
+  if (details.hasGroupBy) usedClauses.push('GROUP BY ...');
+  if (details.hasHaving) usedClauses.push('HAVING ...');
+  if (details.orderBy) usedClauses.push('ORDER BY ' + details.orderBy);
+  if (details.limit) usedClauses.push('LIMIT ' + details.limit);
+
+  var step2 = 'Kluczowe elementy składni w tym zadaniu: ' + usedClauses.join(' → ') + '.';
+  if (item.hint) {
+    step2 += '\n💡 Wskazówka techniczna: ' + item.hint;
+  }
+
+  var step3 = '';
+  if (item.gapHint) {
+    step3 = '🛡️ Pułapka (' + (item.gapName || 'Analiza SQL') + '): ' + item.gapHint;
+  } else if (parentTask && parentTask.title) {
+    if (details.hasLeftJoin) {
+      step3 = '🛡️ Uważaj na pułapkę LEFT JOIN: przy liczeniu dopasowań używaj COUNT(kolumna_prawej_tabeli) zamiast COUNT(*), ponieważ COUNT(*) policzy pusty wiersz z NULL-ami jako 1 zamiast 0!';
+    } else if (details.hasRound2 && /\//.test(item.sol)) {
+      step3 = '🛡️ Uważaj na dzielenie całkowite w PostgreSQL: pomnóż licznik przez 100.0 (lub 1.0) przed dzieleniem, a cały ułamek owiń w ROUND(..., 2).';
+    } else if (details.hasGroupBy && details.hasHaving) {
+      step3 = '🛡️ Pamiętaj o kolejności wykonywania SQL: w WHERE nie wolno używać funkcji agregujących (COUNT/SUM/AVG) — warunki na zagregowanych grupach umieszczaj wyłącznie w HAVING.';
+    } else if (details.hasWindow) {
+      step3 = '🛡️ Funkcje okna wykonują się dopiero w kroku SELECT — nie można filtrować po ich wyniku bezpośrednio w WHERE tego samego zapytania (użyj CTE WITH).';
+    } else {
+      step3 = '🛡️ Sprawdź dokładne nazwy kolumn i aliasów (AS) oraz pamiętaj, że pojedyncze napisy w SQL zawsze zapisujemy w pojedynczych apostrofach \'tekst\'.';
+    }
+  } else {
+    step3 = item.hint || '🛡️ Upewnij się, że nazwy kolumn w SELECT oraz kierunek sortowania (ASC/DESC) zgadzają się z sekcją Wymagania i założenia.';
+  }
+
+  return [step1, step2, step3];
+}
+
+function buildDataLemurSpec(item, parentTask) {
+  var fallbackTables = (item && item.tables) || (parentTask && parentTask.tables) || [];
+  var details = parseSqlDetails(item.sol, fallbackTables);
+  var polecenie = buildCleanPolecenie(item);
+  var assumptions = buildDataLemurAssumptions(item, details);
+  var hints = buildProgressiveHints(item, parentTask, details);
+  return {
+    polecenie: polecenie,
+    assumptions: assumptions,
+    hints: hints,
+    sqlDetails: details
+  };
 }
 
 PATH_TASKS.forEach(function(t) {
@@ -1149,23 +1517,29 @@ PATH_TASKS.forEach(function(t) {
   var origMain = t.variants.slice();
   t.mainVariants = origMain;
   var warmups = (LESSON_WARMUPS[t.id] || []).map(function(w, wIdx) {
+    var spec = buildDataLemurSpec(w, t);
     return Object.assign({}, w, {
       isWarmup: true,
       tier: 'warmup',
       stepCode: 'R' + (wIdx + 1),
       keySuffix: 'r' + (wIdx + 1),
       solutionSql: w.sol,
-      bossPrompt: w.bossPrompt || generateHumanBossPrompt(w.prompt)
+      polecenie: spec.polecenie,
+      assumptions: spec.assumptions,
+      hints: spec.hints
     });
   });
   var mains = origMain.map(function(m, mIdx) {
+    var spec = buildDataLemurSpec(m, t);
     return Object.assign({}, m, {
       isWarmup: false,
       tier: mIdx < 5 ? 'basic' : 'adv',
       stepCode: String(mIdx + 1),
       keySuffix: String(mIdx),
       solutionSql: m.sol,
-      bossPrompt: m.bossPrompt || generateHumanBossPrompt(m.prompt)
+      polecenie: spec.polecenie,
+      assumptions: spec.assumptions,
+      hints: spec.hints
     });
   });
   t.warmups = warmups;
@@ -1173,8 +1547,11 @@ PATH_TASKS.forEach(function(t) {
 });
 
 DIAG_QUESTIONS.forEach(function(q) {
+  var spec = buildDataLemurSpec(q, null);
   q.solutionSql = q.sol;
-  q.bossPrompt = q.bossPrompt || generateHumanBossPrompt(q.prompt);
+  q.polecenie = spec.polecenie;
+  q.assumptions = spec.assumptions;
+  q.hints = spec.hints;
 });
 
 window.STAGES = STAGES;
@@ -1182,6 +1559,9 @@ window.PATH_TASKS = PATH_TASKS;
 window.DIAG_QUESTIONS = DIAG_QUESTIONS;
 window.LESSON_TUTORIALS = LESSON_TUTORIALS;
 window.LESSON_WARMUPS = LESSON_WARMUPS;
+window.buildDataLemurSpec = buildDataLemurSpec;
+window.parseSqlDetails = parseSqlDetails;
+
 
 
 
