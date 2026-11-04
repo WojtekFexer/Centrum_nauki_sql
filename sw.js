@@ -1,13 +1,13 @@
-const CACHE_VERSION = 'sql-master-v8';
+const CACHE_VERSION = 'sql-master-v9';
 var CACHE_NAME = CACHE_VERSION;
 var LOCAL_ASSETS = [
   './',
   './index.html',
-  './css/style.css',
-  './js/data-dvdrental.js',
-  './js/data-tasks.js',
-  './js/data-interview.js',
-  './js/app.js',
+  './css/style.css?v=9',
+  './js/data-dvdrental.js?v=9',
+  './js/data-tasks.js?v=9',
+  './js/data-interview.js?v=9',
+  './js/app.js?v=9',
   './manifest.json',
   './icon.svg'
 ];
@@ -76,9 +76,9 @@ self.addEventListener('fetch', function(event) {
     return;
   }
 
-  // 2. Network-First z fallbackiem do Cache dla plików aplikacji (.html, .js, .css, .json, .svg)
+  // 2. Network-First z ominięciem pamięci podręcznej przeglądarki (cache: 'no-store') dla lokalnych plików (.html, .js, .css, .json, .svg)
   event.respondWith(
-    fetch(req).then(function(networkRes) {
+    fetch(event.request, { cache: 'no-store' }).then(function(networkRes) {
       if (networkRes && networkRes.status === 200) {
         var clone = networkRes.clone();
         caches.open(CACHE_VERSION).then(function(cache) {
@@ -87,7 +87,7 @@ self.addEventListener('fetch', function(event) {
       }
       return networkRes;
     }).catch(function() {
-      return caches.match(req).then(function(cached) {
+      return caches.match(req, { ignoreSearch: true }).then(function(cached) {
         return cached || caches.match('./index.html');
       });
     })

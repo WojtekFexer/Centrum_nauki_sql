@@ -2,8 +2,8 @@
    3. ŚCIEŻKA NAUKI: 12 LEKCJI × 10 WARIANTÓW = 120 DYNAMICZNYCH ZADAŃ
    ========================================================================== */
 var STAGES = [
-  { id: 1, name: 'Etap 1: Fundament SELECT i WHERE', desc: 'Filtrowanie wierszy, operatory IN/BETWEEN/ILIKE, sortowanie i LIMIT.' },
-  { id: 2, name: 'Etap 2: Agregacje, NULL i GROUP BY', desc: 'COUNT(*) vs COUNT(col), SUM, AVG, grupowanie i filtrowanie grup przez HAVING.' },
+  { id: 1, name: 'Etap 1: Fundamenty SELECT, ORDER BY i Proste WHERE', desc: 'Pobieranie kolumn, aliasy AS, obliczenia, DISTINCT, sortowanie, LIMIT oraz pojedynczy warunek WHERE.' },
+  { id: 2, name: 'Etap 2: Łączenie warunków, Agregacje i GROUP BY', desc: 'Operatory AND/OR/IN/BETWEEN/ILIKE, SUM, AVG, COUNT, grupowanie i filtrowanie grup przez HAVING.' },
   { id: 3, name: 'Etap 3: Złączenia (INNER, LEFT, Anti-Join)', desc: 'Łączenie tabel dvdrental, relacje wiele-do-wielu i szukanie brakujących powiązań.' },
   { id: 4, name: 'Etap 4: CASE WHEN, COALESCE i Rzutowanie', desc: 'Segmentacja danych, FILTER (WHERE ...), obsługa NULL-i oraz procenty (* 100.0).' },
   { id: 5, name: 'Etap 5: CTE, Funkcje Okna i Kalendarze', desc: 'Zapytania WITH, ROW_NUMBER, DENSE_RANK, LAG, sumy narastające i generate_series.' }
@@ -11,100 +11,100 @@ var STAGES = [
 
 var PATH_TASKS = [
   {
-    id: 'p1_1', stage: 1, title: '1.1 Filtrowanie WHERE, AND i sortowanie ORDER BY',
-    tables: ['film', 'payment', 'customer', 'rental'],
-    cols: ['title', 'rental_rate', 'rating', 'length', 'film', 'payment', 'customer', 'amount', 'staff_id', 'store_id'],
+    id: 'p1_1', stage: 1, title: '1.1 Fundament SELECT i FROM — pobieranie kolumn i aliasy AS',
+    tables: ['film', 'customer', 'actor', 'category', 'staff', 'store', 'payment'],
+    cols: ['SELECT', 'FROM', 'AS', '*', 'title', 'rental_rate', 'first_name', 'last_name', 'amount', 'length', 'replacement_cost'],
     theory: '<ul>' +
-      '<li><strong><code>SELECT</code> i <code>FROM</code>:</strong> <code>SELECT</code> wskazuje kolumny, które chcesz zobaczyć w wyniku, a <code>FROM</code> mówi, z której tabeli je pobrać.</li>' +
-      '<li><strong><code>WHERE</code> (sito na wiersze):</strong> przepuszcza tylko te wiersze, które spełniają Twój warunek (np. <code>rating = \'PG-13\'</code>). Teksty i daty zawsze pisz w pojedynczych apostrofach <code>\'...\'</code>, a liczby bez apostrofów.</li>' +
-      '<li><strong><code>AND</code> oraz <code>OR</code>:</strong> <code>AND</code> wymaga spełnienia obu warunków naraz, a <code>OR</code> przynajmniej jednego. <em>Pułapka:</em> gdy łączysz <code>AND</code> z <code>OR</code>, weź część z <code>OR</code> w nawiasy <code>(...)</code>, bo <code>AND</code> ma wyższy priorytet!</li>' +
-      '<li><strong><code>ORDER BY</code> (sortowanie):</strong> układa wynik rosnąco (<code>ASC</code> – domyślnie) lub malejąco (<code>DESC</code>). Możesz sortować po kilku kolumnach po przecinku.</li>' +
+      '<li><strong><code>SELECT</code> i <code>FROM</code>:</strong> każde zapytanie w SQL zaczyna się od <code>SELECT</code> (wskazujesz, które kolumny chcesz wyświetlić) oraz <code>FROM</code> (wskazujesz nazwę tabeli, z której pobierasz dane).</li>' +
+      '<li><strong>Wybór wielu kolumn i gwiazdka <code>*</code>:</strong> nazwy kolumn po <code>SELECT</code> oddzielasz przecinkami (np. <code>SELECT first_name, last_name FROM actor</code>). Symbol <code>*</code> pobiera wszystkie kolumny tabeli.</li>' +
+      '<li><strong>Aliasy kolumn (<code>AS</code>):</strong> słowo <code>AS</code> pozwala nadać kolumnie lub obliczeniu nową, czytelną nazwę w nagłówku wyniku (np. <code>length AS duration_min</code>).</li>' +
+      '<li><strong>Obliczenia arytmetyczne:</strong> w <code>SELECT</code> możesz wykonywać działania na kolumnach liczbowych (<code>+</code>, <code>-</code>, <code>*</code>, <code>/</code>), np. <code>amount * 100 AS amount_cents</code>.</li>' +
       '</ul>' +
-      '<div class="theory-code"><code>SELECT title, length FROM film WHERE (rating = \'G\' OR rating = \'PG\') AND length &gt; 100 ORDER BY rating ASC, length DESC;</code></div>',
+      '<div class="theory-code"><code>SELECT title, rental_rate AS cena_usd, rental_rate * 4 AS cena_pln\nFROM film;</code></div>',
     variants: [
-      { prompt: 'Z tabeli `film` wybierz `title` oraz `rental_rate` dla filmów o ratingu `\'PG-13\'` i cenie `rental_rate = 4.99`. Posortuj alfabetycznie po `title`.', sol: "SELECT title, rental_rate FROM film WHERE rating = 'PG-13' AND rental_rate = 4.99 ORDER BY title;", order: true, tables: ['film'], hint: 'Połącz oba warunki operatorem AND w klauzuli WHERE, a na końcu dodaj ORDER BY title.' },
-      { prompt: 'Z tabeli `film` wybierz `title` oraz `length` dla filmów o ratingu `\'R\'`, które trwają krócej niż `80` minut (`length < 80`). Posortuj rosnąco po `length`.', sol: "SELECT title, length FROM film WHERE rating = 'R' AND length < 80 ORDER BY length ASC;", order: true, tables: ['film'], hint: 'Użyj WHERE rating = \'R\' AND length < 80 oraz ORDER BY length ASC.' },
-      { prompt: 'Z tabeli `payment` wybierz `payment_id`, `customer_id` oraz `amount` dla płatności powyżej `5.00` (`amount > 5.00`) obsłużonych przez pracownika `staff_id = 2`. Posortuj malejąco po `amount`.', sol: "SELECT payment_id, customer_id, amount FROM payment WHERE amount > 5.00 AND staff_id = 2 ORDER BY amount DESC;", order: true, tables: ['payment'], hint: 'Sortowanie malejące zapiszesz jako ORDER BY amount DESC.' },
-      { prompt: 'Z tabeli `customer` wybierz `customer_id`, `first_name` oraz `email` dla aktywnych klientów (`active = 1`) przypisanych do sklepu `store_id = 2`. Posortuj po `customer_id`.', sol: "SELECT customer_id, first_name, email FROM customer WHERE active = 1 AND store_id = 2 ORDER BY customer_id;", order: true, tables: ['customer'], hint: 'W WHERE połącz warunki active = 1 AND store_id = 2.' },
-      { prompt: 'Z tabeli `rental` wybierz `rental_id`, `customer_id` oraz `rental_date` dla wypożyczeń obsłużonych przez pracownika `staff_id = 1` w czerwcu (`rental_date >= \'2026-06-01\'`). Posortuj po `rental_id`.', sol: "SELECT rental_id, customer_id, rental_date FROM rental WHERE staff_id = 1 AND rental_date >= '2026-06-01' ORDER BY rental_id;", order: true, tables: ['rental'], hint: 'Datę zapisz w apostrofach: rental_date >= \'2026-06-01\'.' },
-      { prompt: 'Z tabeli `film` wybierz `title`, `rating` oraz `length` dla filmów o ratingu `\'G\'` LUB `\'PG\'`, które jednocześnie trwają dłużej niż `100` minut (`length > 100`). Posortuj rosnąco po `rating`, a przy remisie malejąco po `length`.', sol: "SELECT title, rating, length FROM film WHERE (rating = 'G' OR rating = 'PG') AND length > 100 ORDER BY rating ASC, length DESC;", order: true, tables: ['film'], hint: 'Weź warunki OR w nawias: (rating = \'G\' OR rating = \'PG\') AND length > 100.' },
-      { prompt: 'Z tabeli `payment` wybierz `payment_id`, `customer_id` oraz `amount` dla płatności obsłużonych przez `staff_id = 1`, których kwota mieści się od `2.99` do `4.99` włącznie (`BETWEEN`). Posortuj malejąco po `amount`, a przy remisie rosnąco po `payment_id`.', sol: "SELECT payment_id, customer_id, amount FROM payment WHERE amount BETWEEN 2.99 AND 4.99 AND staff_id = 1 ORDER BY amount DESC, payment_id ASC;", order: true, tables: ['payment'], hint: 'Użyj amount BETWEEN 2.99 AND 4.99 AND staff_id = 1 oraz dwukolumnowego ORDER BY.' },
-      { prompt: 'Z tabeli `customer` wybierz `first_name`, `last_name` oraz `store_id` aktywnych klientów (`active = 1`), których nazwisko zawiera fragment `\'son\'` (`ILIKE \'%son%\'`) LUB imię zaczyna się na `\'M\'` (`ILIKE \'M%\'`). Posortuj rosnąco po `store_id`, a następnie po `last_name`.', sol: "SELECT first_name, last_name, store_id FROM customer WHERE active = 1 AND (last_name ILIKE '%son%' OR first_name ILIKE 'M%') ORDER BY store_id ASC, last_name ASC;", order: true, tables: ['customer'], hint: 'Pamiętaj o nawiasie wokół alternatywy OR z operatorami ILIKE.' },
-      { prompt: 'Z tabeli `film` wybierz `title`, `rating`, `rental_rate` i `length` dla filmów o ratingu z listy `(\'PG\', \'PG-13\', \'R\')`, cenie z listy `(2.99, 4.99)` i długości od `60` do `160` minut. Posortuj malejąco po `rental_rate`, rosnąco po `length` i ogranicz wynik do `3` wierszy (`LIMIT 3`).', sol: "SELECT title, rating, rental_rate, length FROM film WHERE rating IN ('PG', 'PG-13', 'R') AND rental_rate IN (2.99, 4.99) AND length BETWEEN 60 AND 160 ORDER BY rental_rate DESC, length ASC LIMIT 3;", order: true, tables: ['film'], hint: 'Połącz IN, IN oraz BETWEEN przez AND, a na końcu dodaj ORDER BY rental_rate DESC, length ASC LIMIT 3.' },
-      { prompt: 'Wyzwanie: z tabeli `rental` wypisz unikalne pary `customer_id`, `staff_id` (`SELECT DISTINCT`) dla wypożyczeń, które: (a) pochodzą z maja (`rental_date BETWEEN \'2026-05-01\' AND \'2026-05-31\'`) i zostały zwrócone (`return_date IS NOT NULL`), LUB (b) zostały obsłużone przez `staff_id = 2` w czerwcu (`rental_date >= \'2026-06-01\'`). Posortuj rosnąco po `customer_id`, malejąco po `staff_id` i pokaż `5` wierszy.', sol: "SELECT DISTINCT customer_id, staff_id FROM rental WHERE (rental_date BETWEEN '2026-05-01' AND '2026-05-31' AND return_date IS NOT NULL) OR (staff_id = 2 AND rental_date >= '2026-06-01') ORDER BY customer_id ASC, staff_id DESC LIMIT 5;", order: true, tables: ['rental'], hint: 'Zapisz dwa warunki złożone w nawiasach połączone OR, użyj SELECT DISTINCT i zakończ LIMIT 5.' }
+      { prompt: 'Pobierz z katalogu filmów tytuły oraz ceny wypożyczenia wszystkich filmów.', sol: "SELECT title, rental_rate FROM film;", order: false, tables: ['film'], hint: 'Wpisz po SELECT dwie kolumny oddzielone przecinkiem: title, rental_rate, a po FROM podaj tabelę film.' },
+      { prompt: 'Pobierz z bazy klientów imiona, nazwiska oraz adresy e-mail wszystkich klientów.', sol: "SELECT first_name, last_name, email FROM customer;", order: false, tables: ['customer'], hint: 'Wybierz trzy kolumny z tabeli customer: first_name, last_name, email.' },
+      { prompt: 'Pobierz z katalogu filmów tytuły oraz czas trwania, nadając kolumnie z czasem trwania nową nazwę w nagłówku za pomocą aliasu.', sol: "SELECT title, length AS duration_min FROM film;", order: false, tables: ['film'], hint: 'Użyj słowa kluczowego AS po nazwie kolumny: length AS duration_min.' },
+      { prompt: 'Pobierz z listy pracowników identyfikatory, imiona oraz nazwiska, nadając kolumnom z imieniem i nazwiskiem polskie nazwy w nagłówku.', sol: "SELECT staff_id, first_name AS imie, last_name AS nazwisko FROM staff;", order: false, tables: ['staff'], hint: 'Zastosuj aliasy AS dla dwóch kolumn w tabeli staff: first_name AS imie, last_name AS nazwisko.' },
+      { prompt: 'Pobierz z listy oddziałów sklepów identyfikator placówki, miasto oraz kraj, zmieniając nagłówek kolumny z miastem za pomocą aliasu.', sol: "SELECT store_id, city AS miasto, country FROM store;", order: false, tables: ['store'], hint: 'Wybierz store_id, city AS miasto, country z tabeli store.' },
+      { prompt: 'Pobierz z rejestru płatności identyfikator wpłaty, kwotę w dolarach oraz kwotę przeliczoną na centy (pomnożoną przez 100) pod nowym aliasem.', sol: "SELECT payment_id, amount, amount * 100 AS amount_cents FROM payment;", order: false, tables: ['payment'], hint: 'Pomnóż kolumnę amount przez 100 i nadaj jej alias: amount * 100 AS amount_cents.' },
+      { prompt: 'Pobierz z katalogu filmów tytuł, obecną cenę wypożyczenia oraz cenę powiększoną o opłatę serwisową (dodaj 2 do ceny wypożyczenia) pod nowym aliasem.', sol: "SELECT title, rental_rate, rental_rate + 2 AS new_rate FROM film;", order: false, tables: ['film'], hint: 'Dodaj 2 do kolumny rental_rate: rental_rate + 2 AS new_rate.' },
+      { prompt: 'Pobierz z katalogu filmów tytuł, czas trwania w minutach oraz czas trwania przeliczony na godziny (podzielony przez 60.0) pod nowym aliasem.', sol: "SELECT title, length, length / 60.0 AS duration_hours FROM film;", order: false, tables: ['film'], hint: 'Podziel kolumnę length przez 60.0 i nazwij wynik AS duration_hours.' },
+      { prompt: 'Pobierz z katalogu filmów tytuł, koszt odtworzenia płyty, cenę wypożyczenia oraz różnicę między kosztem odtworzenia a ceną wypożyczenia pod nowym aliasem.', sol: "SELECT title, replacement_cost, rental_rate, replacement_cost - rental_rate AS cost_diff FROM film;", order: false, tables: ['film'], hint: 'Odejmij jedną kolumnę od drugiej: replacement_cost - rental_rate AS cost_diff.' },
+      { prompt: 'Pobierz z rejestru płatności identyfikator klienta, datę wpłaty, kwotę oryginalną oraz kwotę przeliczoną na złotówki (pomnożoną przez 4) pod nowym aliasem.', sol: "SELECT customer_id, payment_date, amount, amount * 4 AS amount_pln FROM payment;", order: false, tables: ['payment'], hint: 'Wybierz customer_id, payment_date, amount oraz wylicz amount * 4 AS amount_pln z tabeli payment.' }
     ]
   },
   {
-    id: 'p1_2', stage: 1, title: '1.2 Zakresy IN, BETWEEN, ILIKE oraz LIMIT',
-    tables: ['film', 'customer', 'actor', 'payment'],
-    cols: ['title', 'rating', 'length', 'replacement_cost', 'film', 'customer', 'actor', 'first_name', 'last_name', 'BETWEEN', 'IN', 'ILIKE', 'LIMIT'],
+    id: 'p1_2', stage: 1, title: '1.2 Porządkowanie wyniku: DISTINCT, ORDER BY oraz LIMIT',
+    tables: ['film', 'customer', 'payment', 'actor', 'store'],
+    cols: ['SELECT', 'DISTINCT', 'FROM', 'ORDER BY', 'ASC', 'DESC', 'LIMIT', 'AS'],
     theory: '<ul>' +
-      '<li><strong><code>IN (a, b, c)</code>:</strong> zwięzły zapis sprawdzający, czy wartość należy do podanej listy (zastępuje długie łańcuchy <code>OR</code>).</li>' +
-      '<li><strong><code>BETWEEN x AND y</code>:</strong> filtruje przedział domknięty (obejmuje zarówno wartość początkową <code>x</code>, jak i końcową <code>y</code>). Działa na liczbach i datach.</li>' +
-      '<li><strong><code>ILIKE</code> i <code>LIKE</code>:</strong> wyszukują wzorce tekstowe (<code>%</code> zastępuje dowolny ciąg znaków, <code>_</code> jeden znak). <code>ILIKE</code> w PostgreSQL ignoruje wielkość liter!</li>' +
-      '<li><strong><code>LIMIT n</code>:</strong> obcina wynik do pierwszych <code>n</code> wierszy. <em>Pułapka:</em> zawsze używaj <code>LIMIT</code> w parze z <code>ORDER BY</code>, inaczej dostaniesz przypadkowe wiersze.</li>' +
+      '<li><strong><code>SELECT DISTINCT</code>:</strong> usuwa duplikaty i zwraca tylko unikalne (niepowtarzające się) wartości z wybranych kolumn.</li>' +
+      '<li><strong><code>ORDER BY</code> (sortowanie):</strong> układa wiersze wyniku rosnąco (<code>ASC</code> – od A do Z lub od najmniejszej liczby) albo malejąco (<code>DESC</code> – od największej liczby).</li>' +
+      '<li><strong><code>LIMIT n</code>:</strong> odcina wynik do pierwszych <code>n</code> wierszy (np. <code>LIMIT 5</code> pokaże 5 pierwszych pozycji).</li>' +
+      '<li><strong>Kolejność klauzul:</strong> najpierw piszemy <code>SELECT ... FROM ...</code>, potem <code>ORDER BY ...</code>, a na samym końcu <code>LIMIT ...</code>.</li>' +
       '</ul>' +
-      '<div class="theory-code"><code>SELECT title, length FROM film WHERE rating IN (\'G\', \'PG\') AND length BETWEEN 100 AND 140 AND title ILIKE \'a%\' ORDER BY length DESC LIMIT 4;</code></div>',
+      '<div class="theory-code"><code>SELECT title, length AS duration_min\nFROM film\nORDER BY length DESC, title ASC\nLIMIT 5;</code></div>',
     variants: [
-      { prompt: 'Z tabeli `film` wypisz `title`, `rating` oraz `length` dla filmów o ratingu `\'G\'` lub `\'PG\'`, których długość (`length`) mieści się w przedziale od `100` do `140` minut. Posortuj malejąco po `length` i ogranicz wynik do `4` wierszy.', sol: "SELECT title, rating, length FROM film WHERE rating IN ('G', 'PG') AND length BETWEEN 100 AND 140 ORDER BY length DESC LIMIT 4;", order: true, tables: ['film'], hint: 'Połącz rating IN (\'G\', \'PG\') oraz length BETWEEN 100 AND 140, a na końcu dodaj ORDER BY length DESC LIMIT 4.' },
-      { prompt: 'Z tabeli `film` wypisz `title` i `replacement_cost` dla filmów o ratingu `\'NC-17\'`, których koszt odtworzenia (`replacement_cost`) jest między `18.00` a `25.00`. Posortuj rosnąco po `title`.', sol: "SELECT title, replacement_cost FROM film WHERE rating = 'NC-17' AND replacement_cost BETWEEN 18.00 AND 25.00 ORDER BY title ASC;", order: true, tables: ['film'], hint: 'Użyj operatora BETWEEN 18.00 AND 25.00 dla kolumny replacement_cost.' },
-      { prompt: 'Z tabeli `actor` wybierz `actor_id`, `first_name` i `last_name` dla aktorów, których imię zaczyna się na literę `\'J\'` lub `\'P\'` (użyj `ILIKE` lub `LIKE`). Posortuj po `actor_id`.', sol: "SELECT actor_id, first_name, last_name FROM actor WHERE first_name ILIKE 'J%' OR first_name ILIKE 'P%' ORDER BY actor_id;", order: true, tables: ['actor'], hint: 'Wzorzec \'J%\' oznacza tekst zaczynający się od litery J.' },
-      { prompt: 'Z tabeli `payment` wybierz 3 najwyższe płatności (`payment_id`, `amount`) dokonane w maju 2026 (`payment_date BETWEEN \'2026-05-01\' AND \'2026-05-31\'`). W razie remisu kwoty sortuj rosnąco po `payment_id`.', sol: "SELECT payment_id, amount FROM payment WHERE payment_date BETWEEN '2026-05-01' AND '2026-05-31' ORDER BY amount DESC, payment_id ASC LIMIT 3;", order: true, tables: ['payment'], hint: 'Po filtrze BETWEEN posortuj ORDER BY amount DESC, payment_id ASC i dodaj LIMIT 3.' },
-      { prompt: 'Z tabeli `customer` wybierz `customer_id`, `first_name`, `last_name` dla klientów o identyfikatorach z listy `(1, 3, 5, 7, 9)`. Posortuj alfabetycznie po `first_name`.', sol: "SELECT customer_id, first_name, last_name FROM customer WHERE customer_id IN (1, 3, 5, 7, 9) ORDER BY first_name ASC;", order: true, tables: ['customer'], hint: 'Skorzystaj z customer_id IN (1, 3, 5, 7, 9).' },
-      { prompt: 'Z tabeli `film` wypisz `title`, `rating` i `replacement_cost` dla filmów o ratingu `\'PG\'` lub `\'PG-13\'`, których tytuł zaczyna się od `\'AL\'` (`ILIKE \'AL%\'`), a koszt odtworzenia mieści się między `20` a `28`. Posortuj malejąco po `replacement_cost`, a przy remisie alfabetycznie po `title`.', sol: "SELECT title, rating, replacement_cost FROM film WHERE rating IN ('PG', 'PG-13') AND title ILIKE 'AL%' AND replacement_cost BETWEEN 20 AND 28 ORDER BY replacement_cost DESC, title ASC;", order: true, tables: ['film'], hint: 'Połącz w WHERE trzy warunki przez AND: IN, ILIKE oraz BETWEEN.' },
-      { prompt: 'Z tabeli `customer` wybierz `customer_id`, `first_name` i `email` aktywnych klientów (`active = 1`) o `customer_id` od `3` do `9`, których imię NIE zaczyna się na literę `\'M\'` (`NOT ILIKE \'M%\'`). Posortuj alfabetycznie po `first_name` i pokaż `3` pierwsze wiersze.', sol: "SELECT customer_id, first_name, email FROM customer WHERE active = 1 AND customer_id BETWEEN 3 AND 9 AND first_name NOT ILIKE 'M%' ORDER BY first_name ASC LIMIT 3;", order: true, tables: ['customer'], hint: 'Zaprzeczenie wzorca tekstowego zapiszesz jako first_name NOT ILIKE \'M%\'.' },
-      { prompt: 'Z tabeli `payment` wybierz `payment_id`, `customer_id`, `amount` i `payment_date` dla klientów z listy `(1, 3, 4)`, płatności z okresu od `\'2026-05-01\'` do `\'2026-06-05\'` o kwocie co najmniej `2.99`. Posortuj rosnąco po `customer_id`, a w ramach klienta malejąco po `amount`.', sol: "SELECT payment_id, customer_id, amount, payment_date FROM payment WHERE customer_id IN (1, 3, 4) AND payment_date BETWEEN '2026-05-01' AND '2026-06-05' AND amount >= 2.99 ORDER BY customer_id ASC, amount DESC;", order: true, tables: ['payment'], hint: 'Zastosuj IN dla klientów, BETWEEN dla daty oraz >= dla kwoty.' },
-      { prompt: 'Z tabeli `actor` wybierz `actor_id`, `first_name` i `last_name` aktorów o `actor_id` od `2` do `8`, których nazwisko zawiera `\'son\'` LUB kończy się na `\'is\'` (`ILIKE`). Posortuj malejąco po `last_name` i pokaż `2` pierwsze wiersze.', sol: "SELECT actor_id, first_name, last_name FROM actor WHERE actor_id BETWEEN 2 AND 8 AND (last_name ILIKE '%son%' OR last_name ILIKE '%is') ORDER BY last_name DESC LIMIT 2;", order: true, tables: ['actor'], hint: 'Wzorzec końcówki słowa to \'%is\'. Pamiętaj o nawiasach wokół OR.' },
-      { prompt: 'Wyzwanie: z tabeli `film` wypisz unikalne kombinacje `rating` i `rental_rate` (`SELECT DISTINCT`) dla filmów trwających od `50` do `130` minut, o ratingu z listy `(\'G\', \'PG\', \'NC-17\')`, których tytuł NIE zaczyna się od `\'AL\'`. Posortuj rosnąco po `rating`, malejąco po `rental_rate` i ogranicz wynik do `3` wierszy.', sol: "SELECT DISTINCT rating, rental_rate FROM film WHERE length BETWEEN 50 AND 130 AND rating IN ('G', 'PG', 'NC-17') AND title NOT ILIKE 'AL%' ORDER BY rating ASC, rental_rate DESC LIMIT 3;", order: true, tables: ['film'], hint: 'Połącz SELECT DISTINCT z warunkami BETWEEN, IN i NOT ILIKE, a na końcu dodaj ORDER BY i LIMIT 3.' }
+      { prompt: 'Pobierz z katalogu filmów listę unikalnych (niepowtarzających się) cen wypożyczenia.', sol: "SELECT DISTINCT rental_rate FROM film;", order: false, tables: ['film'], hint: 'Użyj słowa kluczowego DISTINCT bezpośrednio po SELECT: SELECT DISTINCT rental_rate FROM film;' },
+      { prompt: 'Pobierz z bazy klientów unikalną listę identyfikatorów sklepów, do których przypisani są klienci.', sol: "SELECT DISTINCT store_id FROM customer;", order: false, tables: ['customer'], hint: 'Wpisz SELECT DISTINCT store_id FROM customer;' },
+      { prompt: 'Pobierz z katalogu filmów tytuły oraz czas trwania wszystkich filmów, sortując listę od najdłuższego do najkrótszego filmu (a przy równym czasie alfabetycznie po tytule).', sol: "SELECT title, length FROM film ORDER BY length DESC, title ASC;", order: true, tables: ['film'], hint: 'Użyj ORDER BY length DESC, title ASC na końcu zapytania.' },
+      { prompt: 'Pobierz z bazy klientów imiona, nazwiska oraz daty rejestracji, sortując listę od najwcześniej zarejestrowanego klienta (a przy tej samej dacie rosnąco po identyfikatorze klienta).', sol: "SELECT first_name, last_name, create_date FROM customer ORDER BY create_date ASC, customer_id ASC;", order: true, tables: ['customer'], hint: 'Posortuj rosnąco: ORDER BY create_date ASC, customer_id ASC.' },
+      { prompt: 'Pobierz z listy aktorów pierwsze 4 wiersze zawierające identyfikator aktora, imię oraz nazwisko, uporządkowane rosnąco według identyfikatora aktora.', sol: "SELECT actor_id, first_name, last_name FROM actor ORDER BY actor_id ASC LIMIT 4;", order: true, tables: ['actor'], hint: 'Dodaj ORDER BY actor_id ASC oraz na samym końcu LIMIT 4.' },
+      { prompt: 'Pobierz z katalogu filmów 5 najdłuższych produkcji (tytuł oraz czas trwania pod nowym aliasem), sortując wynik od najdłuższego czasu trwania malejąco i pomocniczo po tytule rosnąco.', sol: "SELECT title, length AS duration_min FROM film ORDER BY length DESC, title ASC LIMIT 5;", order: true, tables: ['film'], hint: 'Połącz alias length AS duration_min z sortowaniem ORDER BY length DESC, title ASC oraz LIMIT 5.' },
+      { prompt: 'Pobierz z katalogu filmów 5 pozycji o najwyższym koszcie odtworzenia płyty (tytuł oraz koszt odtworzenia pod nowym aliasem), sortując wynik od najdroższych malejąco i pomocniczo po tytule rosnąco.', sol: "SELECT title, replacement_cost AS max_cost FROM film ORDER BY replacement_cost DESC, title ASC LIMIT 5;", order: true, tables: ['film'], hint: 'Nadaj alias replacement_cost AS max_cost, posortuj ORDER BY replacement_cost DESC, title ASC i ogranicz do LIMIT 5.' },
+      { prompt: 'Pobierz z rejestru płatności 5 najwyższych pojedynczych wpłat (identyfikator płatności, kwotę oraz datę wpłaty), sortując wynik od najwyższej kwoty malejąco i pomocniczo po identyfikatorze płatności rosnąco.', sol: "SELECT payment_id, amount, payment_date FROM payment ORDER BY amount DESC, payment_id ASC LIMIT 5;", order: true, tables: ['payment'], hint: 'Wybierz 3 kolumny z payment, posortuj ORDER BY amount DESC, payment_id ASC i dodaj LIMIT 5.' },
+      { prompt: 'Pobierz z katalogu filmów unikalne kombinacje kategorii wiekowej oraz ceny wypożyczenia, sortując wynik alfabetycznie po kategorii wiekowej oraz rosnąco po cenie.', sol: "SELECT DISTINCT rating, rental_rate FROM film ORDER BY rating ASC, rental_rate ASC;", order: true, tables: ['film'], hint: 'Użyj SELECT DISTINCT rating, rental_rate FROM film i posortuj po obu kolumnach rosnąco (ASC).' },
+      { prompt: 'Pobierz z katalogu filmów 3 najtańsze w odtworzeniu filmy wraz z wyliczoną kaucją w centach (koszt odtworzenia pomnożony przez 100 pod nowym aliasem), sortując wynik rosnąco po koszcie odtworzenia i alfabetycznie po tytule.', sol: "SELECT title, replacement_cost, replacement_cost * 100 AS cost_cents FROM film ORDER BY replacement_cost ASC, title ASC LIMIT 3;", order: true, tables: ['film'], hint: 'Połącz wyliczenie replacement_cost * 100 AS cost_cents z ORDER BY replacement_cost ASC, title ASC oraz LIMIT 3.' }
     ]
   },
   {
-    id: 'p1_3', stage: 1, title: '1.3 Unikalne wartości (DISTINCT) i wyliczenia arytmetyczne',
-    tables: ['film', 'rental', 'payment'],
-    cols: ['DISTINCT', 'film', 'rental', 'payment', 'rating', 'rental_rate', 'replacement_cost', 'customer_id'],
+    id: 'p1_3', stage: 1, title: '1.3 Proste filtrowanie wierszy: klauzula WHERE (jeden warunek)',
+    tables: ['film', 'customer', 'payment', 'store'],
+    cols: ['SELECT', 'FROM', 'WHERE', '=', '>', '<', '>=', '<=', '<>', 'ORDER BY', 'LIMIT'],
     theory: '<ul>' +
-      '<li><strong><code>SELECT DISTINCT</code>:</strong> usuwa duplikaty z tabeli wynikowej. Gdy podasz kilka kolumn (np. <code>SELECT DISTINCT rating, rental_rate</code>), SQL zostawi unikalne kombinacje całej pary.</li>' +
-      '<li><strong>Wyliczenia i aliasy (<code>AS</code>):</strong> w <code>SELECT</code> możesz wykonywać działania (<code>+</code>, <code>-</code>, <code>*</code>, <code>/</code>, <code>%</code>) i nadawać im nazwy przez <code>AS nazwa</code>.</li>' +
-      '<li><strong>Pułapka dzielenia całkowitego:</strong> w SQL dzielenie dwóch liczb całkowitych obcina część ułamkową (<code>90 / 60</code> da <code>1</code>). Dziel przez liczbę z kropką (<code>length / 60.0</code>), aby uzyskać dokładny ułamek!</li>' +
-      '<li><strong>Kolejność działania SQL:</strong> aliasu zdefiniowanego w <code>SELECT</code> możesz użyć w <code>ORDER BY</code>, ale <em>nie</em> w <code>WHERE</code> (bo <code>WHERE</code> wykonuje się przed <code>SELECT</code>).</li>' +
+      '<li><strong><code>WHERE</code> (sito na pojedyncze wiersze):</strong> sprawdza każdy wiersz tabeli i zostawia w wyniku tylko te rekordy, które spełniają warunek.</li>' +
+      '<li><strong>Operatory porównania:</strong> <code>=</code> (równy), <code>&gt;</code> (większy), <code>&lt;</code> (mniejszy), <code>&gt;=</code> (większy lub równy), <code>&lt;=</code> (mniejszy lub równy) oraz <code>&lt;&gt;</code> (różny od).</li>' +
+      '<li><strong>Liczby vs Teksty:</strong> liczby w warunku piszemy normalnie (np. <code>WHERE length &gt; 120</code>), a teksty oraz daty zawsze ujmujemy w pojedyncze apostrofy (np. <code>WHERE rating = \'PG\'</code>).</li>' +
+      '<li><strong>Kolejność w zapytaniu:</strong> klauzulę <code>WHERE</code> umieszczamy zawsze bezpośrednio po <code>FROM</code>, a przed <code>ORDER BY</code> i <code>LIMIT</code>.</li>' +
       '</ul>' +
-      '<div class="theory-code"><code>SELECT DISTINCT rating, rental_rate FROM film ORDER BY rating;\nSELECT title, length / 60.0 AS hours FROM film ORDER BY hours DESC LIMIT 5;</code></div>',
+      '<div class="theory-code"><code>SELECT title, rating, length\nFROM film\nWHERE rating = \'PG-13\'\nORDER BY length DESC\nLIMIT 5;</code></div>',
     variants: [
-      { prompt: 'Z tabeli `film` wypisz unikalne kombinacje `rating` oraz `rental_rate` (użyj `DISTINCT`). Posortuj rosnąco po `rating` i `rental_rate`.', sol: "SELECT DISTINCT rating, rental_rate FROM film ORDER BY rating ASC, rental_rate ASC;", order: true, tables: ['film'], hint: 'Użyj SELECT DISTINCT rating, rental_rate FROM film i posortuj po obu kolumnach.' },
-      { prompt: 'Z tabeli `film` wybierz `title`, `rental_rate`, `replacement_cost` oraz stosunek kosztu odtworzenia do ceny wypożyczenia (`replacement_cost / rental_rate`) dla filmów o ratingu `\'G\'`. Posortuj po `title`.', sol: "SELECT title, rental_rate, replacement_cost, replacement_cost / rental_rate AS ratio FROM film WHERE rating = 'G' ORDER BY title;", order: true, tables: ['film'], hint: 'Obie kolumny są typu NUMERIC, więc dzielenie replacement_cost / rental_rate zwróci dokładny ułamek.' },
-      { prompt: 'Z tabeli `rental` wypisz unikalne identyfikatory klientów (`DISTINCT customer_id`), którzy wypożyczyli film w czerwcu 2026 (`rental_date >= \'2026-06-01\'`). Posortuj rosnąco.', sol: "SELECT DISTINCT customer_id FROM rental WHERE rental_date >= '2026-06-01' ORDER BY customer_id ASC;", order: true, tables: ['rental'], hint: 'SELECT DISTINCT customer_id usunie powtórzenia klientów z wieloma wypożyczeniami.' },
-      { prompt: 'Z tabeli `film` wybierz `title` oraz czas trwania przeliczony na godziny zmiennoprzecinkowe (`length / 60.0`) dla 5 najdłuższych filmów.', sol: "SELECT title, length / 60.0 AS hours FROM film ORDER BY length DESC LIMIT 5;", order: true, tables: ['film'], hint: 'Pamiętaj o kropce w 60.0, aby uniknąć dzielenia całkowitego.' },
-      { prompt: 'Z tabeli `payment` wypisz unikalne kwoty płatności (`DISTINCT amount`) występujące w bazie, posortowane malejąco.', sol: "SELECT DISTINCT amount FROM payment ORDER BY amount DESC;", order: true, tables: ['payment'], hint: 'Użyj SELECT DISTINCT amount FROM payment ORDER BY amount DESC.' },
-      { prompt: 'Z tabeli `film` wypisz unikalne wartości `rating` (`DISTINCT`) dla filmów kosztujących `0.99` lub `4.99` (`IN`), których długość mieści się między `60` a `120` minut. Posortuj malejąco po `rating`.', sol: "SELECT DISTINCT rating FROM film WHERE rental_rate IN (0.99, 4.99) AND length BETWEEN 60 AND 120 ORDER BY rating DESC;", order: true, tables: ['film'], hint: 'Połącz SELECT DISTINCT rating z warunkami IN oraz BETWEEN w WHERE.' },
-      { prompt: 'Z tabeli `film` wybierz `title`, `rental_rate` oraz cenę brutto z 23% VAT (`rental_rate * 1.23 AS price_gross`) dla filmów o ratingu `\'PG-13\'` lub `\'R\'` i cenie wyższej niż `1.00`. Posortuj malejąco po `price_gross`, a przy remisie alfabetycznie po `title`.', sol: "SELECT title, rental_rate, rental_rate * 1.23 AS price_gross FROM film WHERE rating IN ('PG-13', 'R') AND rental_rate > 1.00 ORDER BY price_gross DESC, title ASC;", order: true, tables: ['film'], hint: 'W ORDER BY możesz użyć aliasu price_gross, a w WHERE filtruj po rental_rate > 1.00.' },
-      { prompt: 'Z tabeli `payment` wypisz unikalne pary `customer_id`, `staff_id` (`SELECT DISTINCT`) dla płatności o kwocie od `2.99` do `5.99`. Posortuj rosnąco po `customer_id`, potem po `staff_id` i pokaż `5` pierwszych wierszy.', sol: "SELECT DISTINCT customer_id, staff_id FROM payment WHERE amount BETWEEN 2.99 AND 5.99 ORDER BY customer_id ASC, staff_id ASC LIMIT 5;", order: true, tables: ['payment'], hint: 'Użyj SELECT DISTINCT customer_id, staff_id z filtrem BETWEEN i LIMIT 5.' },
-      { prompt: 'Z tabeli `film` wybierz `title`, `length`, liczbę pełnych godzin (`length / 60 AS full_hours` – dzielenie całkowite) oraz pozostałe minuty (`length % 60 AS rest_min`) dla filmów trwających co najmniej `120` minut, z wyjątkiem ratingu `\'NC-17\'` (`<>`). Posortuj malejąco po `length`.', sol: "SELECT title, length, length / 60 AS full_hours, length % 60 AS rest_min FROM film WHERE length >= 120 AND rating <> 'NC-17' ORDER BY length DESC;", order: true, tables: ['film'], hint: 'Dzielenie przez 60 (bez kropki) daje pełne godziny, a operator % zwraca resztę z dzielenia.' },
-      { prompt: 'Wyzwanie: z tabeli `rental` wypisz unikalne pary `film_id` oraz liczby dni wypożyczenia (`return_date - rental_date AS days`) dla wypożyczeń trwających co najmniej `4` dni. Posortuj malejąco po `days`, rosnąco po `film_id` i pokaż `5` pierwszych wierszy.', sol: "SELECT DISTINCT film_id, return_date - rental_date AS days FROM rental WHERE return_date - rental_date >= 4 ORDER BY days DESC, film_id ASC LIMIT 5;", order: true, tables: ['rental'], hint: 'W WHERE powtórz wyrażenie return_date - rental_date >= 4 (wiersze z NULL w return_date zostaną automatycznie pominięte).' }
+      { prompt: 'Pobierz z katalogu filmów tytuły oraz ceny wypożyczenia dla filmów z najwyższej półki cenowej (równych 4.99).', sol: "SELECT title, rental_rate FROM film WHERE rental_rate = 4.99;", order: false, tables: ['film'], hint: 'Użyj pojedynczego warunku liczbowego: WHERE rental_rate = 4.99.' },
+      { prompt: 'Pobierz z bazy klientów imiona, nazwiska oraz identyfikatory sklepów dla osób przypisanych do pierwszego oddziału sklepu.', sol: "SELECT first_name, last_name, store_id FROM customer WHERE store_id = 1;", order: false, tables: ['customer'], hint: 'Przefiltruj tabelę customer pojedynczym warunkiem: WHERE store_id = 1.' },
+      { prompt: 'Pobierz z katalogu filmów tytuły oraz koszty odtworzenia płyty dla pozycji, których koszt odtworzenia przekracza 20 dolarów.', sol: "SELECT title, replacement_cost FROM film WHERE replacement_cost > 20;", order: false, tables: ['film'], hint: 'Zastosuj operator większości: WHERE replacement_cost > 20.' },
+      { prompt: 'Pobierz z katalogu filmów tytuły oraz czas trwania dla krótkich produkcji trwających mniej niż 60 minut.', sol: "SELECT title, length FROM film WHERE length < 60;", order: false, tables: ['film'], hint: 'Zastosuj operator mniejszości: WHERE length < 60.' },
+      { prompt: 'Pobierz z katalogu filmów tytuły oraz kategorie wiekowe dla wszystkich filmów, których kategoria wiekowa jest inna niż dla dorosłych (różna od R).', sol: "SELECT title, rating FROM film WHERE rating <> 'R';", order: false, tables: ['film'], hint: 'Użyj operatora różności <> oraz pojedynczych apostrofów wokół tekstu: WHERE rating <> \'R\'.' },
+      { prompt: 'Pobierz z katalogu filmów tytuły oraz czas trwania dla filmów familijnych (kategoria G), sortując wynik od najdłuższego filmu malejąco (i pomocniczo po tytule rosnąco).', sol: "SELECT title, length FROM film WHERE rating = 'G' ORDER BY length DESC, title ASC;", order: true, tables: ['film'], hint: 'Połącz pojedynczy warunek WHERE rating = \'G\' z sortowaniem ORDER BY length DESC, title ASC.' },
+      { prompt: 'Pobierz z rejestru płatności 5 najwyższych wpłat przekraczających 5 dolarów (identyfikator płatności, kwotę oraz datę), sortując wynik od najwyższej kwoty malejąco (i po identyfikatorze płatności rosnąco).', sol: "SELECT payment_id, amount, payment_date FROM payment WHERE amount > 5 ORDER BY amount DESC, payment_id ASC LIMIT 5;", order: true, tables: ['payment'], hint: 'Zastosuj WHERE amount > 5, a następnie ORDER BY amount DESC, payment_id ASC LIMIT 5.' },
+      { prompt: 'Pobierz z katalogu filmów 3 najkrótsze filmy z kategorii dla młodzieży (PG-13), zwracając tytuł oraz czas trwania pod nowym aliasem, posortowane rosnąco po czasie trwania i alfabetycznie po tytule.', sol: "SELECT title, length AS duration_min FROM film WHERE rating = 'PG-13' ORDER BY length ASC, title ASC LIMIT 3;", order: true, tables: ['film'], hint: 'Użyj aliasu length AS duration_min, pojedynczego warunku WHERE rating = \'PG-13\', sortowania ORDER BY length ASC, title ASC oraz LIMIT 3.' },
+      { prompt: 'Pobierz z bazy klientów imiona, nazwiska oraz daty rejestracji dla aktywnych klientów, sortując listę od najpóźniej zarejestrowanej osoby malejąco (i po identyfikatorze klienta rosnąco).', sol: "SELECT first_name, last_name, create_date FROM customer WHERE active = 1 ORDER BY create_date DESC, customer_id ASC;", order: true, tables: ['customer'], hint: 'Przefiltruj aktywnych klientów przez WHERE active = 1 i posortuj ORDER BY create_date DESC, customer_id ASC.' },
+      { prompt: 'Pobierz z katalogu filmów unikalne ceny wypożyczenia dla filmów trwających co najmniej 120 minut, sortując wynik od najniższej ceny rosnąco.', sol: "SELECT DISTINCT rental_rate FROM film WHERE length >= 120 ORDER BY rental_rate ASC;", order: true, tables: ['film'], hint: 'Połącz SELECT DISTINCT rental_rate, pojedynczy warunek WHERE length >= 120 oraz ORDER BY rental_rate ASC.' }
     ]
   },
   {
-    id: 'p2_1', stage: 2, title: '2.1 COUNT(*) vs COUNT(kolumna) vs COUNT(DISTINCT) – Pułapka NULL',
-    tables: ['rental', 'film', 'customer', 'payment'],
-    cols: ['COUNT(*)', 'COUNT(return_date)', 'COUNT(DISTINCT', 'rental', 'return_date', 'customer_id', 'film'],
+    id: 'p2_1', stage: 2, title: '2.1 Łączenie warunków: AND, OR, IN, BETWEEN oraz ILIKE',
+    tables: ['film', 'customer', 'payment', 'actor'],
+    cols: ['WHERE', 'AND', 'OR', 'IN', 'NOT IN', 'BETWEEN', 'ILIKE', 'ORDER BY', 'LIMIT'],
     gapId: 'g3',
     theory: '<ul>' +
-      '<li><strong><code>COUNT(*)</code> vs <code>COUNT(kolumna)</code>:</strong> <code>COUNT(*)</code> liczy wszystkie wiersze w grupie (nawet te z pustymi polami), natomiast <code>COUNT(kolumna)</code> liczy wyłącznie wiersze, w których podana kolumna <em>nie jest</em> <code>NULL</code>.</li>' +
-      '<li><strong><code>COUNT(DISTINCT kolumna)</code>:</strong> zlicza, ile <em>różnych</em> (unikalnych) niepustych wartości występuje w danej kolumnie (np. ilu unikalnych klientów dokonało wypożyczenia).</li>' +
-      '<li><strong>Pułapka <code>NULL</code>:</strong> brak wartości (<code>NULL</code>) w SQL sprawdzasz wyłącznie przez <code>IS NULL</code> oraz <code>IS NOT NULL</code>. Zapis <code>= NULL</code> nigdy nie zwróci wierszy!</li>' +
-      '<li><strong>Różnica jako licznik braków:</strong> wyrażenie <code>COUNT(*) - COUNT(return_date)</code> elegancko wylicza liczbę niezwróconych filmów (wierszy z <code>return_date IS NULL</code>).</li>' +
+      '<li><strong><code>AND</code> oraz <code>OR</code>:</strong> <code>AND</code> wymaga spełnienia obu warunków naraz, a <code>OR</code> przynajmniej jednego. <em>Pułapka:</em> spójnik <code>AND</code> ma wyższy priorytet niż <code>OR</code>, dlatego alternatywę <code>OR</code> przy łączeniu z <code>AND</code> bierzemy w nawiasy <code>(...)</code>!</li>' +
+      '<li><strong><code>IN (a, b, c)</code>:</strong> sprawdza, czy wartość kolumny należy do podanej listy wartości (zastępuje wielokrotne pisanie <code>OR</code>).</li>' +
+      '<li><strong><code>BETWEEN x AND y</code>:</strong> filtruje przedział domknięty (obejmuje obie wartości skrajne <code>x</code> oraz <code>y</code>).</li>' +
+      '<li><strong><code>ILIKE</code>:</strong> wyszukuje wzorce tekstowe w PostgreSQL bez zwracania uwagi na wielkość liter (<code>%</code> zastępuje dowolny ciąg znaków).</li>' +
       '</ul>' +
-      '<div class="theory-code"><code>SELECT staff_id, COUNT(*) AS all_cnt, COUNT(return_date) AS returned_cnt, COUNT(DISTINCT customer_id) AS uniq_cust FROM rental GROUP BY staff_id;</code></div>',
+      '<div class="theory-code"><code>SELECT title, rating, length\nFROM film\nWHERE rating IN (\'PG\', \'PG-13\')\n  AND length BETWEEN 90 AND 120\nORDER BY length DESC;</code></div>',
     variants: [
-      { prompt: 'W tabeli `rental` część filmów nie ma daty zwrotu (`return_date` jest `NULL`). Zwróć w jednym wierszu 3 kolumny: liczbę wszystkich wypożyczeń (`COUNT(*)`), liczbę zwróconych (`COUNT(return_date)`) oraz niezwróconych (`COUNT(*) - COUNT(return_date)`).', sol: "SELECT COUNT(*) AS all_rentals, COUNT(return_date) AS returned_rentals, COUNT(*) - COUNT(return_date) AS unreturned FROM rental;", order: false, tables: ['rental'], hint: 'COUNT(return_date) pomija wartości NULL, więc różnica COUNT(*) - COUNT(return_date) daje liczbę niezwróconych filmów.' },
-      { prompt: 'Dla każdego pracownika (`staff_id`) w tabeli `rental` policz: łączną liczbę wypożyczeń (`COUNT(*)`) oraz liczbę wypożyczeń już zwróconych (`COUNT(return_date)`).', sol: "SELECT staff_id, COUNT(*) AS total_cnt, COUNT(return_date) AS returned_cnt FROM rental GROUP BY staff_id;", order: false, tables: ['rental'], hint: 'Pogrupuj wiersze klauzulą GROUP BY staff_id.' },
-      { prompt: 'Z tabeli `rental` zwróć w jednym wierszu: liczbę wszystkich wypożyczeń (`COUNT(*)`), liczbę unikalnych klientów mających wypożyczenia (`COUNT(DISTINCT customer_id)`) oraz liczbę unikalnych wypożyczonych filmów (`COUNT(DISTINCT film_id)`).', sol: "SELECT COUNT(*) AS total_rows, COUNT(DISTINCT customer_id) AS uniq_customers, COUNT(DISTINCT film_id) AS uniq_films FROM rental;", order: false, tables: ['rental'], hint: 'Słowo DISTINCT umieść wewnątrz nawiasu funkcji COUNT: COUNT(DISTINCT customer_id).' },
-      { prompt: 'Z tabeli `film` policz dla każdego `rating`: liczbę filmów (`COUNT(*)`) oraz liczbę unikalnych stawek cenowych (`COUNT(DISTINCT rental_rate)`).', sol: "SELECT rating, COUNT(*) AS films_cnt, COUNT(DISTINCT rental_rate) AS rates_cnt FROM film GROUP BY rating;", order: false, tables: ['film'], hint: 'Użyj GROUP BY rating oraz COUNT(DISTINCT rental_rate).' },
-      { prompt: 'Z tabeli `rental` policz wyłącznie te wiersze, w których film NIE został jeszcze zwrócony (`return_date IS NULL`). Zwróć jedną liczbę.', sol: "SELECT COUNT(*) AS unreturned_cnt FROM rental WHERE return_date IS NULL;", order: false, tables: ['rental'], hint: 'Przefiltruj wiersze przez WHERE return_date IS NULL.' },
-      { prompt: 'Z tabeli `rental` dla wypożyczeń z maja (`rental_date < \'2026-06-01\'`) policz dla każdego klienta (`customer_id`): liczbę wszystkich wypożyczeń (`COUNT(*)`) oraz liczbę zwróconych (`COUNT(return_date)`). Posortuj rosnąco po `customer_id`.', sol: "SELECT customer_id, COUNT(*) AS all_cnt, COUNT(return_date) AS returned_cnt FROM rental WHERE rental_date < '2026-06-01' GROUP BY customer_id ORDER BY customer_id;", order: true, tables: ['rental'], hint: 'Najpierw WHERE rental_date < \'2026-06-01\', potem GROUP BY customer_id i na końcu ORDER BY.' },
-      { prompt: 'Dla każdego pracownika (`staff_id`) w tabeli `rental` zwróć: liczbę wypożyczeń (`COUNT(*)`), liczbę różnych obsłużonych klientów (`COUNT(DISTINCT customer_id)`) oraz liczbę niezwróconych filmów (`COUNT(*) - COUNT(return_date)`). Posortuj po `staff_id`.', sol: "SELECT staff_id, COUNT(*) AS total_cnt, COUNT(DISTINCT customer_id) AS uniq_customers, COUNT(*) - COUNT(return_date) AS unreturned FROM rental GROUP BY staff_id ORDER BY staff_id;", order: true, tables: ['rental'], hint: 'Połącz wszystkie trzy warianty liczenia COUNT w jednym zapytaniu z GROUP BY staff_id.' },
-      { prompt: 'Z tabeli `payment` weź płatności poniżej `5.00` (`amount < 5.00`) i dla każdego klienta (`customer_id`) policz ich liczbę (`COUNT(*)`). Zostaw tylko klientów mających co najmniej `2` takie płatności (`HAVING COUNT(*) >= 2`). Posortuj malejąco po liczbie płatności, a przy remisie rosnąco po `customer_id`.', sol: "SELECT customer_id, COUNT(*) AS small_cnt FROM payment WHERE amount < 5.00 GROUP BY customer_id HAVING COUNT(*) >= 2 ORDER BY small_cnt DESC, customer_id ASC;", order: true, tables: ['payment'], hint: 'Warunek na pojedynczą kwotę (amount < 5.00) idzie do WHERE, a na liczbę wierszy w grupie – do HAVING.' },
-      { prompt: 'Z tabeli `film` dla filmów dłuższych niż `60` minut policz dla każdego `rating`: liczbę filmów (`COUNT(*)`) oraz liczbę różnych cen (`COUNT(DISTINCT rental_rate)`). Zostaw tylko grupy mające co najmniej `3` różne ceny. Posortuj malejąco po liczbie filmów, potem rosnąco po `rating`.', sol: "SELECT rating, COUNT(*) AS films_cnt, COUNT(DISTINCT rental_rate) AS price_levels FROM film WHERE length > 60 GROUP BY rating HAVING COUNT(DISTINCT rental_rate) >= 3 ORDER BY films_cnt DESC, rating ASC;", order: true, tables: ['film'], hint: 'W klauzuli HAVING użyj HAVING COUNT(DISTINCT rental_rate) >= 3.' },
-      { prompt: 'Wyzwanie: z tabeli `rental` dla wypożyczeń od `\'2026-05-02\'` włącznie policz dla każdego klienta (`customer_id`): liczbę wypożyczeń (`rentals`), liczbę niezwróconych (`COUNT(*) - COUNT(return_date)`) oraz liczbę różnych pracowników, którzy go obsłużyli (`COUNT(DISTINCT staff_id)`). Zostaw klientów z co najmniej `2` wypożyczeniami, posortuj malejąco po `rentals`, rosnąco po `customer_id` i pokaż `3` wiersze.', sol: "SELECT customer_id, COUNT(*) AS rentals, COUNT(*) - COUNT(return_date) AS unreturned, COUNT(DISTINCT staff_id) AS staff_cnt FROM rental WHERE rental_date >= '2026-05-02' GROUP BY customer_id HAVING COUNT(*) >= 2 ORDER BY rentals DESC, customer_id ASC LIMIT 3;", order: true, tables: ['rental'], hint: 'Zachowaj pełną kolejność: SELECT → FROM → WHERE → GROUP BY → HAVING → ORDER BY → LIMIT.' }
+      { prompt: 'Pobierz z katalogu filmów tytuły, kategorie wiekowe oraz czas trwania dla filmów z kategorii dla dorosłych (R), które trwają dłużej niż 120 minut, posortowane alfabetycznie po tytule.', sol: "SELECT title, rating, length FROM film WHERE rating = 'R' AND length > 120 ORDER BY title ASC;", order: true, tables: ['film'], hint: 'Połącz dwa warunki spójnikiem AND: WHERE rating = \'R\' AND length > 120.' },
+      { prompt: 'Pobierz z katalogu filmów tytuły, czas trwania oraz ceny wypożyczenia dla filmów, które są bardzo krótkie (poniżej 60 minut) lub bardzo tanie (cena wypożyczenia 0.99), posortowane po tytule rosnąco.', sol: "SELECT title, length, rental_rate FROM film WHERE length < 60 OR rental_rate = 0.99 ORDER BY title ASC;", order: true, tables: ['film'], hint: 'Połącz dwa warunki alternatywą OR: WHERE length < 60 OR rental_rate = 0.99.' },
+      { prompt: 'Pobierz z katalogu filmów tytuły oraz kategorie wiekowe dla filmów należących do jednej z trzech kategorii: familijnej (G), z nadzorem rodziców (PG) lub młodzieżowej (PG-13), posortowane po tytule rosnąco.', sol: "SELECT title, rating FROM film WHERE rating IN ('G', 'PG', 'PG-13') ORDER BY title ASC;", order: true, tables: ['film'], hint: 'Użyj operatora listy wartości: WHERE rating IN (\'G\', \'PG\', \'PG-13\').' },
+      { prompt: 'Pobierz z katalogu filmów tytuły oraz koszty odtworzenia płyty dla filmów, których koszt odtworzenia mieści się w przedziale od 15 do 20 dolarów włącznie, posortowane po tytule rosnąco.', sol: "SELECT title, replacement_cost FROM film WHERE replacement_cost BETWEEN 15 AND 20 ORDER BY title ASC;", order: true, tables: ['film'], hint: 'Użyj operatora przedziału domkniętego: WHERE replacement_cost BETWEEN 15 AND 20.' },
+      { prompt: 'Pobierz z katalogu filmów tytuły oraz kategorie wiekowe dla filmów, których tytuł zaczyna się na literę A (niezależnie od wielkości liter), posortowane alfabetycznie po tytule.', sol: "SELECT title, rating FROM film WHERE title ILIKE 'a%' ORDER BY title ASC;", order: true, tables: ['film'], hint: 'Użyj operatora ILIKE z symbolem wieloznacznym % na końcu: WHERE title ILIKE \'a%\'.' },
+      { prompt: 'Pobierz z katalogu filmów 5 najdłuższych produkcji z kategorii familijnej lub rodzicielskiej (G oraz PG), których cena wypożyczenia nie przekracza 2.99, zwracając tytuł, kategorię oraz czas trwania pod nowym aliasem.', sol: "SELECT title, rating, length AS duration_min FROM film WHERE rating IN ('G', 'PG') AND rental_rate <= 2.99 ORDER BY length DESC, title ASC LIMIT 5;", order: true, tables: ['film'], hint: 'Połącz WHERE rating IN (\'G\', \'PG\') AND rental_rate <= 2.99 z aliasem length AS duration_min, sortowaniem ORDER BY length DESC, title ASC i LIMIT 5.' },
+      { prompt: 'Pobierz z rejestru płatności wpłaty z maja 2026 roku (od 2026-05-01 do 2026-05-31 włącznie) o kwocie co najmniej 5 dolarów, zwracając identyfikator płatności, kwotę oraz datę wpłaty posortowane od najwyższej kwoty malejąco.', sol: "SELECT payment_id, amount, payment_date FROM payment WHERE payment_date BETWEEN '2026-05-01' AND '2026-05-31' AND amount >= 5 ORDER BY amount DESC, payment_id ASC;", order: true, tables: ['payment'], hint: 'Połącz zakres dat payment_date BETWEEN \'2026-05-01\' AND \'2026-05-31\' ze spójnikiem AND amount >= 5.' },
+      { prompt: 'Pobierz z bazy klientów aktywnych klientów przypisanych do pierwszego sklepu, których nazwisko zaczyna się na literę S lub B (bez względu na wielkość liter), posortowanych alfabetycznie po nazwisku.', sol: "SELECT first_name, last_name, store_id FROM customer WHERE active = 1 AND store_id = 1 AND (last_name ILIKE 's%' OR last_name ILIKE 'b%') ORDER BY last_name ASC, first_name ASC;", order: true, tables: ['customer'], hint: 'Pamiętaj o nawiasach wokół alternatywy OR: WHERE active = 1 AND store_id = 1 AND (last_name ILIKE \'s%\' OR last_name ILIKE \'b%\').' },
+      { prompt: 'Pobierz z katalogu filmów unikalne kategorie wiekowe dla filmów trwających od 90 do 150 minut włącznie, których cena wypożyczenia jest wyższa niż 0.99, posortowane alfabetycznie po kategorii.', sol: "SELECT DISTINCT rating FROM film WHERE length BETWEEN 90 AND 150 AND rental_rate > 0.99 ORDER BY rating ASC;", order: true, tables: ['film'], hint: 'Połącz SELECT DISTINCT rating z warunkami WHERE length BETWEEN 90 AND 150 AND rental_rate > 0.99 oraz ORDER BY rating ASC.' },
+      { prompt: 'Pobierz z katalogu filmów 4 najdroższe w odtworzeniu filmy, które nie należą do kategorii familijnych (G ani PG) i zawierają w tytule literę O (w dowolnym miejscu, bez względu na wielkość liter), zwracając tytuł, kategorię oraz koszt odtworzenia pod nowym aliasem.', sol: "SELECT title, rating, replacement_cost AS cost_usd FROM film WHERE rating NOT IN ('G', 'PG') AND title ILIKE '%o%' ORDER BY replacement_cost DESC, title ASC LIMIT 4;", order: true, tables: ['film'], hint: 'Zastosuj WHERE rating NOT IN (\'G\', \'PG\') AND title ILIKE \'%o%\' oraz ORDER BY replacement_cost DESC, title ASC LIMIT 4.' }
     ]
   },
   {
@@ -332,70 +332,69 @@ var DIAG_QUESTIONS = [
 var LESSON_TUTORIALS = {
   p1_1: [
     {
-      title: 'Jak zbudować zapytanie?',
-      syntax: "SELECT kolumna1, kolumna2\nFROM tabela\nWHERE warunek1 AND (warunek2 OR warunek3)\nORDER BY kolumna1 ASC, kolumna2 DESC;",
+      title: 'Jak zbudować najprostsze zapytanie SELECT?',
+      syntax: "SELECT kolumna1, kolumna2 AS nowa_nazwa, kolumna2 * 100 AS wyliczenie\nFROM nazwa_tabeli;",
       bullets: [
-        '<strong><code>SELECT</code> + <code>FROM</code>:</strong> określają, <em>jakie kolumny</em> oraz <em>z której tabeli</em> chcesz pobrać.',
-        '<strong><code>WHERE</code> (sito wierszy):</strong> przepuszcza tylko wiersze spełniające warunek logiczny. Teksty i daty ujmuj w pojedyncze apostrofy <code>\'PG-13\'</code>.',
-        '<strong>Priorytet <code>AND</code> nad <code>OR</code>:</strong> <code>AND</code> wiąże silniej niż <code>OR</code>! Łącząc oba operatory, zawsze bierz alternatywę <code>OR</code> w nawiasy <code>(...)</code>.',
-        '<strong><code>ORDER BY</code>:</strong> sortuje wynik rosnąco (<code>ASC</code> – domyślnie) lub malejąco (<code>DESC</code>).'
+        '<strong><code>SELECT</code>:</strong> wskazuje, które kolumny chcesz wyciągnąć i zobaczyć w wyniku.',
+        '<strong><code>FROM</code>:</strong> wskazuje nazwę tabeli w bazie danych, z której pobierasz wiersze.',
+        '<strong>Gwiazdka <code>*</code> i przecinki:</strong> kilka kolumn rozdzielasz przecinkiem (np. <code>first_name, last_name</code>), a symbol <code>*</code> pobiera wszystkie kolumny tabeli.',
+        '<strong>Aliasy <code>AS</code> i matematyka:</strong> możesz zmieniać nagłówki kolumn przez <code>AS</code> oraz wykonywać proste obliczenia (<code>+</code>, <code>-</code>, <code>*</code>, <code>/</code>).'
       ]
     },
     {
       title: 'Kolejność pisania vs Kolejność wykonywania przez PostgreSQL',
-      focusWrite: ['SELECT', 'FROM', 'WHERE', 'ORDER BY'],
-      focusExec: [1, 2, 5, 7],
-      note: '<strong>Dlaczego to ważne w Lekcji 1.1?</strong> Silnik PostgreSQL najpierw otwiera tabelę (<code>1. FROM</code>), od razu odrzuca niepasujące wiersze sitem (<code>2. WHERE</code>), potem wybiera kolumny (<code>5. SELECT</code>), a dopiero niemal na samym końcu układa wiersze (<code>7. ORDER BY</code>). Dlatego w <code>WHERE</code> filtrujesz po kolumnach tabeli przed ich wyświetleniem!'
+      focusWrite: ['SELECT', 'FROM'],
+      focusExec: [1, 5],
+      note: '<strong>Dlaczego to ważne w Lekcji 1.1?</strong> W kodzie najpierw piszesz <code>SELECT</code>, a potem <code>FROM</code>. Jednak silnik PostgreSQL pod maską najpierw otwiera tabelę wskazaną w <code>1. FROM</code>, a dopiero potem w kroku <code>5. SELECT</code> wycina wybrane kolumny, wykonuje mnożenie/dzielenie i nadaje im aliasy <code>AS</code>!'
     },
     {
       title: 'Przykład na żywo (dvdrental)',
-      code: "SELECT title, rating, length\nFROM film\nWHERE (rating = 'G' OR rating = 'PG')\n  AND length > 100\nORDER BY rating ASC, length DESC;",
+      code: "SELECT\n  title,\n  rental_rate AS cena_usd,\n  rental_rate * 4 AS cena_pln\nFROM film;",
       lines: [
-        { line: 'SELECT title, rating, length', desc: 'Krok 5 silnika: zwraca trzy wybrane kolumny dla przefiltrowanych filmów.' },
-        { line: 'FROM film', desc: 'Krok 1 silnika: pobiera surowe wiersze z tabeli film.' },
-        { line: "WHERE (rating = 'G' OR rating = 'PG') AND length > 100", desc: 'Krok 2 silnika: zostawia tylko filmy familijne (G lub PG) trwające ponad 100 minut.' },
-        { line: 'ORDER BY rating ASC, length DESC;', desc: 'Krok 7 silnika: sortuje alfabetycznie po ratingu, a przy tym samym ratingu – od najdłuższego filmu.' }
+        { line: 'FROM film;', desc: 'Krok 1 silnika: otwiera tabelę katalogu filmów (film).' },
+        { line: 'SELECT title,', desc: 'Krok 5 silnika: wybiera oryginalną kolumnę z tytułem filmu.' },
+        { line: 'rental_rate AS cena_usd,', desc: 'Krok 5 silnika: wybiera cenę wypożyczenia i zmienia jej nagłówek na cena_usd.' },
+        { line: 'rental_rate * 4 AS cena_pln', desc: 'Krok 5 silnika: mnoży cenę przez 4 i wyświetla wynik w nowej kolumnie cena_pln.' }
       ]
     },
     {
       title: 'Sprawdź się przed zadaniami!',
       quiz: {
-        question: 'Która klauzula jest wykonywana przez silnik PostgreSQL jako PIERWSZA pod maską w zapytaniu z SELECT, FROM, WHERE i ORDER BY?',
+        question: 'Które zapytanie poprawnie pobierze dwie kolumny `first_name` oraz `last_name` z tabeli `actor`?',
         options: [
-          'SELECT — najpierw wybierane są kolumny do wyświetlenia',
-          'FROM — najpierw silnik ładuje tabelę źródłową, a zaraz potem filtruje wiersze w WHERE',
-          'ORDER BY — najpierw tabela jest sortowana przed filtrowaniem'
+          'SELECT first_name, last_name, FROM actor;',
+          'SELECT first_name, last_name FROM actor;',
+          'FROM actor SELECT first_name last_name;'
         ],
         correct: 1,
-        explanation: 'Dokładnie! PostgreSQL zaczyna od 1. FROM (pobranie tabeli), następnie 2. WHERE (odfiltrowanie wierszy), 5. SELECT (wybór kolumn) i 7. ORDER BY (sortowanie wyniku).'
+        explanation: 'Brawo! Kolumny po SELECT rozdzielamy przecinkami, ale bezpośrednio przed słowem FROM nigdy nie stawiamy przecinka.'
       }
     }
   ],
   p1_2: [
     {
-      title: 'Jak zbudować zapytanie?',
-      syntax: "SELECT kolumny\nFROM tabela\nWHERE kol IN ('A', 'B')\n  AND liczba BETWEEN 10 AND 50\n  AND tekst ILIKE 'wz%'\nORDER BY liczba DESC\nLIMIT 5;",
+      title: 'Jak uporządkować wynik: DISTINCT, ORDER BY i LIMIT?',
+      syntax: "SELECT DISTINCT kolumna1, kolumna2\nFROM tabela\nORDER BY kolumna1 DESC, kolumna2 ASC\nLIMIT 5;",
       bullets: [
-        '<strong><code>IN (lista)</code>:</strong> sprawdza przynależność do zbioru wartości – zastępuje wielokrotne <code>OR</code>.',
-        '<strong><code>BETWEEN a AND b</code>:</strong> filtruje przedział domknięty (włącznie z brzegami <code>a</code> oraz <code>b</code>).',
-        '<strong><code>ILIKE \'wzorzec\'</code>:</strong> wyszukuje tekst bez względu na wielkość liter (<code>%</code> = dowolny ciąg znaków, <code>_</code> = pojedynczy znak).',
-        '<strong><code>LIMIT n</code>:</strong> zwraca tylko pierwszych <code>n</code> wierszy (zawsze łącz go z <code>ORDER BY</code>!).'
+        '<strong><code>SELECT DISTINCT</code>:</strong> usuwa duplikaty i zwraca tylko unikalne (niepowtarzające się) wiersze.',
+        '<strong><code>ORDER BY kolumna ASC / DESC</code>:</strong> sortuje wynik rosnąco (<code>ASC</code> – domyślnie) lub malejąco (<code>DESC</code>).',
+        '<strong><code>LIMIT n</code>:</strong> odcina wynik do pierwszych <code>n</code> wierszy (np. <code>LIMIT 5</code> zwraca Top 5 wierszy).'
       ]
     },
     {
       title: 'Kolejność pisania vs Kolejność wykonywania przez PostgreSQL',
-      focusWrite: ['SELECT', 'FROM', 'WHERE', 'ORDER BY', 'LIMIT'],
-      focusExec: [1, 2, 5, 7, 8],
-      note: '<strong>Dlaczego to ważne w Lekcji 1.2?</strong> Zwróć uwagę na sam koniec potoku wykonawczego: <code>7. ORDER BY</code> wykonuje się <em>przed</em> <code>8. LIMIT</code>! Dzięki temu PostgreSQL najpierw ustawia wszystkie przefiltrowane wiersze w kolejności (np. od najdroższego), a dopiero w ostatnim kroku odcina górne <code>N</code> rekordów.'
+      focusWrite: ['SELECT', 'FROM', 'ORDER BY', 'LIMIT'],
+      focusExec: [1, 5, 6, 7, 8],
+      note: '<strong>Dlaczego to ważne w Lekcji 1.2?</strong> Popatrz na sam koniec potoku wykonawczego: po wybraniu kolumn (<code>5. SELECT</code>) i usunięciu duplikatów (<code>6. DISTINCT</code>), silnik wykonuje <code>7. ORDER BY</code> (gdzie widzi już aliasy z <code>SELECT</code>!), a na samym końcu <code>8. LIMIT</code> odcina pierwsze wiersze z posortowanej listy.'
     },
     {
       title: 'Przykład na żywo (dvdrental)',
-      code: "SELECT title, rating, length\nFROM film\nWHERE rating IN ('G', 'PG')\n  AND length BETWEEN 100 AND 140\n  AND title NOT ILIKE 'al%'\nORDER BY length DESC\nLIMIT 4;",
+      code: "SELECT\n  title,\n  length AS duration_min\nFROM film\nORDER BY length DESC, title ASC\nLIMIT 5;",
       lines: [
-        { line: "WHERE rating IN ('G', 'PG')", desc: 'Krok 2 silnika: zostawia filmy o ratingu G lub PG.' },
-        { line: 'AND length BETWEEN 100 AND 140', desc: 'Krok 2 silnika: zawęża do długości od 100 do 140 minut (włącznie).' },
-        { line: "AND title NOT ILIKE 'al%'", desc: 'Krok 2 silnika: wyklucza tytuły zaczynające się od liter AL (niezależnie od wielkości liter).' },
-        { line: 'ORDER BY length DESC LIMIT 4;', desc: 'Kroki 7 i 8 silnika: ustawia filmy od najdłuższego i odcina 4 pierwsze wiersze.' }
+        { line: 'FROM film', desc: 'Krok 1 silnika: pobiera wszystkie wiersze z katalogu filmów.' },
+        { line: 'SELECT title, length AS duration_min', desc: 'Krok 5 silnika: wybiera tytuł i czas trwania z aliasem duration_min.' },
+        { line: 'ORDER BY length DESC, title ASC', desc: 'Krok 7 silnika: ustawia filmy od najdłuższego, a przy równym czasie alfabetycznie.' },
+        { line: 'LIMIT 5;', desc: 'Krok 8 silnika: zostawia tylko 5 pierwszych (najdłuższych) filmów.' }
       ]
     },
     {
@@ -403,93 +402,93 @@ var LESSON_TUTORIALS = {
       quiz: {
         question: 'Dlaczego klauzula LIMIT znajduje się na samym końcu kolejności wykonywania (Krok 8 po ORDER BY)?',
         options: [
-          'Aby najpierw posortować cały przefiltrowany wynik i dopiero z posortowanej listy odciąć TOP N wierszy',
-          'Ponieważ LIMIT działa przed WHERE i losuje wiersze z tabeli',
-          'Kolejność między ORDER BY a LIMIT jest losowa'
+          'Aby najpierw posortować cały wynik i dopiero z posortowanej listy odciąć TOP N wierszy',
+          'Ponieważ LIMIT losuje wiersze przed wybraniem kolumn w SELECT',
+          'Kolejność między ORDER BY a LIMIT nie ma znaczenia'
         ],
         correct: 0,
-        explanation: 'Brawo! Gdyby LIMIT działał przed ORDER BY, dostałbyś przypadkowe wiersze i dopiero je posortował. Wykonanie ORDER BY (7) przed LIMIT (8) gwarantuje prawdziwy ranking TOP N.'
+        explanation: 'Dokładnie! Wykonanie ORDER BY (7) przed LIMIT (8) gwarantuje, że odcinamy prawdziwe Top N (np. 5 najdłuższych filmów).'
       }
     }
   ],
   p1_3: [
     {
-      title: 'Jak zbudować zapytanie?',
-      syntax: "SELECT DISTINCT\n  kolumna,\n  liczba / 60.0 AS alias_wyliczenia\nFROM tabela\nWHERE liczba / 60.0 > 1.5\nORDER BY alias_wyliczenia DESC;",
+      title: 'Jak filtrować wiersze pojedynczym warunkiem WHERE?',
+      syntax: "SELECT kolumna1, kolumna2\nFROM tabela\nWHERE kolumna1 = 'wartosc'\nORDER BY kolumna2 DESC\nLIMIT 5;",
       bullets: [
-        '<strong><code>SELECT DISTINCT</code>:</strong> usuwa zduplikowane wiersze z wyniku (zostawia unikalne kombinacje wszystkich wypisanych kolumn).',
-        '<strong>Wyliczenia i <code>AS alias</code>:</strong> w <code>SELECT</code> możesz wykonywać działania matematyczne i nadawać im czytelne nazwy.',
-        '<strong>Pułapka dzielenia całkowitego:</strong> <code>90 / 60</code> w SQL daje <code>1</code>! Aby otrzymać ułamek <code>1.5</code>, dziel przez liczbę z kropką: <code>length / 60.0</code>.'
+        '<strong><code>WHERE warunek</code>:</strong> działa jak sito — sprawdza każdy wiersz tabeli i przepuszcza tylko te, które spełniają warunek.',
+        '<strong>Operatory porównania:</strong> <code>=</code> (równy), <code>&gt;</code> (większy), <code>&lt;</code> (mniejszy), <code>&gt;=</code>, <code>&lt;=</code> oraz <code>&lt;&gt;</code> (różny od).',
+        '<strong>Teksty w apostrofach:</strong> napisy i daty w <code>WHERE</code> otaczamy pojedynczymi apostrofami (np. <code>WHERE rating = \'PG\'</code>), a liczby piszemy bez apostrofów (np. <code>WHERE length &gt; 120</code>).'
       ]
     },
     {
       title: 'Kolejność pisania vs Kolejność wykonywania przez PostgreSQL',
-      focusWrite: ['SELECT', 'FROM', 'WHERE', 'ORDER BY'],
-      focusExec: [1, 2, 5, 6, 7],
-      note: '<strong>Klasyczna pułapka rekrutacyjna!</strong> Alias kolumny (np. <code>AS hours</code>) powstaje dopiero w kroku <code>5. SELECT</code>. Dlatego w kroku <code>2. WHERE</code> ten alias jeszcze <em>nie istnieje</em> (musisz tam powtórzyć całe wyrażenie), natomiast w kroku <code>7. ORDER BY</code> alias jest już znany i możesz po nim wygodnie sortować!'
+      focusWrite: ['SELECT', 'FROM', 'WHERE', 'ORDER BY', 'LIMIT'],
+      focusExec: [1, 2, 5, 7, 8],
+      note: '<strong>Klasyczna pułapka!</strong> Klauzula <code>2. WHERE</code> wykonuje się zaraz po <code>1. FROM</code> — czyli <em>zanim</em> wykona się <code>5. SELECT</code>! Dlatego w <code>WHERE</code> filtrujesz po oryginalnych kolumnach tabeli i nie możesz użyć aliasu stworzonego w <code>SELECT</code>.'
     },
     {
       title: 'Przykład na żywo (dvdrental)',
-      code: "SELECT DISTINCT\n  rating,\n  rental_rate * 1.23 AS price_gross\nFROM film\nWHERE rental_rate > 1.00\nORDER BY price_gross DESC;",
+      code: "SELECT title, length AS duration_min\nFROM film\nWHERE rating = 'PG-13'\nORDER BY length ASC, title ASC\nLIMIT 3;",
       lines: [
-        { line: 'FROM film WHERE rental_rate > 1.00', desc: 'Kroki 1–2 silnika: ładuje tabelę film i zostawia wiersze z ceną netto > 1.00.' },
-        { line: 'SELECT ... rental_rate * 1.23 AS price_gross', desc: 'Krok 5 silnika: wylicza cenę brutto i nadaje jej alias price_gross.' },
-        { line: 'DISTINCT', desc: 'Krok 6 silnika: usuwa powtarzające się pary (rating, price_gross).' },
-        { line: 'ORDER BY price_gross DESC;', desc: 'Krok 7 silnika: sortuje po gotowym aliasie price_gross (który powstał w kroku 5).' }
+        { line: 'FROM film', desc: 'Krok 1 silnika: otwiera tabelę katalogu filmów.' },
+        { line: "WHERE rating = 'PG-13'", desc: 'Krok 2 silnika: zostawia wyłącznie filmy z kategorii wiekowej PG-13.' },
+        { line: 'SELECT title, length AS duration_min', desc: 'Krok 5 silnika: pobiera tytuł oraz czas trwania pod aliasem duration_min.' },
+        { line: 'ORDER BY length ASC, title ASC LIMIT 3;', desc: 'Kroki 7–8 silnika: sortuje od najkrótszego filmu i odcina 3 pierwsze pozycje.' }
       ]
     },
     {
       title: 'Sprawdź się przed zadaniami!',
       quiz: {
-        question: 'W SELECT zdefiniowałeś alias `length / 60.0 AS hours`. Gdzie MOŻESZ użyć samej nazwy `hours` bez błędu w PostgreSQL?',
+        question: 'Który zapis warunku WHERE dla tekstu i liczby jest w 100% poprawny w PostgreSQL?',
         options: [
-          'Zarówno w WHERE, jak i w ORDER BY',
-          'W klauzuli ORDER BY (bo wykonuje się w kroku 7, po kroku 5 SELECT), ale NIE w WHERE (krok 2)',
-          'Tylko w klauzuli WHERE'
+          'WHERE rating = PG (bez apostrofów wokół tekstu)',
+          "WHERE rating = 'PG' (tekst w pojedynczych apostrofach) lub WHERE length > 120 (liczba bez apostrofów)",
+          'WHERE rating == "PG"'
         ],
         correct: 1,
-        explanation: 'Świetnie! WHERE (krok 2) wykonuje się przed SELECT (krok 5), więc nie zna jeszcze aliasów. ORDER BY (krok 7) działa po SELECT, dlatego widzi wszystkie aliasy.'
+        explanation: 'Świetnie! W SQL równość zapisujemy pojedynczym znakiem =, a literały tekstowe ujmujemy w pojedyncze apostrofy \'PG\'.'
       }
     }
   ],
   p2_1: [
     {
-      title: 'Jak zbudować zapytanie?',
-      syntax: "SELECT\n  COUNT(*) AS wszystkie_wiersze,\n  COUNT(kolumna) AS niepuste_wiersze,\n  COUNT(DISTINCT kolumna) AS unikalne_wartosci\nFROM tabela\nGROUP BY klucz_grupy;",
+      title: 'Jak łączyć warunki: AND, OR, IN, BETWEEN oraz ILIKE?',
+      syntax: "SELECT title, rating, length\nFROM film\nWHERE rating IN ('G', 'PG')\n  AND length BETWEEN 60 AND 120\n  AND title ILIKE 'a%';",
       bullets: [
-        '<strong><code>COUNT(*)</code>:</strong> liczy absolutnie wszystkie wiersze w grupie (nawet te zawierające <code>NULL</code>).',
-        '<strong><code>COUNT(kolumna)</code>:</strong> pomija wartości <code>NULL</code>! Liczy tylko wiersze, w których dana kolumna ma wartość.',
-        '<strong><code>COUNT(DISTINCT kolumna)</code>:</strong> liczy ile różnych (unikalnych) niepustych wartości występuje w kolumnie.',
-        '<strong><code>IS NULL</code> / <code>IS NOT NULL</code>:</strong> jedyny poprawny sposób filtrowania pustych wartości w <code>WHERE</code>.'
+        '<strong><code>AND</code> oraz <code>OR</code>:</strong> <code>AND</code> wymaga spełnienia obu warunków naraz, a <code>OR</code> przynajmniej jednego (pamiętaj o nawiasach wokół <code>OR</code>!).',
+        '<strong><code>IN (\'G\', \'PG\')</code>:</strong> sprawdza, czy wartość należy do podanej listy (zastępuje długie łańcuchy <code>OR</code>).',
+        '<strong><code>BETWEEN 60 AND 90</code>:</strong> filtruje przedział domknięty (od 60 do 90 włącznie z obiema granicami).',
+        '<strong><code>ILIKE \'a%\'</code>:</strong> wyszukuje tekst zaczynający się na literę A bez względu na wielkość liter.'
       ]
     },
     {
       title: 'Kolejność pisania vs Kolejność wykonywania przez PostgreSQL',
-      focusWrite: ['SELECT', 'FROM', 'WHERE', 'GROUP BY', 'ORDER BY'],
-      focusExec: [1, 2, 3, 5, 7],
-      note: '<strong>Dlaczego to ważne w Lekcji 2.1?</strong> Najpierw <code>2. WHERE</code> odrzuca niechciane wiersze (np. <code>WHERE return_date IS NULL</code>), następnie <code>3. GROUP BY</code> dzieli pozostałe wiersze na koszyki, a w kroku <code>5. SELECT</code> funkcje agregujące (<code>COUNT</code>) podliczają statystyki dla każdego koszyka.'
+      focusWrite: ['SELECT', 'FROM', 'WHERE', 'ORDER BY', 'LIMIT'],
+      focusExec: [1, 2, 5, 6, 7, 8],
+      note: '<strong>Dlaczego to ważne w Lekcji 2.1?</strong> Wszystkie operatory <code>AND</code>, <code>OR</code>, <code>IN</code>, <code>BETWEEN</code> oraz <code>ILIKE</code> są obliczane wewnątrz kroku <code>2. WHERE</code> dla każdego wiersza z osobna. Pamiętaj, że <code>AND</code> ma wyższy priorytet niż <code>OR</code>!'
     },
     {
       title: 'Przykład na żywo (dvdrental)',
-      code: "SELECT\n  staff_id,\n  COUNT(*) AS all_rentals,\n  COUNT(return_date) AS returned,\n  COUNT(*) - COUNT(return_date) AS missing\nFROM rental\nGROUP BY staff_id;",
+      code: "SELECT title, rating, length AS duration_min\nFROM film\nWHERE rating IN ('G', 'PG')\n  AND rental_rate <= 2.99\nORDER BY length DESC, title ASC\nLIMIT 5;",
       lines: [
-        { line: 'FROM rental', desc: 'Krok 1 silnika: pobiera wszystkie wypożyczenia z tabeli rental.' },
-        { line: 'GROUP BY staff_id', desc: 'Krok 3 silnika: dzieli wypożyczenia na grupy według pracownika (staff_id).' },
-        { line: 'COUNT(*) AS all_rentals, COUNT(return_date) AS returned', desc: 'Krok 5 silnika: liczy wszystkie wypożyczenia pracownika oraz tylko te z wpisaną datą zwrotu.' },
-        { line: 'COUNT(*) - COUNT(return_date) AS missing', desc: 'Krok 5 silnika: różnica daje dokładną liczbę filmów wciąż niezwróconych (gdzie return_date IS NULL).' }
+        { line: "WHERE rating IN ('G', 'PG')", desc: 'Krok 2 silnika: zostawia filmy o kategorii G lub PG.' },
+        { line: 'AND rental_rate <= 2.99', desc: 'Krok 2 silnika: zawęża wynik do filmów kosztujących najwyżej 2.99.' },
+        { line: 'SELECT title, rating, length AS duration_min', desc: 'Krok 5 silnika: wybiera kolumny i nadaje alias dla czasu trwania.' },
+        { line: 'ORDER BY length DESC, title ASC LIMIT 5;', desc: 'Kroki 7–8 silnika: sortuje od najdłuższego filmu i zwraca Top 5.' }
       ]
     },
     {
       title: 'Sprawdź się przed zadaniami!',
       quiz: {
-        question: 'Tabela `rental` ma 20 wierszy, z czego w 4 wierszach `return_date` wynosi NULL. Co zwróci `SELECT COUNT(*), COUNT(return_date) FROM rental`?',
+        question: 'Co oznacza warunek `WHERE length BETWEEN 60 AND 90` w języku SQL?',
         options: [
-          '20 oraz 20 (bo COUNT zawsze liczy wszystkie wiersze)',
-          '20 oraz 16 (bo COUNT(kolumna) pomija wartości NULL)',
-          '16 oraz 4'
+          'Filmy trwające ściśle powyżej 60 i poniżej 90 minut (bez 60 i 90)',
+          'Filmy trwające od 60 do 90 minut włącznie (odpowiednik length >= 60 AND length <= 90)',
+          'Filmy trwające dokładnie 60 lub dokładnie 90 minut'
         ],
         correct: 1,
-        explanation: 'Tak jest! COUNT(*) zlicza wszystkie 20 wierszy, natomiast COUNT(return_date) ignoruje 4 wiersze z wartością NULL i zwraca 16.'
+        explanation: 'Tak jest! Operator BETWEEN ... AND ... w SQL jest zawsze przedziałem domkniętym — obejmuje obie wartości brzegowe.'
       }
     }
   ],
@@ -823,104 +822,104 @@ var LESSON_WARMUPS = {
     {
       stepCode: 'R1', isWarmup: true,
       goal: 'Przygotuj pełną listę samych tytułów wszystkich filmów dostępnych w naszym katalogu.',
-      prompt: 'Rozgrzewka R1 (1 kolumna): Z tabeli `film` wybierz samą kolumnę `title` (wszystkie wiersze, bez filtrowania).',
+      prompt: 'Pobierz z katalogu filmów samą kolumnę z tytułem filmu (wszystkie wiersze, bez filtrowania).',
       sol: 'SELECT title FROM film;',
       order: false, tables: ['film'],
       hint: 'Wpisz: SELECT title FROM film;'
     },
     {
       stepCode: 'R2', isWarmup: true,
-      goal: 'Przygotuj zestawienie wszystkich filmów z katalogu, pokazując dla każdego tytuł oraz kategorię wiekową.',
-      prompt: 'Rozgrzewka R2 (2 kolumny): Z tabeli `film` wybierz po przecinku dwie kolumny: `title` oraz `rating`.',
-      sol: 'SELECT title, rating FROM film;',
-      order: false, tables: ['film'],
-      hint: 'Oddziel nazwy kolumn przecinkiem: SELECT title, rating FROM film;'
+      goal: 'Przygotuj listę imion oraz nazwisk wszystkich aktorów występujących w naszej bazie.',
+      prompt: 'Pobierz z listy aktorów dwie kolumny: imię oraz nazwisko aktora.',
+      sol: 'SELECT first_name, last_name FROM actor;',
+      order: false, tables: ['actor'],
+      hint: 'Oddziel nazwy kolumn przecinkiem: SELECT first_name, last_name FROM actor;'
     },
     {
       stepCode: 'R3', isWarmup: true,
-      goal: 'Wyciągnij z katalogu listę filmów przeznaczonych wyłącznie dla młodzieży (kategoria PG-13) wraz z ich kategorią wiekową i ceną wypożyczenia.',
-      prompt: 'Rozgrzewka R3 (3 kolumny + prosty WHERE): Z tabeli `film` wybierz `title`, `rating` oraz `rental_rate` tylko dla filmów, gdzie `rating = \'PG-13\'`.',
-      sol: "SELECT title, rating, rental_rate FROM film WHERE rating = 'PG-13';",
-      order: false, tables: ['film'],
-      hint: "Tekst w WHERE zapisz w pojedynczych apostrofach: WHERE rating = 'PG-13';"
+      goal: 'Wyświetl wszystkie dostępne kolumny i wiersze ze słownika kategorii filmowych.',
+      prompt: 'Pobierz ze słownika kategorii wszystkie dostępne kolumny za pomocą symbolu gwiazdki.',
+      sol: 'SELECT * FROM category;',
+      order: false, tables: ['category'],
+      hint: 'Użyj gwiazdki po SELECT: SELECT * FROM category;'
     }
   ],
   p1_2: [
     {
       stepCode: 'R1', isWarmup: true,
-      goal: 'Wyświetl 5 pierwszych filmów z katalogu (identyfikator oraz tytuł) uporządkowanych rosnąco według identyfikatora, aby szybko podejrzeć strukturę danych.',
-      prompt: 'Rozgrzewka R1 (LIMIT): Z tabeli `film` wybierz `film_id` oraz `title`, posortuj rosnąco po `film_id` i ogranicz wynik do `5` wierszy (`LIMIT 5`).',
-      sol: 'SELECT film_id, title FROM film ORDER BY film_id LIMIT 5;',
-      order: true, tables: ['film'],
-      hint: 'Na końcu zapytania dopisz ORDER BY film_id LIMIT 5;'
-    },
-    {
-      stepCode: 'R2', isWarmup: true,
-      goal: 'Wypisz tytuły oraz kategorie wiekowe filmów należących do kategorii familijnej (G) lub dla dorosłych (R).',
-      prompt: 'Rozgrzewka R2 (IN): Z tabeli `film` wybierz `title` oraz `rating` dla filmów o ratingu z listy `(\'G\', \'R\')` za pomocą operatora `IN`.',
-      sol: "SELECT title, rating FROM film WHERE rating IN ('G', 'R');",
-      order: false, tables: ['film'],
-      hint: "Użyj składni: WHERE rating IN ('G', 'R');"
-    },
-    {
-      stepCode: 'R3', isWarmup: true,
-      goal: 'Klienci szukają filmów trwających od godziny do półtorej (od 60 do 90 minut włącznie). Przygotuj listę ich tytułów oraz czasu trwania.',
-      prompt: 'Rozgrzewka R3 (BETWEEN): Z tabeli `film` wybierz `title` oraz `length` dla filmów trwających od `60` do `90` minut włącznie (`BETWEEN 60 AND 90`).',
-      sol: 'SELECT title, length FROM film WHERE length BETWEEN 60 AND 90;',
-      order: false, tables: ['film'],
-      hint: 'Użyj: WHERE length BETWEEN 60 AND 90;'
-    }
-  ],
-  p1_3: [
-    {
-      stepCode: 'R1', isWarmup: true,
       goal: 'Sprawdź, jakie unikalne kategorie wiekowe występują w naszym katalogu filmów (każda kategoria ma pojawić się na liście tylko raz).',
-      prompt: 'Rozgrzewka R1 (DISTINCT 1 kolumna): Z tabeli `film` wypisz unikalne wartości kolumny `rating` (`SELECT DISTINCT rating`).',
+      prompt: 'Pobierz z katalogu filmów unikalne wartości kategorii wiekowej.',
       sol: 'SELECT DISTINCT rating FROM film;',
       order: false, tables: ['film'],
       hint: 'Wpisz: SELECT DISTINCT rating FROM film;'
     },
     {
       stepCode: 'R2', isWarmup: true,
-      goal: 'Wypisz wszystkie unikalne progi cenowe wypożyczeń występujące w katalogu, uporządkowane od najniższej do najwyższej stawki.',
-      prompt: 'Rozgrzewka R2 (DISTINCT + ORDER BY): Z tabeli `film` wypisz unikalne stawki `rental_rate` (`SELECT DISTINCT rental_rate`) posortowane rosnąco.',
-      sol: 'SELECT DISTINCT rental_rate FROM film ORDER BY rental_rate ASC;',
+      goal: 'Przygotuj alfabetyczną listę wszystkich filmów wraz z ich ceną wypożyczenia, posortowaną od A do Z po tytule.',
+      prompt: 'Pobierz z katalogu filmów tytuł oraz cenę wypożyczenia, sortując wynik alfabetycznie rosnąco po tytule.',
+      sol: 'SELECT title, rental_rate FROM film ORDER BY title ASC;',
       order: true, tables: ['film'],
-      hint: 'Połącz SELECT DISTINCT rental_rate FROM film z ORDER BY rental_rate;'
+      hint: 'Na końcu zapytania dopisz: ORDER BY title ASC;'
     },
     {
       stepCode: 'R3', isWarmup: true,
-      goal: 'Symulujemy podwyżkę ceny wypożyczenia o 1 dolara dla filmów familijnych (kategoria G). Wyświetl tytuł filmu, obecną stawkę oraz wyliczoną nową stawkę po podwyżce.',
-      prompt: 'Rozgrzewka R3 (Wyliczenie + AS): Z tabeli `film` wybierz `title`, `rental_rate` oraz `rental_rate + 1 AS new_rate` dla filmów o ratingu `\'G\'`.',
-      sol: "SELECT title, rental_rate, rental_rate + 1 AS new_rate FROM film WHERE rating = 'G';",
+      goal: 'Wyświetl tylko pierwszych 5 wierszy z katalogu filmów (identyfikator oraz tytuł), aby szybko podejrzeć zawartość tabeli.',
+      prompt: 'Pobierz z katalogu filmów identyfikator filmu oraz tytuł, ograniczając liczbę zwracanych wierszy do 5.',
+      sol: 'SELECT film_id, title FROM film LIMIT 5;',
       order: false, tables: ['film'],
-      hint: "Dodaj 1 do kolumny w SELECT i nadaj alias: rental_rate + 1 AS new_rate."
+      hint: 'Na końcu zapytania dopisz: LIMIT 5;'
+    }
+  ],
+  p1_3: [
+    {
+      stepCode: 'R1', isWarmup: true,
+      goal: 'Wypisz z katalogu tytuły oraz ceny wypożyczenia tylko dla najtańszych filmów kosztujących dokładnie 0.99 dolara.',
+      prompt: 'Pobierz z katalogu filmów tytuł oraz cenę wypożyczenia dla filmów o cenie wypożyczenia równej 0.99.',
+      sol: 'SELECT title, rental_rate FROM film WHERE rental_rate = 0.99;',
+      order: false, tables: ['film'],
+      hint: 'Wpisz: SELECT title, rental_rate FROM film WHERE rental_rate = 0.99;'
+    },
+    {
+      stepCode: 'R2', isWarmup: true,
+      goal: 'Wypisz z katalogu tytuły oraz kategorie wiekowe tylko dla filmów z kategorii PG.',
+      prompt: 'Pobierz z katalogu filmów tytuł oraz kategorię wiekową dla filmów posiadających kategorię PG.',
+      sol: "SELECT title, rating FROM film WHERE rating = 'PG';",
+      order: false, tables: ['film'],
+      hint: "Tekst w WHERE zapisz w pojedynczych apostrofach: WHERE rating = 'PG';"
+    },
+    {
+      stepCode: 'R3', isWarmup: true,
+      goal: 'Wyciągnij z katalogu tytuły oraz czas trwania tylko dla długich filmów trwających ponad 120 minut.',
+      prompt: 'Pobierz z katalogu filmów tytuł oraz czas trwania dla filmów trwających dłużej niż 120 minut.',
+      sol: 'SELECT title, length FROM film WHERE length > 120;',
+      order: false, tables: ['film'],
+      hint: 'Użyj operatora większości: WHERE length > 120;'
     }
   ],
   p2_1: [
     {
       stepCode: 'R1', isWarmup: true,
-      goal: 'Oblicz łączną liczbę wszystkich filmów znajdujących się obecnie w katalogu.',
-      prompt: 'Rozgrzewka R1 (COUNT(*)): Policz wszystkie wiersze w tabeli `film` i nazwij kolumnę wynikową `total_films`.',
-      sol: 'SELECT COUNT(*) AS total_films FROM film;',
+      goal: 'Znajdź w katalogu filmy młodzieżowe (kategoria PG-13), które jednocześnie kosztują 4.99 dolara.',
+      prompt: 'Pobierz z katalogu filmów tytuł, kategorię wiekową oraz cenę wypożyczenia dla filmów o kategorii PG-13 i jednocześnie cenie równej 4.99.',
+      sol: "SELECT title, rating, rental_rate FROM film WHERE rating = 'PG-13' AND rental_rate = 4.99;",
       order: false, tables: ['film'],
-      hint: 'Użyj funkcji agregującej z aliasem: SELECT COUNT(*) AS total_films FROM film;'
+      hint: "Połącz oba warunki operatorem AND: WHERE rating = 'PG-13' AND rental_rate = 4.99;"
     },
     {
       stepCode: 'R2', isWarmup: true,
-      goal: 'Porównaj w jednym wierszu ogólną liczbę wszystkich zarejestrowanych wypożyczeń z liczbą wypożyczeń, które zostały już zwrócone (mają wpisaną datę zwrotu).',
-      prompt: 'Rozgrzewka R2 (COUNT(*) vs COUNT(kolumna)): Z tabeli `rental` zwróć w jednym wierszu dwie kolumny: `COUNT(*) AS all_cnt` oraz `COUNT(return_date) AS returned_cnt`.',
-      sol: 'SELECT COUNT(*) AS all_cnt, COUNT(return_date) AS returned_cnt FROM rental;',
-      order: false, tables: ['rental'],
-      hint: 'Wpisz: SELECT COUNT(*) AS all_cnt, COUNT(return_date) AS returned_cnt FROM rental;'
+      goal: 'Wypisz tytuły oraz kategorie wiekowe filmów należących do kategorii familijnej (G) lub dla dorosłych (R).',
+      prompt: 'Pobierz z katalogu filmów tytuł oraz kategorię wiekową dla filmów należących do zbioru kategorii G lub R za pomocą operatora listy.',
+      sol: "SELECT title, rating FROM film WHERE rating IN ('G', 'R');",
+      order: false, tables: ['film'],
+      hint: "Użyj operatora IN: WHERE rating IN ('G', 'R');"
     },
     {
       stepCode: 'R3', isWarmup: true,
-      goal: 'Ustal, ilu różnych (unikalnych) klientów dokonało u nas przynajmniej jednej płatności.',
-      prompt: 'Rozgrzewka R3 (COUNT(DISTINCT)): Z tabeli `payment` policz unikalnych klientów mających płatność jako `uniq_customers`.',
-      sol: 'SELECT COUNT(DISTINCT customer_id) AS uniq_customers FROM payment;',
-      order: false, tables: ['payment'],
-      hint: 'Użyj słowa DISTINCT wewnątrz nawiasu i nadaj alias: COUNT(DISTINCT customer_id) AS uniq_customers.'
+      goal: 'Klienci szukają filmów trwających od godziny do półtorej (od 60 do 90 minut włącznie). Przygotuj listę ich tytułów oraz czasu trwania.',
+      prompt: 'Pobierz z katalogu filmów tytuł oraz czas trwania dla filmów mieszczących się w przedziale od 60 do 90 minut włącznie.',
+      sol: 'SELECT title, length FROM film WHERE length BETWEEN 60 AND 90;',
+      order: false, tables: ['film'],
+      hint: 'Użyj operatora zakresu: WHERE length BETWEEN 60 AND 90;'
     }
   ],
   p2_2: [

@@ -4,7 +4,7 @@
 /* ==========================================================================
    0. KONFIGURACJA CHMURY SUPABASE (REST API — RANKING I PROFILE TESTERÓW)
    ========================================================================== */
-const APP_VERSION = 'v8';
+const APP_VERSION = 'v9';
 const DEFAULT_SUPABASE_URL = 'https://hpfrcykbzuzucglorpkr.supabase.co';
 const DEFAULT_SUPABASE_KEY = 'sb_publishable_5klYjdIKjT35Zl2OtOyGQA_DGxdJCHh';
 
@@ -155,7 +155,9 @@ var PG_DVDRENTAL_DDL = DVDRENTAL_SEED_SQL
   .replace(/create_date TEXT/g, 'create_date DATE')
   .replace(/rental_date TEXT NOT NULL/g, 'rental_date DATE NOT NULL')
   .replace(/return_date TEXT/g, 'return_date DATE')
-  .replace(/payment_date TEXT NOT NULL/g, 'payment_date DATE NOT NULL');
+  .replace(/payment_date TEXT NOT NULL/g, 'payment_date DATE NOT NULL') +
+  "\nALTER TABLE film ADD COLUMN IF NOT EXISTS rental_duration INTEGER DEFAULT 3;\nUPDATE film SET rental_duration = CASE WHEN film_id % 3 = 0 THEN 3 WHEN film_id % 3 = 1 THEN 5 ELSE 7 END;\n" +
+  "ALTER TABLE customer ADD COLUMN IF NOT EXISTS email TEXT;\nUPDATE customer SET email = LOWER(first_name || '.' || last_name || '@dvdrental.org') WHERE email IS NULL;\n";
 
 let dbInitPromise = null;
 
@@ -1017,14 +1019,460 @@ function renderExampleOutputBox(solSql) {
   '</details>';
 }
 
+/* ==========================================================================
+   6B. CENTRALNY GENERATOR SPECYFIKACJI DATALEMUR (100% CZYSTE POLECENIE)
+   ========================================================================== */
+function splitSqlTopLevel(str) {
+  var res = [], cur = '', depth = 0, inStr = false;
+  for (var i = 0; i < str.length; i++) {
+    var ch = str[i];
+    if (ch === "'" && str[i - 1] !== '\\') inStr = !inStr;
+    if (!inStr) {
+      if (ch === '(') depth++;
+      else if (ch === ')' && depth > 0) depth--;
+      else if (ch === ',' && depth === 0) {
+        if (cur.trim()) res.push(cur.trim());
+        cur = '';
+        continue;
+      }
+    }
+    cur += ch;
+  }
+  if (cur.trim()) res.push(cur.trim());
+  return res;
+}
+
+function extractMainSelectSegment(sql) {
+  var s = String(sql || '').trim().replace(/;+\s*$/, '');
+  var inStr = false, depth = 0, lastMainSelectIdx = -1;
+  var upper = s.toUpperCase();
+  for (var i = 0; i < s.length; i++) {
+    var ch = s[i];
+    if (ch === "'" && s[i - 1] !== '\\') inStr = !inStr;
+    if (!inStr) {
+      if (ch === '(') depth++;
+      else if (ch === ')' && depth > 0) depth--;
+      else if (depth === 0 && upper.slice(i, i + 6) === 'SELECT') {
+        var prev = i === 0 ? ' ' : s[i - 1];
+        var next = s[i + 6] || ' ';
+        if (!/[A-Za-z0-9_]/.test(prev) && !/[A-Za-z0-9_]/.test(next)) {
+          lastMainSelectIdx = i;
+        }
+      }
+    }
+  }
+  if (lastMainSelectIdx === -1) return s;
+  return s.slice(lastMainSelectIdx);
+}
+
+function parseSqlDetails(sol, fallbackTables) {
+  var s = String(sol || '').trim();
+  var mainSeg = extractMainSelectSegment(s);
+  var tables = [];
+  if (Array.isArray(fallbackTables) && fallbackTables.length) {
+    tables = fallbackTables.slice();
+  } else {
+    var knownTables = [
+      'film_category', 'film_actor', 'film', 'category', 'actor', 'customer', 'rental', 'payment', 'staff', 'store',
+      'user_events', 'app_transactions', 'saas_users', 'emp_salaries', 'product_orders', 'dept_budgets'
+    ];
+    var reTbl = /\b(?:FROM|JOIN)\s+([a-zA-Z_]\w*)/gi, m;
+    while ((m = reTbl.exec(s)) !== null) {
+      var cand = m[1].toLowerCase();
+      if (knownTables.indexOf(cand) > -1 && tables.indexOf(cand) === -1) tables.push(cand);
+    }
+  }
+
+  var selectBody = '';
+  var inStr = false, depth = 0;
+  var upperMain = mainSeg.toUpperCase();
+  var startPos = 6;
+  if (/^SELECT\s+DISTINCT\s+ON\s*\(/i.test(mainSeg)) {
+    var openP = mainSeg.indexOf('(');
+    var d2 = 0;
+    for (var k = openP; k < mainSeg.length; k++) {
+      if (mainSeg[k] === '(') d2++;
+      else if (mainSeg[k] === ')') { d2--; if (d2 === 0) { startPos = k + 1; break; } }
+    }
+  } else if (/^SELECT\s+DISTINCT\b/i.test(mainSeg)) {
+    startPos = mainSeg.replace(/^SELECT\s+DISTINCT\b/i, '').length;
+    startPos = mainSeg.length - startPos;
+  }
+
+  var fromPos = -1;
+  for (var i = startPos; i < mainSeg.length; i++) {
+    var ch = mainSeg[i];
+    if (ch === "'" && mainSeg[i - 1] !== '\\') inStr = !inStr;
+    if (!inStr) {
+      if (ch === '(') depth++;
+      else if (ch === ')' && depth > 0) depth--;
+      else if (depth === 0 && upperMain.slice(i, i + 4) === 'FROM') {
+        var prevC = mainSeg[i - 1] || ' ';
+        var nextC = mainSeg[i + 4] || ' ';
+        if (/[\s)]/.test(prevC) && /[\s(]/.test(nextC)) {
+          fromPos = i;
+          break;
+        }
+      }
+    }
+  }
+
+  if (fromPos > -1) {
+    selectBody = mainSeg.slice(startPos, fromPos).trim();
+  } else {
+    selectBody = mainSeg.slice(startPos).trim();
+  }
+
+  var rawCols = splitSqlTopLevel(selectBody);
+  var outCols = rawCols.map(function(c) {
+    var cleanC = c.replace(/\s+/g, ' ').trim();
+    if (cleanC === '*') {
+      return { name: '*', expr: '*', hasAlias: false };
+    }
+    var asMatch = /\bAS\s+([a-zA-Z_]\w*)\s*$/i.exec(cleanC);
+    if (asMatch) {
+      var alias = asMatch[1];
+      var exprPart = cleanC.slice(0, asMatch.index).trim();
+      return { name: alias, expr: exprPart, hasAlias: true };
+    }
+    var dotMatch = /(?:^|\.)([a-zA-Z_]\w*)\s*$/.exec(cleanC);
+    var colName = dotMatch ? dotMatch[1] : cleanC;
+    return { name: colName, expr: cleanC, hasAlias: false };
+  });
+
+  var orderMatch = /\bORDER\s+BY\s+([\s\S]+?)(?:\bLIMIT\s+\d+|\s*;?\s*$)/i.exec(mainSeg);
+  var orderBy = orderMatch ? orderMatch[1].replace(/\s+/g, ' ').trim() : '';
+  var limitMatch = /\bLIMIT\s+(\d+)/i.exec(mainSeg);
+  var limit = limitMatch ? limitMatch[1] : '';
+
+  var hasRound = /ROUND\s*\(([^,]+),\s*(\d+)\)/i.exec(s);
+  var roundDigits = hasRound ? hasRound[2] : null;
+
+  return {
+    tables: tables,
+    cols: outCols,
+    orderBy: orderBy,
+    limit: limit,
+    roundDigits: roundDigits,
+    hasDistinct: /\bDISTINCT\b/i.test(s),
+    hasWhere: /\bWHERE\b/i.test(s),
+    hasGroupBy: /\bGROUP\s+BY\b/i.test(s),
+    hasHaving: /\bHAVING\b/i.test(s),
+    hasJoin: /\bJOIN\b/i.test(s),
+    hasLeftJoin: /\bLEFT\s+(?:OUTER\s+)?JOIN\b/i.test(s),
+    hasCte: /^\s*WITH\b/i.test(s),
+    hasWindow: /\bOVER\s*\(/i.test(s),
+    hasCase: /\bCASE\s+WHEN\b/i.test(s),
+    hasFilter: /\bFILTER\s*\(\s*WHERE\b/i.test(s)
+  };
+}
+
+function describeSqlExprPl(expr, alias) {
+  var e = String(expr || '').trim();
+  if (e === '*') return 'wszystkie kolumny tabeli (<code>*</code>)';
+  var u = e.toUpperCase();
+  if (u === 'COUNT(*)') return 'liczba wierszy (<code>COUNT(*)</code>)';
+  if (/^COUNT\s*\(\s*DISTINCT\s+([^)]+)\)/i.test(e)) {
+    var mCd = /^COUNT\s*\(\s*DISTINCT\s+([^)]+)\)/i.exec(e);
+    return 'liczba unikalnych wartości <code>' + mCd[1].trim() + '</code>';
+  }
+  if (/^COUNT\s*\(([^)]+)\)\s*FILTER\s*\(\s*WHERE\s+([^)]+)\)/i.test(e)) {
+    var mCf = /^COUNT\s*\(([^)]+)\)\s*FILTER\s*\(\s*WHERE\s+([^)]+)\)/i.exec(e);
+    return 'liczba wierszy spełniających warunek <code>' + mCf[2].trim() + '</code>';
+  }
+  if (/^COUNT\s*\(([^)]+)\)/i.test(e)) {
+    var mC = /^COUNT\s*\(([^)]+)\)/i.exec(e);
+    return 'liczba niepustych wartości <code>' + mC[1].trim() + '</code>';
+  }
+  if (/^ROUND\s*\(\s*AVG\s*\(([^)]+)\)\s*,\s*(\d+)\s*\)/i.test(e)) {
+    var mRa = /^ROUND\s*\(\s*AVG\s*\(([^)]+)\)\s*,\s*(\d+)\s*\)/i.exec(e);
+    return 'średnia z <code>' + mRa[1].trim() + '</code> zaokrąglona do ' + mRa[2] + ' miejsc po przecinku';
+  }
+  if (/^ROUND\s*\((.+),\s*(\d+)\s*\)$/i.test(e)) {
+    var mR = /^ROUND\s*\((.+),\s*(\d+)\s*\)$/i.exec(e);
+    return 'wartość wyrażenia <code>' + mR[1].trim() + '</code> zaokrąglona do ' + mR[2] + ' miejsc po przecinku';
+  }
+  if (/^SUM\s*\(([^)]+)\)/i.test(e)) {
+    var mS = /^SUM\s*\(([^)]+)\)/i.exec(e);
+    return 'suma <code>' + mS[1].trim() + '</code>';
+  }
+  if (/^AVG\s*\(([^)]+)\)/i.test(e)) {
+    var mA = /^AVG\s*\(([^)]+)\)/i.exec(e);
+    return 'średnia wartość <code>' + mA[1].trim() + '</code>';
+  }
+  if (/^MIN\s*\(([^)]+)\)/i.test(e)) {
+    var mMin = /^MIN\s*\(([^)]+)\)/i.exec(e);
+    return 'wartość minimalna <code>' + mMin[1].trim() + '</code>';
+  }
+  if (/^MAX\s*\(([^)]+)\)/i.test(e)) {
+    var mMax = /^MAX\s*\(([^)]+)\)/i.exec(e);
+    return 'wartość maksymalna <code>' + mMax[1].trim() + '</code>';
+  }
+  if (/\bOVER\s*\(/i.test(e)) {
+    return 'wynik funkcji okna <code>' + e + '</code>';
+  }
+  if (/\bCASE\s+WHEN\b/i.test(e)) {
+    return 'wyrażenie warunkowe <code>CASE WHEN ... END</code>';
+  }
+  if (e !== alias) {
+    return 'wyliczenie <code>' + e + '</code>';
+  }
+  return '';
+}
+
+function buildCleanPolecenie(item, details) {
+  var raw = String(item.goal || item.prompt || '').trim();
+  raw = raw.replace(/^Rozgrzewka\s+R\d+\s*(\([^)]*\))?\s*:\s*/i, '');
+  raw = raw.replace(/^Wyzwanie\s*:\s*/i, '');
+  raw = raw.replace(/^Zadanie\s+\d+\s*:\s*/i, '');
+
+  // 1. Zdejmij backticki wokół słów
+  var s = raw.replace(/`([^`]+)`/g, '$1');
+
+  // 2. Zamień konstrukcje z nazwami tabel na naturalne polskie określenia biznesowe
+  var tablePhraseReplacements = [
+    [/\b[Zz]\s+tabeli\s+product_orders\b/gi, 'Ze zbioru zamówień produktów'],
+    [/\b[Ww]\s+tabeli\s+product_orders\b/gi, 'W zbiorze zamówień produktów'],
+    [/\b[Zz]\s+tabeli\s+app_transactions\b/gi, 'Z rejestru transakcji w aplikacji'],
+    [/\b[Ww]\s+tabeli\s+app_transactions\b/gi, 'W rejestrze transakcji w aplikacji'],
+    [/\b[Zz]\s+tabeli\s+saas_users\b/gi, 'Z bazy użytkowników platformy'],
+    [/\b[Ww]\s+tabeli\s+saas_users\b/gi, 'W bazie użytkowników platformy'],
+    [/\b[Zz]\s+tabeli\s+user_events\b/gi, 'Z dziennika zdarzeń użytkowników'],
+    [/\b[Ww]\s+tabeli\s+user_events\b/gi, 'W dzienniku zdarzeń użytkowników'],
+    [/\b[Zz]\s+tabeli\s+emp_salaries\b/gi, 'Z listy wynagrodzeń pracowników'],
+    [/\b[Ww]\s+tabeli\s+emp_salaries\b/gi, 'Na liście wynagrodzeń pracowników'],
+    [/\b[Zz]\s+tabeli\s+dept_budgets\b/gi, 'Z zestawienia budżetów działów'],
+    [/\b[Ww]\s+tabeli\s+dept_budgets\b/gi, 'W zestawieniu budżetów działów'],
+    [/\b[Zz]\s+tabeli\s+film_category\b/gi, 'Z tabeli przypisań filmów do kategorii'],
+    [/\b[Zz]\s+tabeli\s+film_actor\b/gi, 'Z tabeli obsady filmowej'],
+    [/\b[Zz]\s+tabeli\s+film\b/gi, 'Z katalogu filmów'],
+    [/\b[Ww]\s+tabeli\s+film\b/gi, 'W katalogu filmów'],
+    [/\b[Zz]\s+tabeli\s+customer\b/gi, 'Z bazy klientów'],
+    [/\b[Ww]\s+tabeli\s+customer\b/gi, 'W bazie klientów'],
+    [/\b[Zz]\s+tabeli\s+rental\b/gi, 'Z historii wypożyczeń'],
+    [/\b[Ww]\s+tabeli\s+rental\b/gi, 'W historii wypożyczeń'],
+    [/\b[Zz]\s+tabeli\s+payment\b/gi, 'Z rejestru płatności'],
+    [/\b[Ww]\s+tabeli\s+payment\b/gi, 'W rejestrze płatności'],
+    [/\b[Zz]\s+tabeli\s+actor\b/gi, 'Z listy aktorów'],
+    [/\b[Zz]\s+tabeli\s+category\b/gi, 'Ze słownika kategorii'],
+    [/\b[Zz]\s+tabeli\s+staff\b/gi, 'Z listy pracowników'],
+    [/\b[Zz]\s+tabeli\s+store\b/gi, 'Z listy oddziałów sklepów'],
+    [/\bproduct_orders\b/gi, 'zamówień produktów'],
+    [/\bapp_transactions\b/gi, 'transakcji w aplikacji'],
+    [/\bsaas_users\b/gi, 'użytkowników platformy'],
+    [/\buser_events\b/gi, 'zdarzeń użytkowników'],
+    [/\bemp_salaries\b/gi, 'wynagrodzeń pracowników'],
+    [/\bdept_budgets\b/gi, 'budżetów działów'],
+    [/\bfilm_category\b/gi, 'przypisań filmów do kategorii'],
+    [/\bfilm_actor\b/gi, 'obsady filmów']
+  ];
+  for (var tIdx = 0; tIdx < tablePhraseReplacements.length; tIdx++) {
+    s = s.replace(tablePhraseReplacements[tIdx][0], tablePhraseReplacements[tIdx][1]);
+  }
+
+  // 3. Usuń nawiasy zawierające surową składnię SQL, operatory, funkcje lub identyfikatory techniczne
+  for (var pass = 0; pass < 3; pass++) {
+    s = s.replace(/\s*\(([^()]*)\)/g, function(full, inner) {
+      if (/\b(SELECT|FROM|WHERE|GROUP BY|HAVING|ORDER BY|LIMIT|JOIN|LEFT|INNER|RIGHT|FULL|CROSS|COUNT|SUM|AVG|MIN|MAX|ROUND|COALESCE|NULLIF|CASE|WHEN|THEN|ELSE|END|OVER|PARTITION|ROW_NUMBER|RANK|DENSE_RANK|LAG|LEAD|FILTER|DISTINCT|BETWEEN|ILIKE|LIKE|NOT|AND|OR|ASC|DESC|NULL|AS|INTERVAL|DATE_TRUNC|EXTRACT|CAST|generate_series)\b/i.test(inner)) {
+        return '';
+      }
+      if (/[=_<>!*/%+]|::|[a-z]+_[a-z]+/i.test(inner)) {
+        return '';
+      }
+      if (/^\s*'(?:[^']+)'(?:\s*,\s*'(?:[^']+)')*\s*$/.test(inner)) {
+        return ' (' + inner.replace(/'/g, '') + ')';
+      }
+      if (/^\s*(?:title|rating|length|amount|email|active|city|country|name|revenue|units|arpu|diff|ratio|hours|days|rentals)\s*$/i.test(inner)) {
+        return '';
+      }
+      return full;
+    });
+  }
+
+  // 4. Zamień surowe nazwy kolumn i wyrażenia techniczne wplecione w zdanie na naturalny język polski
+  var colToPolish = [
+    [/\b(?:\w+\.)?title\b/g, 'tytuł filmu'],
+    [/\b(?:\w+\.)?rental_rate\b/g, 'cenę wypożyczenia'],
+    [/\b(?:\w+\.)?replacement_cost\b/g, 'koszt odtworzenia'],
+    [/\b(?:\w+\.)?release_year\b/g, 'rok wydania'],
+    [/\b(?:\w+\.)?rental_duration\b/g, 'czas wypożyczenia'],
+    [/\b(?:\w+\.)?rating\b/g, 'kategorię wiekową'],
+    [/\b(?:\w+\.)?length\b/g, 'czas trwania'],
+    [/\b(?:\w+\.)?film_id\b/g, 'identyfikator filmu'],
+    [/\b(?:\w+\.)?customer_id\b/g, 'identyfikator klienta'],
+    [/\b(?:\w+\.)?first_name\b/g, 'imię'],
+    [/\b(?:\w+\.)?last_name\b/g, 'nazwisko'],
+    [/\b(?:\w+\.)?create_date\b/g, 'datę rejestracji'],
+    [/\b(?:\w+\.)?active\s*=\s*1\b/gi, 'aktywnych'],
+    [/\b(?:\w+\.)?active\s*=\s*0\b/gi, 'nieaktywnych'],
+    [/\b(?:\w+\.)?active\b/g, 'status aktywności'],
+    [/\b(?:\w+\.)?store_id\b/g, 'identyfikator sklepu'],
+    [/\b(?:\w+\.)?staff_id\b/g, 'identyfikator pracownika'],
+    [/\b(?:\w+\.)?actor_id\b/g, 'identyfikator aktora'],
+    [/\b(?:\w+\.)?category_id\b/g, 'identyfikator kategorii'],
+    [/\b(?:\w+\.)?rental_id\b/g, 'identyfikator wypożyczenia'],
+    [/\b(?:\w+\.)?rental_date\b/g, 'datę wypożyczenia'],
+    [/\b(?:\w+\.)?return_date\b/g, 'datę zwrotu'],
+    [/\b(?:\w+\.)?payment_id\b/g, 'identyfikator płatności'],
+    [/\b(?:\w+\.)?payment_date\b/g, 'datę płatności'],
+    [/\b(?:\w+\.)?amount\b/g, 'kwotę płatności'],
+    [/\b(?:\w+\.)?emp_id\b/g, 'identyfikator pracownika'],
+    [/\b(?:\w+\.)?emp_name\b/g, 'imię i nazwisko pracownika'],
+    [/\b(?:\w+\.)?dept_id\b/g, 'identyfikator działu'],
+    [/\b(?:\w+\.)?dept_name\b/g, 'nazwę działu'],
+    [/\b(?:\w+\.)?salary\b/g, 'wynagrodzenie'],
+    [/\b(?:\w+\.)?hire_date\b/g, 'datę zatrudnienia'],
+    [/\b(?:\w+\.)?manager_id\b/g, 'identyfikator przełożonego'],
+    [/\b(?:\w+\.)?user_id\b/g, 'identyfikator użytkownika'],
+    [/\b(?:\w+\.)?signup_date\b/g, 'datę rejestracji'],
+    [/\b(?:\w+\.)?plan_type\b/g, 'plan subskrypcji'],
+    [/\b(?:\w+\.)?monthly_fee\b/g, 'opłatę miesięczną'],
+    [/\b(?:\w+\.)?event_id\b/g, 'identyfikator zdarzenia'],
+    [/\b(?:\w+\.)?event_type\b/g, 'typ zdarzenia'],
+    [/\b(?:\w+\.)?event_date\b/g, 'datę zdarzenia'],
+    [/\b(?:\w+\.)?tx_id\b/g, 'identyfikator transakcji'],
+    [/\b(?:\w+\.)?tx_date\b/g, 'datę transakcji'],
+    [/\b(?:\w+\.)?status\b/g, 'status'],
+    [/\b(?:\w+\.)?order_id\b/g, 'identyfikator zamówienia'],
+    [/\b(?:\w+\.)?order_date\b/g, 'datę zamówienia'],
+    [/\b(?:\w+\.)?product_name\b/g, 'nazwę produktu'],
+    [/\b(?:\w+\.)?quantity\b/g, 'liczbę sztuk'],
+    [/\b(?:\w+\.)?unit_price\b/g, 'cenę jednostkową'],
+    [/\b(?:\w+\.)?annual_budget\b/g, 'roczny budżet']
+  ];
+  for (var cIdx = 0; cIdx < colToPolish.length; cIdx++) {
+    s = s.replace(colToPolish[cIdx][0], colToPolish[cIdx][1]);
+  }
+
+  // 5. Wyczyść surowe wyrażenia AS <alias>, techniczne identyfikatory z podkreślnikiem (snake_case) oraz angielskie aliasy
+  s = s.replace(/\s+\bAS\s+[a-zA-Z_]\w*/gi, '');
+  s = s.replace(/\s+jako\s+[a-zA-Z_]\w*/gi, '');
+  s = s.replace(/\bSELECT\s+DISTINCT\b/gi, 'unikalne wartości');
+  s = s.replace(/\bDISTINCT\b/gi, 'unikalne');
+  s = s.replace(/\bORDER\s+BY\b/gi, 'posortowane po');
+  s = s.replace(/\bGROUP\s+BY\b/gi, 'pogrupowane po');
+  s = s.replace(/\bLIMIT\s+(\d+)/gi, 'ograniczając wynik do $1 wierszy');
+  s = s.replace(/\bASC\b/g, 'rosnąco');
+  s = s.replace(/\bDESC\b/g, 'malejąco');
+
+  // Usuń wszelkie pozostałe słowa z podkreślnikiem (snake_case) oraz angielskie nazwy aliasów wynikowych
+  s = s.replace(/\b[a-zA-Z0-9]*_[a-zA-Z0-9_]*\b/g, '');
+  s = s.replace(/\b(revenue|units|arpu|tx|cnt|avg|min|max|sum|diff|ratio|hours|days|rentals|film|customer|rental|payment|actor|staff|store|category|email|city|country|name)\b/gi, '');
+
+  // Oczyść apostrofy wokół literałów w tekście (np. 'PG-13' -> PG-13) oraz podwójne spacje i wiszące znaki interpunkcyjne
+  s = s.replace(/'([^']+)'/g, '$1');
+  s = s.replace(/\s+([,.;:])/g, '$1');
+  s = s.replace(/,\s*,+/g, ', ');
+  s = s.replace(/\(\s*\)/g, '');
+  s = s.replace(/\s{2,}/g, ' ').trim();
+  s = s.replace(/[,;:]\s*$/, '.');
+  if (s && !/[.!?]$/.test(s)) s += '.';
+  if (s.length > 1) s = s.charAt(0).toUpperCase() + s.slice(1);
+  return s;
+}
+
+function buildDataLemurSpec(item, parentTask) {
+  var sol = item.sol || '';
+  var fallbackTbls = item.tables || (parentTask && parentTask.tables) || [];
+  var details = parseSqlDetails(sol, fallbackTbls);
+
+  var polecenie = buildCleanPolecenie(item, details);
+  var assumptions = [];
+
+  if (details.tables.length > 0) {
+    var tblCodes = details.tables.map(function(t) { return '<code>' + t + '</code>'; }).join(', ');
+    assumptions.push('Tabele źródłowe: ' + tblCodes + '.');
+  }
+
+  if (details.cols.length > 0) {
+    var colBadges = details.cols.map(function(c) {
+      if (c.name === '*') {
+        return '<code>*</code> (wszystkie kolumny tabeli)';
+      }
+      var descPl = describeSqlExprPl(c.expr, c.name);
+      if (descPl) {
+        return '<code>' + c.name + '</code> (' + descPl + ')';
+      }
+      return '<code>' + c.name + '</code>';
+    });
+    assumptions.push('Wymagane kolumny w wyniku (w dokładnie tej kolejności): ' + colBadges.join(', ') + '.');
+  }
+
+  if (details.roundDigits !== null) {
+    assumptions.push('Zaokrąglij wartości ułamkowe do <strong>' + details.roundDigits + ' miejsc po przecinku</strong> za pomocą <code>ROUND(..., ' + details.roundDigits + ')</code>.');
+  }
+
+  if (details.hasDistinct && !/COUNT\s*\(\s*DISTINCT/i.test(sol)) {
+    assumptions.push('Zwróć wyłącznie unikalne wiersze (zastosuj <code>SELECT DISTINCT</code>).');
+  }
+
+  if (details.orderBy) {
+    assumptions.push('Sortowanie wyniku: <code>ORDER BY ' + details.orderBy + '</code>' + (details.limit ? ' oraz ograniczenie do <code>LIMIT ' + details.limit + '</code> wierszy.' : '.'));
+  } else if (details.limit) {
+    assumptions.push('Ogranicz liczbę zwracanych wierszy do: <code>LIMIT ' + details.limit + '</code>.');
+  } else if (item.order === false) {
+    assumptions.push('Kolejność wierszy w wyniku nie ma znaczenia.');
+  }
+
+  var step1 = 'Zidentyfikuj tabele źródłowe (' + (details.tables.map(function(t){return '`' + t + '`';}).join(', ') || 'wskazane w zadaniu') + ') ';
+  if (details.hasLeftJoin) {
+    step1 += 'i połącz je złączeniem `LEFT JOIN`, aby nie zgubić rekordów z lewej tabeli nieposiadających dopasowania.';
+  } else if (details.hasJoin) {
+    step1 += 'i połącz je po wspólnym kluczu za pomocą `JOIN ... ON`.';
+  } else if (details.hasCte) {
+    step1 += 'i rozbij problem na czytelny krok pomocniczy w klauzuli `WITH nazwa_cte AS (...)`.';
+  } else {
+    step1 += 'i zastanów się, które wiersze należy odfiltrować przed dalszymi obliczeniami.';
+  }
+
+  var usedClauses = [];
+  if (details.hasCte) usedClauses.push('`WITH ... AS (...)`');
+  usedClauses.push(details.hasDistinct ? '`SELECT DISTINCT`' : '`SELECT`');
+  usedClauses.push('`FROM`');
+  if (details.hasJoin) usedClauses.push(details.hasLeftJoin ? '`LEFT JOIN ... ON`' : '`JOIN ... ON`');
+  if (details.hasWhere) usedClauses.push('`WHERE`');
+  if (details.hasGroupBy) usedClauses.push('`GROUP BY`');
+  if (details.hasHaving) usedClauses.push('`HAVING`');
+  if (details.hasWindow) usedClauses.push('funkcji okna `OVER (...)`');
+  if (details.orderBy) usedClauses.push('`ORDER BY`');
+  if (details.limit) usedClauses.push('`LIMIT`');
+
+  var step2 = 'Użyj konstrukcji: ' + usedClauses.join(' → ') + '. ' + (item.hint || '');
+
+  var step3 = item.gapHint || '';
+  if (!step3) {
+    if (details.hasHaving) {
+      step3 = 'Pułapka kolejności SQL: w `WHERE` filtrujemy pojedyncze wiersze przed grupowaniem, a warunki na funkcjach agregujących (`COUNT`, `SUM`, `AVG`) umieszczamy wyłącznie w `HAVING`!';
+    } else if (details.hasLeftJoin) {
+      step3 = 'Pułapka LEFT JOIN: nie umieszczaj warunków dla prawej tabeli w `WHERE` (chyba że sprawdzasz `IS NULL`), bo zamienisz `LEFT JOIN` w zwykły `INNER JOIN`!';
+    } else if (details.hasWindow) {
+      step3 = 'Pułapka funkcji okna: funkcji `ROW_NUMBER()`, `RANK()`, `LAG()` nie można użyć bezpośrednio w `WHERE` — oblicz je w CTE (`WITH`) i przefiltruj w zapytaniu głównym.';
+    } else if (/\bIS\s+(?:NOT\s+)?NULL\b/i.test(sol)) {
+      step3 = 'Pułapka NULL: w SQL nigdy nie piszemy `= NULL` ani `<> NULL`. Do sprawdzania brakujących wartości używaj wyłącznie `IS NULL` oraz `IS NOT NULL`.';
+    } else if (/\bOR\b/i.test(sol) && /\bAND\b/i.test(sol)) {
+      step3 = 'Pułapka priorytetu operatorów: `AND` wiąże silniej niż `OR`! Zawsze otaczaj część z `OR` nawiasami `(...)`.';
+    } else {
+      step3 = 'Upewnij się, że nazwy i kolejność kolumn w `SELECT` (wraz z aliasami `AS`) dokładnie zgadzają się z sekcją „Wymagania i założenia”.';
+    }
+  }
+
+  return {
+    polecenie: polecenie,
+    assumptions: assumptions,
+    hints: [step1, step2, step3]
+  };
+}
+window.buildDataLemurSpec = buildDataLemurSpec;
+
 // Renderuje zunifikowaną specyfikację zadania w standardzie DataLemur (📌 Polecenie + 📋 Wymagania i założenia + 🎯 Example Output)
 function renderTaskSpecBox(item, parentTask) {
   if (!item) return '';
-  if ((!item.polecenie || !item.assumptions || !item.hints) && typeof window.buildDataLemurSpec === 'function') {
-    var spec = window.buildDataLemurSpec(item, parentTask || null);
+  if (!item._v9SpecDone) {
+    var spec = buildDataLemurSpec(item, parentTask || null);
     item.polecenie = spec.polecenie;
     item.assumptions = spec.assumptions;
     item.hints = spec.hints;
+    item._v9SpecDone = true;
   }
   var polecenieTxt = item.polecenie || item.prompt || '';
   var assumptionsList = Array.isArray(item.assumptions) ? item.assumptions : [];
@@ -1526,40 +1974,6 @@ function renderPathTab() {
       state.activeVariantIdx = vIdx;
     }
     var variant = task.variants[vIdx];
-    var warmupCnt = countWarmupSolved(task.id);
-    var basicCnt = countBasicSolved(task.id);
-    var advCnt = countAdvSolved(task.id);
-
-    var warmupPills = '';
-    var basicPills = '';
-    var advPills = '';
-    for (var i = 0; i < task.variants.length; i++) {
-      var vItem = task.variants[i];
-      var vDone = isStepSolved(task, i);
-      var vUnlocked = isStepUnlocked(task, i);
-      var isWarm = vItem.tier === 'warmup' || i < 3;
-      var isMix = vItem.tier === 'adv' || i >= 8;
-      var stepCode = vItem.stepCode || (i < 3 ? ('R' + (i + 1)) : String(i - 2));
-      var statusTxt = vDone ? '✅ Zaliczone' : (i === vIdx ? '🎯 Teraz ćwiczysz' : (!vUnlocked ? '🔒 Zablokowane' : 'Dostępne'));
-      var cls = 'var-pill ' +
-        (isWarm ? 'var-pill-warm ' : '') +
-        (isMix ? 'var-pill-mix ' : '') +
-        (i === vIdx ? 'active ' : '') +
-        (vDone ? 'done ' : '') +
-        (!vUnlocked ? 'locked' : '');
-      var ttl = !vUnlocked
-        ? '🔒 Zablokowane! Rozwiąż najpierw poprzednie zadanie, aby odblokować ten krok!'
-        : (stepCode + ' · ' + statusTxt);
-      var pillContent = !vUnlocked
-        ? '🔒 ' + esc(stepCode)
-        : (vDone ? '✅ ' + esc(stepCode) : (i === vIdx ? '🎯 ' + esc(stepCode) : esc(stepCode)));
-      var btnHtml = '<button type="button" class="' + cls.trim() + '" data-act="pickVariant" data-idx="' + i + '" title="' + esc(ttl) + '">' +
-        pillContent +
-      '</button>';
-      if (i < 3) warmupPills += btnHtml;
-      else if (i < 8) basicPills += btnHtml;
-      else advPills += btnHtml;
-    }
 
     var curStepCode = variant.stepCode || (vIdx < 3 ? ('R' + (vIdx + 1)) : String(vIdx - 2));
     var tierBadge = vIdx < 3
@@ -1572,23 +1986,6 @@ function renderPathTab() {
         '<div style="display:flex;gap:6px;flex-wrap:wrap">' +
           '<button type="button" class="btn sm" data-act="openTutorialSlides">📖 Teoria + Symulator (Slajdy 1–4)</button>' +
           '<button type="button" class="btn sm" data-act="shuffleVariant">🎲 Losuj odblokowane</button>' +
-        '</div>' +
-      '</div>' +
-      '<div class="var-tiers-box">' +
-        '<div class="var-tier-row">' +
-          '<span class="var-tier-lbl">🔥 Rozgrzewka (R1–R3) <strong>' + warmupCnt + '/3</strong>:</span>' +
-          '<div class="var-pills">' + warmupPills + '</div>' +
-        '</div>' +
-        '<div class="var-tier-row">' +
-          '<span class="var-tier-lbl">📘 Zadania Podstawowe (1–5) <strong>' + basicCnt + '/5</strong>:</span>' +
-          '<div class="var-pills">' + basicPills + '</div>' +
-        '</div>' +
-        '<div class="var-tier-row">' +
-          '<span class="var-tier-lbl">🚀 Zadania Zaawansowane (6–10 — miks z poprzednimi działami) <strong>' + advCnt + '/5</strong>:</span>' +
-          '<div class="var-pills">' + advPills + '</div>' +
-        '</div>' +
-        '<div class="var-legend small muted">' +
-          '<span>✅ Zaliczone</span> · <span>🎯 Teraz ćwiczysz</span> · <span>🔒 Zablokowane (odblokowują się po kolei: R1 → R2 → R3 → 1 → ... → 10)</span>' +
         '</div>' +
       '</div>' +
       '<span class="chip info">Etap ' + task.stage + ' · Krok ' + (vIdx + 1) + '/13 · ' + esc(tierBadge) + '</span>' +
@@ -1930,6 +2327,7 @@ function renderProfileTab() {
         '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">' +
           '<span class="chip ' + (state.userProfile ? 'done' : 'mid') + '">' + (state.userProfile ? '✅ Profil aktywny (Nick + PIN)' : '👤 Tryb gościa') + '</span>' +
           '<span class="chip info">📱 Wersja aplikacji: ' + esc(APP_VERSION) + '</span>' +
+          '<button type="button" class="btn sm warn" data-act="forceRefreshApp">🔄 Odśwież do najnowszej wersji (' + esc(APP_VERSION) + ')</button>' +
         '</div>' +
         '<h2 style="margin:6px 0 2px">Gracz: ' + esc(curNick) + '</h2>' +
         '<p class="small muted" style="margin:0">XP: <strong>' + state.xp + '</strong> · Rozwiązane zadania: <strong>' + getTotalSolvedCount() + '</strong>' +
@@ -2760,6 +3158,20 @@ document.addEventListener('click', async function(e) {
     }
     render();
   }
+  else if (act === 'forceRefreshApp') {
+    toast('🔄 Czyszczę pamięć podręczną Service Workera i pobieram wersję ' + APP_VERSION + '…');
+    try {
+      if ('serviceWorker' in navigator) {
+        var regs = await navigator.serviceWorker.getRegistrations();
+        await Promise.all(regs.map(function(r) { return r.unregister(); }));
+      }
+      if ('caches' in window) {
+        var cKeys = await caches.keys();
+        await Promise.all(cKeys.map(function(k) { return caches.delete(k); }));
+      }
+    } catch (err) {}
+    window.location.reload();
+  }
   else if (act === 'exportJson') {
     var blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
     var a = document.createElement('a');
@@ -2783,7 +3195,7 @@ if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.
   });
 
   window.addEventListener('load', function() {
-    navigator.serviceWorker.register('./sw.js').then(function(registration) {
+    navigator.serviceWorker.register('./sw.js?v=9', { updateViaCache: 'none' }).then(function(registration) {
       document.addEventListener('visibilitychange', function() {
         if (document.visibilityState === 'visible') {
           registration.update().catch(function() {});
