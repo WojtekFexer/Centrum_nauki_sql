@@ -2,55 +2,56 @@
 
 > Dołączaj ten plik na starcie każdej nowej rozmowy z Gemem 3. Czyta go też agent w VS Code. Aktualizuj go po każdej sesji. Odhaczaj `[x]` dopiero po własnym teście w przeglądarce.
 
-**Ostatnia aktualizacja:** 04.11.2026 (po Sesji 4 — DataLemur & SQLBolt Standard + PWA v8 Auto-Update)
+**Ostatnia aktualizacja:** 05.11.2026 (Wersja `v11` — po wdrożeniu standardu SoloLearn + DataLemur i publikacji na GitHub Pages)
 
 ## Pliki
-- `index.html`: czysty szkielet HTML aplikacji mobilnej PWA (z kompletem meta tagów dla iOS Safari i Android Chrome oraz ścieżkami względnymi `./`)
-- `css/style.css`: style aplikacji (motyw ciemny/jasny, sekcje DataLemur `📌 Polecenie` + `📋 Wymagania i założenia`, podgląd `Example Input` / `Example Output`, 3-punktowa checklista walidacji SQLBolt, 3-stopniowe podpowiedzi `1/3..3/3`, responsywność `100dvh`)
-- `js/app.js`: główna logika aplikacji (`APP_VERSION = 'v8'`), silnik PGlite (z blokadą Singleton `dbInitPromise`), żywe tabele `Example Input` (`LIMIT 4`) i `Example Output` (`pierwsze 3 wiersze` + łączna liczba wierszy), 3-punktowa checklista walidacji (`Kolumny`, `Ziarno`, `Wartości i kolejność`), 3-stopniowe podpowiedzi (`💡 Podpowiedź Krok 1/3 → 2/3 → 3/3`), logowanie `Nick + PIN`, synchronizacja z chmurą Supabase REST API oraz auto-aktualizacja PWA (`controllerchange` + `visibilitychange`)
-- `js/data-dvdrental.js`: schemat (`SCHEMA_META`) i dane wsadowe (`DVDRENTAL_SEED_SQL`) 10 tabel bazy `dvdrental`
-- `js/data-tasks.js`: baza zadań Ścieżki — **156 zadań** (12 lekcji × [4 slajdy teorii + 3 zadania rozgrzewkowe `R1–R3` + 5 zadań podstawowych `1–5` + 5 zadań zaawansowanych `6–10`]) oraz Diagnozy (**10 zadań**) wraz z generatorem `buildDataLemurSpec` (`📌 Polecenie`, `📋 Wymagania i założenia`, `hints[1..3]`)
-- `js/data-interview.js`: pula **60 zadań rekrutacyjnych** w stylu DataLemur zintegrowanych z `buildDataLemurSpec`
-- `manifest.json`: konfiguracja instalacji PWA na ekranie głównym (iOS / Android) ze ścieżkami względnymi (`./`)
-- `sw.js`: Service Worker (`CACHE_VERSION = 'sql-master-v8'`) ze strategią **Network-First z fallbackiem do Cache** dla plików `.html/.js/.css`, **Cache-First** dla silnika WASM (`@electric-sql/pglite`) oraz **Network-Only** dla `supabase.co`
-- `docs/ARCHITEKTURA.md`: wizja i plan techniczny
+- `index.html`: szkielet HTML aplikacji mobilnej PWA z wersjonowaniem lokalnych zasobów (`?v=11`) i meta tagami dla iOS Safari / Android Chrome
+- `css/style.css`: style aplikacji (układ Editor-Centric Mobile UI, dwustopniowe zwijanie tabel, bursztynowa plakietka `.sql-as-badge`, animacje przejść między zadaniami `task-transition-enter`, ochrona przed rozjeżdżaniem ramek `overflow-wrap: anywhere`)
+- `js/app.js`: główna logika aplikacji (`APP_VERSION = 'v11'`), silnik PGlite (Singleton `dbInitPromise`), generator zadań `buildDataLemurSpec` (czyste `📌 Polecenie` + `📋 Wymagania i założenia` z kolorowym `AS`), żywy podgląd `Example Input` / `Example Output`, 3-punktowa checklista walidacji, przełącznik cofania zadań `◀ ZADANIE X z 8 ▾ ▶`, zasada *Teach-First* (`🆕 Nowy element`), kontekstowy `SQL Quick-Bar` oraz auto-scroll do wyniku
+- `js/data-dvdrental.js`: schemat (`SCHEMA_META`) i dane wsadowe (`DVDRENTAL_SEED_SQL`) bazy `dvdrental`
+- `js/data-tasks.js`: przebudowana baza zadań Ścieżki — **128 zadań w 16 przyjaznych pod-lekcjach** (5 głównych ścieżek × pod-lekcje po 8 zadań: 2 rozgrzewkowe `R1–R2` + 3 podstawowe `1–3` + 3 łączące `4–6`) z odblokowaniem kolejnej pod-lekcji po zaliczeniu 5 z 8 zadań, oraz Diagnoza (10 zadań)
+- `js/data-interview.js`: pula 60 zadań rekrutacyjnych w stylu DataLemur
+- `manifest.json`: konfiguracja instalacji pełnoekranowej PWA (`display: standalone`) ze ścieżkami względnymi (`./`)
+- `sw.js`: Service Worker (`sql-master-v11`) ze strategią Network-First (`cache: 'no-store'`) dla plików `.html/.js/.css`, Cache-First dla silnika WASM PGlite i Network-Only dla `supabase.co`
+- `docs/ARCHITEKTURA.md`: wizja i plan techniczny (zaktualizowany do v2.0)
 - `stan_projektu.md`: ten plik
 - `GEMINI.md`: zasady pracy agenta w VS Code
 
 ## Decyzje
-- **Silnik SQL (WDROŻONY):** `@electric-sql/pglite` (PostgreSQL 16 w WebAssembly) zabezpieczony wzorcem Singleton Promise Guard (`dbInitPromise`) przed podwójną inicjalizacją i wyciekiem pamięci.
-- **Standard prezentacji zadań DataLemur + SQLBolt (WDROŻONY DLA WSZYSTKICH 226 ZADAŃ):**
-  - Usunięto zduplikowany boks „💼 Po ludzku (Prośba od szefa)” na rzecz dwóch czystych sekcji: **`📌 Polecenie:`** (opis biznesowy naturalnym językiem bez gotowych wzorów SQL) oraz **`📋 Wymagania i założenia:`** (wypunktowana lista techniczna: tabele źródłowe, dokładne nazwy kolumn i aliasów w znacznikach `<code>`, reguły filtrowania/zaokrąglania/NULL oraz sortowanie i limit).
-  - **Żywy podgląd `Example Input` oraz `Example Output`:** pod każdą tabelą zadania automatycznie wyświetlane są 4 przykładowe wiersze z PGlite (`SELECT * FROM <tabela> LIMIT 4`) wraz z typami danych SQL i klikalnymi nazwami kolumn, a pod wymaganiami sekcja **`🎯 Oczekiwany kształt wyniku (Example Output — pierwsze 3 wiersze)`** z informacją o łącznej liczbie wierszy.
-  - **3-punktowa Checklista Walidacji (SQLBolt Style) i 3-stopniowe Podpowiedzi:** po każdym uruchomieniu sprawdzania wyświetlane są 3 wskaźniki (`1) Kolumny`, `2) Ziarno (liczba wierszy)`, `3) Wartości i kolejność`), a przycisk **`💡 Podpowiedź (Krok 1/3)`** odsłania kolejno wskazówkę koncepcyjną (`1/3`), techniczną (`2/3`) oraz analizę pułapki (`3/3`).
-- **Auto-aktualizacja PWA na telefonach (`v8`, WDROŻONA):** `sw.js` (`sql-master-v8`) wymusza `self.skipWaiting()` i `self.clients.claim()`, stosuje strategię Network-First dla kodu aplikacji (`.html`, `.js`, `.css`) i automatycznie przeładowuje aplikację po wykryciu nowej wersji (`controllerchange` + `registration.update()` przy `visibilitychange`).
-- **Onboarding i Progresja SoloLearn (WDROŻONA):**
-  - Przed każdą z 12 lekcji 4 interaktywne slajdy teorii z animowanym symulatorem potoku wykonawczego PostgreSQL (`FROM` → `WHERE` → `GROUP BY` → `SELECT` → `ORDER BY`) i mini-quizem (+15 XP).
-  - Ściśle sekwencyjne odblokowywanie każdego zadania po kolei (`R1 → R2 → R3 → 1 → 2 → ... → 10`) z przyciskiem `🚀 Następne zadanie →` po zaliczeniu oraz przełącznikiem `🔓 Tryb testerski` w zakładce `Konto & AI`.
-- **Konta użytkowników i Chmura Supabase (WDROŻONE):** bezhasłowe logowanie testerów przez `Nick + 4-cyfrowy PIN`, utworzona tabela `public.sql_profiles` w projekcie Supabase (`SQLRanking`: `https://hpfrcykbzuzucglorpkr.supabase.co`) i żywa tablica wyników (`🏆 Ranking Testerów`).
+- **Silnik SQL (WDROŻONY):** `@electric-sql/pglite` (PostgreSQL 16 w WebAssembly) zabezpieczony wzorcem Singleton Promise Guard (`dbInitPromise`).
+- **Układ mobilny i prezentacja zadań w stylu SoloLearn + DataLemur (WDROŻONE w v10–v11):**
+  - Każde zadanie dzieli się na czysto biznesowe `📌 Polecenie` (po polsku, bez wzorów SQL i bez uciętych zdań) oraz wypunktowane `📋 Wymagania i założenia`, gdzie zwykłe kolumny wyświetlają się jako `kolumna nazwa`, a kolumny z aliasem w szyku `opis/kolumna AS alias` z wyróżnionym kolorem słowem `AS`.
+  - Nowa kolejność na ekranie telefonu: `Nawigacja i Pasek Postępu` → `Polecenie i Wymagania` → `Dwustopniowo zwijana specyfikacja tabeli (osobno kolumny, osobno Example Input)` → `Kontekstowa Ściąga i SQL Quick-Bar` → `Edytor SQL` → `Wynik (z auto-scrollem), Example Output i 3-stopniowe Podpowiedzi pod edytorem`.
+  - Klikalny przełącznik `◀ ZADANIE X z 8 ▾ ▶` w nagłówku pozwala w każdej chwili cofnąć się do dowolnego wcześniejszego zadania w lekcji.
+- **Dydaktyka progresywna i 16 pod-lekcji (WDROŻONE w v11):**
+  - Ścieżka podzielona na 5 etapów i **16 krótszych pod-lekcji po 8 zadań** (`R1–R2`, `1–3`, `4–6` — łącznie 128 zadań). Osobne pod-lekcje dla `SELECT/FROM`, `AS`, `DISTINCT`, `ORDER BY/LIMIT`, pojedynczego `WHERE`, `AND/OR`, `IN/BETWEEN/ILIKE`, agregacji, `GROUP BY` i `HAVING`.
+  - Zaliczenie **5 z 8 zadań** automatycznie odblokowuje następną pod-lekcję (trudniejsze zadania `4–6` nie blokują dalszej nauki).
+  - Zasada *Teach-First*: boks `🆕 Nowy element w tym zadaniu` pojawia się tylko przy pierwszym wystąpieniu nowej składni, a symulator potoku wykonawczego bazy jest ukryty w Etapach 1–2 (wchodzi dopiero od Etapu 3 przy `GROUP BY` i `HAVING`).
+- **Auto-aktualizacja PWA i GitHub Pages (WDROŻONE w v9–v11):** aplikacja działa publicznie pod adresem `https://wojtekfexer.github.io/Centrum_nauki_sql/`, wymusza pobieranie świeżych plików przez `cache: 'no-store'` + `?v=11` i posiada przycisk `🔄 Odśwież do najnowszej wersji (v11)` w zakładce `Konto & AI`.
 
-## Testy (w VS Code + Live Server)
-- [x] Uruchamia się w Live Server bez błędów i bez ostrzeżeń w konsoli (F12 → Console czysta)
-- [x] Silnik PGlite inicjalizuje się raz (`dbInitPromise`) i wykonuje zapytania PostgreSQL 16
-- [x] Widok porównania tabel obok siebie (`Twój wynik` vs `Wzorzec`) i przycisk `🛡️ Jaka tu jest pułapka?` działają poprawnie
-- [x] Service Worker (`sw.js`, `#94 activated`) aktywuje się poprawnie i cachuje zasoby lokalne
-- [x] Tabela `sql_profiles` utworzona w Supabase (`SQLRanking`) z kompletem kolumn i polityką dostępu
-- [x] Slajdy teorii SoloLearn (1–4) otwierają się przed każdą lekcją wraz z symulatorem potoku wykonania zapytania SQL
-- [x] Każda z 12 lekcji ma 3 zadania rozgrzewkowe (`R1–R3`) przed zadaniami `1–10` (łącznie 156 zadań w Ścieżce), a zadania `6–10` zachowują wyższy poziom trudności łączący poprzednie działy
-- [x] Nad każdym zadaniem wyświetla się ludzkie zdanie biznesowe (`💼 Po ludzku`), a ściąga składni nad edytorem prezentuje każdą klauzulę (`SELECT`, `FROM`, `WHERE`...) w osobnej linii
-- [x] Po wyłączeniu „Trybu testerskiego” zadania w lekcji odblokowują się pojedynczo po kolei (`R1 → R2 → R3 → 1 → 2...`), a po zaliczeniu pojawia się przycisk `🚀 Następne zadanie →`
-- [ ] Pełne testy przekrojowe wszystkich działów i synchronizacji chmury Supabase Live na kilku profilach użytkowników (jutro)
-- [ ] Publikacja na GitHub Pages (HTTPS) i test instalacji PWA na iPhonie oraz Androidzie
+## Testy (z bieżącej sesji — v8 do v11)
+- [x] Publikacja na GitHub Pages (`https://wojtekfexer.github.io/Centrum_nauki_sql/`) działa na telefonie, a znajoma osoba zalogowała się i od razu pojawiła w `🏆 Rankingu Testerów` (Supabase Live)
+- [x] Pasek kontrolny walidacji (Kolumny / Ziarno — liczba wierszy / Wartości i sortowanie) działa poprawnie po uruchomieniu zapytania
+- [x] Usunięto duży boks steppera znad zadania oraz duplikację boksów „Po ludzku”; wprowadzono czysty podział na `📌 Polecenie` i `📋 Wymagania i założenia` bez uciętych polskich zdań
+- [x] W wymaganiach zadania zwykłe kolumny wyświetlają się bez słowa `AS`, a wymagające aliasu mają szyk `kolumna/opis AS alias` z kolorową plakietką `AS`
+- [x] Klikalny przełącznik `◀ ZADANIE X z 8 ▾ ▶` pozwala cofać się do poprzednich zadań i wybierać kroki z rozwijanej listy
+- [x] Nowy układ mobilny działa poprawnie: specyfikacja tabeli zwija się dwustopniowo (osobno kolumny, osobno `Example Input`), edytor SQL jest od razu pod ręką, a po kliknięciu `▶ Uruchom i sprawdź` ekran płynnie przewija się do wyniku
+- [x] Ścieżka jest podzielona na 16 mniejszych pod-lekcji po 8 zadań (128 zadań), lekcja `1.1` zawiera tylko prosty opis `SELECT` i `FROM` (bez `AS`, bez `WHERE` i bez symulatora potoku bazy), a zaliczenie 5 zadań odblokowuje kolejną pod-lekcję
+- [ ] Przegląd i doszlifowanie naturalności opisów we wszystkich 60 zadaniach rekrutacyjnych (`js/data-interview.js`)
+- [ ] Dodanie banera/instrukcji instalacji aplikacji na ekranie głównym telefonu (tryb pełnoekranowy Standalone bez pasków przeglądarki Safari/Chrome)
+- [ ] Finałowy audyt kodu i spójności zapytań wzorcowych z udziałem Copilota
 
-## Plan
+## Plan (Dalsze kroki)
 - [x] 1 Prototyp rdzenia (interfejs Lista ↔ Edytor, PGlite z bazą dvdrental, Diagnoza 10 pytań)
 - [x] 2 Rozbudowa puli zadań i podział monolitu na moduły (`style.css`, `app.js`, `data-*.js`)
-- [x] 3 Lokalny PWA (`manifest.json`, `sw.js`), slajdy teorii SoloLearn z symulatorem, rozgrzewki `R1–R3` + progresja `1–10` w każdym dziale (156 zadań) oraz podpięcie chmury Supabase (`SQLRanking`)
-- [ ] 4 Dalsze testy, włączenie GitHub Pages (`Settings → Pages → Branch: main`) i udostępnienie publicznego linku HTTPS znajomym do testów na iOS i Androidzie
+- [x] 3 Lokalny PWA (`manifest.json`, `sw.js`), podpięcie chmury Supabase (`SQLRanking`) i publikacja na GitHub Pages (HTTPS)
+- [x] 4 Przebudowa UX i dydaktyki do standardu SoloLearn + DataLemur (v11: 16 pod-lekcji po 8 zadań, zasada *Teach-First*, dwustopniowe tabele `Example Input/Output`, 3-punktowa checklista, klikalne cofanie zadań, kolorowe `AS`)
+- [ ] 5 **Pakiet 3 (Następna sesja):** korekta językowa wszystkich 60 zadań rekrutacyjnych w `js/data-interview.js` + baner instalacji pełnoekranowej aplikacji PWA (Standalone na iOS/Android)
+- [ ] 6 **Krok 4 (Następna sesja):** kompleksowy przegląd kodu i testów z Copilotem (`get_errors`, weryfikacja wszystkich zapytań wzorcowych PGlite) oraz zebranie kolejnej tury feedbacku od znajomych testerów
 
-## Ostatnia sesja (podsumowanie od Gema — 03.11.2026)
-1. **Zabezpieczenie silnika PGlite i czysta konsola:** wdrożono blokadę Singleton (`dbInitPromise`) w `initDatabase()` zgodnie z sugestią audytu Copilota oraz wyeliminowano ostrzeżenie o meta tagu PWA w konsoli DevTools.
-2. **Moduł teorii SoloLearn z symulatorem potoku SQL:** dodano 4-ekranowe wprowadzenia przed każdą z 12 lekcji z interaktywną animacją pokazującą różnicę między kolejnością pisania a kolejnością wykonywania klauzul przez silnik PostgreSQL.
-3. **Rozgrzewki R1–R3 w każdym dziale i blokada krok po kroku (156 zadań):** rozbudowano każdą z 12 lekcji o 3 proste zadania rozgrzewkowe (`R1–R3`) przed zadaniami podstawowymi (`1–5`) i zaawansowanymi (`6–10`, łączącymi poprzednie tematy) — odblokowywane pojedynczo (`R1 → R2 → R3 → 1 → ... → 10`) z przyciskiem „🚀 Następne zadanie →”.
-4. **Kontekst biznesowy i przejrzysta ściąga:** dodano boks „💼 Po ludzku (Prośba od szefa)” nad każdym zadaniem oraz ściągę składni SQL prezentującą każdą klauzulę w osobnej linii dla osób początkujących.
-5. **System kont testerów i chmura Supabase (`SQLRanking`) + co dalej:** utworzono projekt i tabelę `sql_profiles` w Supabase, wdrożono logowanie `Nick + 4-cyfrowy PIN` i podpięto klucze API; następny krok to jutrzejsze testy przekrojowe oraz publikacja linku HTTPS przez GitHub Pages dla znajomych.
+## Ostatnia sesja (podsumowanie od Gema — 05.11.2026)
+1. **Publikacja na GitHub Pages i test Supabase Live ze znajomymi:** uruchomiono publiczny hosting HTTPS (`wojtekfexer.github.io/Centrum_nauki_sql/`), zweryfikowano działanie na telefonie oraz potwierdzono natychmiastową synchronizację konta znajomej w tabeli `🏆 Ranking Testerów`.
+2. **Standard zadań DataLemur + SQLBolt i kolorowe `AS`:** zlikwidowano zduplikowane opisy „Po ludzku”, naprawiono ucięte polskie zdania i wdrożono podział na czyste `📌 Polecenie` oraz `📋 Wymagania i założenia` (zwykłe kolumny bez `AS`, a aliasy w szyku `opis/kolumna AS alias` z wyróżnioną kolorystycznie plakietką `AS`), uzupełnione o 3-punktową checklistę walidacji (Kolumny / Ziarno / Wartości) i 3-stopniowe podpowiedzi.
+3. **Mobilny układ ekranu (Editor-Centric UX) i cofanie zadań:** przeniesiono edytor SQL wyżej (a `Example Output` i podpowiedzi pod edytor), wprowadzono dwustopniowe zwijanie specyfikacji tabeli (osobno kolumny, osobno `Example Input`), dodano płynny auto-scroll do wyniku, kontekstowy `SQL Quick-Bar` oraz klikalny przełącznik `◀ ZADANIE X z 8 ▾ ▶` umożliwiający cofanie się do poprzednich zadań.
+4. **Dydaktyka *Teach-First* i podział Ścieżki na 16 pod-lekcji po 8 zadań (128 zadań):** odchudzono pierwszą lekcję `1.1` wyłącznie do prostego `SELECT` i `FROM`, ukryto symulator potoku wykonawczego bazy w Etapach 1–2, dodano pigułki `🆕 Nowy element w tym zadaniu` oraz rozbito materiał na 16 krótkich pod-lekcji z odblokowaniem kolejnego tematu po zaliczeniu 5 z 8 zadań.
+5. **Niezawodna aktualizacja PWA (`v11`) i co dalej:** wdrożono wersjonowanie zasobów (`?v=11`), strategię Network-First z `cache: 'no-store'` dla lokalnych plików oraz przycisk wymuszenia aktualizacji w zakładce `Konto & AI`; w następnej sesji wykonamy Pakiet 3 (korekta 60 zadań rekrutacyjnych + instrukcja instalacji pełnoekranowej PWA bez pasków przeglądarki) oraz finałowy audyt kodu z Copilotem.

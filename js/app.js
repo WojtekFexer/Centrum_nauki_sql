@@ -4,7 +4,7 @@
 /* ==========================================================================
    0. KONFIGURACJA CHMURY SUPABASE (REST API — RANKING I PROFILE TESTERÓW)
    ========================================================================== */
-const APP_VERSION = 'v10';
+const APP_VERSION = 'v11';
 const DEFAULT_SUPABASE_URL = 'https://hpfrcykbzuzucglorpkr.supabase.co';
 const DEFAULT_SUPABASE_KEY = 'sb_publishable_5klYjdIKjT35Zl2OtOyGQA_DGxdJCHh';
 
@@ -410,12 +410,11 @@ try {
     if (!state.completedTasks) state.completedTasks = {};
     if (!state.tutorialsDone) state.tutorialsDone = {};
     // Kompatybilność wsteczna: jeśli z poprzednich sesji zaliczono już zadanie podstawowe 1 (klucz ':0'),
-    // automatycznie oznacz rozgrzewkę R1-R3 jako zaliczoną, aby nie blokować dotychczasowego postępu.
+    // automatycznie oznacz rozgrzewkę R1-R2 jako zaliczoną, aby nie blokować dotychczasowego postępu.
     (window.PATH_TASKS || []).forEach(function(pt) {
       if (state.completedVariants[pt.id + ':0']) {
         state.completedVariants[pt.id + ':r1'] = true;
         state.completedVariants[pt.id + ':r2'] = true;
-        state.completedVariants[pt.id + ':r3'] = true;
       }
     });
   }
@@ -447,10 +446,11 @@ var uiState = {
   leaderboard: null,
   leaderboardSource: 'local',
   lastSyncTime: null,
-  syncing: false
+  syncing: false,
+  taskDropdownOpen: false
 };
 
-/* --- PROGRESJA SOLOLEARN: SEKWENCYJNE BLOKADY KROK PO KROKU (R1→R2→R3→1→...→10) --- */
+/* --- PROGRESJA SOLOLEARN: SEKWENCYJNE BLOKADY KROK PO KROKU (R1→R2→1→2→3→4→5→6) --- */
 function getVariantKey(taskOrId, vIdx) {
   var taskId = typeof taskOrId === 'string' ? taskOrId : (taskOrId && taskOrId.id);
   var task = typeof taskOrId === 'object' && taskOrId
@@ -461,8 +461,7 @@ function getVariantKey(taskOrId, vIdx) {
   }
   if (vIdx === 0) return taskId + ':r1';
   if (vIdx === 1) return taskId + ':r2';
-  if (vIdx === 2) return taskId + ':r3';
-  return taskId + ':' + (vIdx - 3);
+  return taskId + ':' + (vIdx - 2);
 }
 
 function isStepSolved(taskOrId, vIdx) {
@@ -482,14 +481,13 @@ function countWarmupSolved(taskId) {
   var cv = (state && state.completedVariants) ? state.completedVariants : {};
   if (cv[taskId + ':r1']) c++;
   if (cv[taskId + ':r2']) c++;
-  if (cv[taskId + ':r3']) c++;
   return c;
 }
 
 function countBasicSolved(taskId) {
   var c = 0;
   var cv = (state && state.completedVariants) ? state.completedVariants : {};
-  for (var i = 0; i < 5; i++) {
+  for (var i = 0; i < 3; i++) {
     if (cv[taskId + ':' + i]) c++;
   }
   return c;
@@ -498,7 +496,7 @@ function countBasicSolved(taskId) {
 function countAdvSolved(taskId) {
   var c = 0;
   var cv = (state && state.completedVariants) ? state.completedVariants : {};
-  for (var i = 5; i < 10; i++) {
+  for (var i = 3; i < 10; i++) {
     if (cv[taskId + ':' + i]) c++;
   }
   return c;
@@ -509,7 +507,8 @@ function countTotalLessonSolved(taskId) {
 }
 
 function isLessonCoreCompleted(taskId) {
-  return countWarmupSolved(taskId) >= 3 && countBasicSolved(taskId) >= 5;
+  if (state && state.completedTasks && state.completedTasks[taskId]) return true;
+  return countTotalLessonSolved(taskId) >= 5;
 }
 
 function isAdvancedUnlocked(taskId) {
@@ -531,7 +530,7 @@ function isLessonUnlocked(taskId) {
   if (idx <= 0) return true; // Lekcja 1.1 zawsze odblokowana na starcie
   var task = PATH_TASKS[idx];
   var prevTask = PATH_TASKS[idx - 1];
-  // Odblokowana, gdy poprzednia lekcja ma zaliczoną rozgrzewkę R1–R3 oraz zadania podstawowe 1–5
+  // Odblokowana, gdy poprzednia lekcja ma zaliczone co najmniej 5 zadań
   if (isLessonCoreCompleted(prevTask.id)) return true;
   // Lub została odblokowana przez moduł Diagnozy (state.unlockedStage)
   if (state && state.diagDone && (state.unlockedStage || 1) > 1) {
@@ -1391,12 +1390,22 @@ function buildDataLemurSpec(item, parentTask) {
       '<ul class="dl-cols-sublist">' +
       details.cols.map(function(c) {
         if (c.name === '*') {
-          return '<li><code>*</code> — wszystkie kolumny tabeli źródłowej</li>';
+          return '<li>wszystkie kolumny tabeli (<code>*</code>)</li>';
         }
-        var descPl = describeSqlExprPl(c.expr, c.name);
-        var aliasBadge = c.hasAlias ? ' <span class="dl-alias-tag">alias AS</span>' : '';
-        var colDesc = descPl ? (' — ' + descPl) : (' — kolumna <code>' + c.name + '</code>');
-        return '<li><code>' + c.name + '</code>' + aliasBadge + colDesc + '</li>';
+        if (!c.hasAlias) {
+          // a) JEŚLI ALIAS NIE JEST POTRZEBNY: sama kolumna bez słowa AS
+          return '<li>kolumna <code>' + esc(c.name) + '</code></li>';
+        }
+        // b) JEŚLI WYMAGANY JEST ALIAS AS: [opis / kolumna źródłowa] -> [kolorowe AS] -> [docelowa nazwa aliasu]
+        var isSimpleRename = /^[a-zA-Z_]\w*(?:\.[a-zA-Z_]\w*)?$/.test(c.expr);
+        var sourceDesc = '';
+        if (isSimpleRename) {
+          sourceDesc = 'kolumna <code>' + esc(c.expr) + '</code>';
+        } else {
+          var descPl = describeSqlExprPl(c.expr, c.name);
+          sourceDesc = descPl || ('wyrażenie <code>' + esc(c.expr) + '</code>');
+        }
+        return '<li>' + sourceDesc + ' <span class="sql-as-badge">AS</span> <code>' + esc(c.name) + '</code></li>';
       }).join('') +
       '</ul>';
     if (hasAnyAlias) {
@@ -1616,13 +1625,41 @@ var ALL_CHEAT_CLAUSES = [
   }
 ];
 
-function renderStepByStepCheatSheet(solSql, lessonTheoryHtml, openByDefault) {
+function renderTeachFirstBox(newFeature) {
+  if (!newFeature) return '';
+  return '<div class="teach-first-box">' +
+    '<div class="teach-first-hdr">🆕 Nowy element w tym zadaniu: <strong>' + esc(newFeature.title) + '</strong></div>' +
+    '<p class="teach-first-desc">' + esc(newFeature.desc) + '</p>' +
+    (newFeature.example ? '<div class="teach-first-code"><code>' + esc(newFeature.example) + '</code></div>' : '') +
+  '</div>';
+}
+
+function renderStepByStepCheatSheet(solSql, lessonTheoryHtml, openByDefault, task) {
   var s = String(solSql || '');
-  var usedClauses = ALL_CHEAT_CLAUSES.filter(function(row) {
-    return row.check(s);
-  });
-  if (usedClauses.length < 2) {
-    usedClauses = ALL_CHEAT_CLAUSES.slice(0, 2);
+  var usedClauses = [];
+
+  if (task && task.id === 'p1_1') {
+    usedClauses = [
+      {
+        kw: 'SELECT',
+        insert: 'SELECT ',
+        syntax: 'SELECT kolumna1, kolumna2',
+        desc: 'służy do wyciągania kolumn z bazy danych.'
+      },
+      {
+        kw: 'FROM',
+        insert: '\nFROM ',
+        syntax: 'FROM nazwa_tabeli',
+        desc: 'wskazuje tabelę, z której pobieramy dane.'
+      }
+    ];
+  } else {
+    usedClauses = ALL_CHEAT_CLAUSES.filter(function(row) {
+      return row.check(s);
+    });
+    if (usedClauses.length < 2) {
+      usedClauses = ALL_CHEAT_CLAUSES.slice(0, 2);
+    }
   }
 
   var isOpen = uiState.theoryBoxOpen !== null ? uiState.theoryBoxOpen : (openByDefault !== false);
@@ -1637,7 +1674,7 @@ function renderStepByStepCheatSheet(solSql, lessonTheoryHtml, openByDefault) {
     '</div>';
   }).join('');
 
-  var extraLessonHtml = lessonTheoryHtml
+  var extraLessonHtml = (lessonTheoryHtml && (!task || task.id !== 'p1_1'))
     ? '<div class="cheat-lesson-extra"><div class="small muted" style="margin-bottom:4px;font-weight:700">📌 Notatka do bieżącego działu:</div>' + lessonTheoryHtml + '</div>'
     : '';
 
@@ -1672,8 +1709,105 @@ function renderValidationChecklistHtml(chk) {
   '</div>';
 }
 
-function renderEditorWidget(extraCols, actionType) {
+function renderQuickBar(task, variant) {
+  var sol = String((variant && variant.sol) || '');
+  var isP1_1 = task && task.id === 'p1_1';
+  var buttons = [];
+
+  function addBtn(label, sql, title, cls) {
+    buttons.push({
+      label: label,
+      sql: sql,
+      title: title || ('Wstaw ' + label),
+      cls: 'quick-chip-btn' + (cls ? (' ' + cls) : '')
+    });
+  }
+
+  // Słowa kluczowe
+  addBtn('SELECT', 'SELECT ', 'Wstaw SELECT');
+  if (isP1_1 || /\*/.test(sol)) addBtn('*', '*', 'Wstaw gwiazdkę *');
+  addBtn(',', ', ', 'Wstaw przecinek');
+  addBtn('FROM', '\nFROM ', 'Wstaw FROM');
+
+  if (!isP1_1) {
+    if (/\bAS\b/i.test(sol)) addBtn('AS', ' AS ', 'Wstaw AS', 'kw-as');
+    if (/\bDISTINCT\b/i.test(sol)) addBtn('DISTINCT', 'DISTINCT ', 'Wstaw DISTINCT');
+    if (/\bWHERE\b/i.test(sol)) addBtn('WHERE', '\nWHERE ', 'Wstaw WHERE');
+    if (/\bAND\b/i.test(sol)) addBtn('AND', ' AND ', 'Wstaw AND');
+    if (/\bOR\b/i.test(sol)) addBtn('OR', ' OR ', 'Wstaw OR');
+    if (/\bIN\b/i.test(sol)) addBtn('IN (...)', ' IN ()', 'Wstaw IN');
+    if (/\bBETWEEN\b/i.test(sol)) addBtn('BETWEEN', ' BETWEEN ', 'Wstaw BETWEEN');
+    if (/\bILIKE\b/i.test(sol)) addBtn('ILIKE', " ILIKE '%%'", 'Wstaw ILIKE');
+    if (/\bIS\s+NULL\b/i.test(sol)) addBtn('IS NULL', ' IS NULL', 'Wstaw IS NULL');
+    if (/\bIS\s+NOT\s+NULL\b/i.test(sol)) addBtn('IS NOT NULL', ' IS NOT NULL', 'Wstaw IS NOT NULL');
+    if (/=/.test(sol)) addBtn('=', ' = ', 'Wstaw =');
+    if (/<[>=]?|>[=]?/.test(sol)) {
+      if (/>=/.test(sol)) addBtn('>=', ' >= ', 'Wstaw >=');
+      else if (/>/.test(sol)) addBtn('>', ' > ', 'Wstaw >');
+      if (/<=/.test(sol)) addBtn('<=', ' <= ', 'Wstaw <=');
+      else if (/<(?![>=])/.test(sol)) addBtn('<', ' < ', 'Wstaw <');
+      if (/<>|!=/.test(sol)) addBtn('<>', ' <> ', 'Wstaw <>');
+    }
+    if (/\bGROUP\s+BY\b/i.test(sol)) addBtn('GROUP BY', '\nGROUP BY ', 'Wstaw GROUP BY');
+    if (/\bHAVING\b/i.test(sol)) addBtn('HAVING', '\nHAVING ', 'Wstaw HAVING');
+    if (/\bORDER\s+BY\b/i.test(sol)) {
+      addBtn('ORDER BY', '\nORDER BY ', 'Wstaw ORDER BY');
+      if (/\bASC\b/i.test(sol)) addBtn('ASC', ' ASC', 'Wstaw ASC');
+      if (/\bDESC\b/i.test(sol)) addBtn('DESC', ' DESC', 'Wstaw DESC');
+    }
+    if (/\bLIMIT\b/i.test(sol)) addBtn('LIMIT', '\nLIMIT ', 'Wstaw LIMIT');
+    if (/\bLEFT\s+(?:OUTER\s+)?JOIN\b/i.test(sol)) {
+      addBtn('LEFT JOIN', '\nLEFT JOIN ', 'Wstaw LEFT JOIN');
+      addBtn('ON', ' ON ', 'Wstaw ON');
+    } else if (/\bJOIN\b/i.test(sol)) {
+      addBtn('JOIN', '\nJOIN ', 'Wstaw JOIN');
+      addBtn('ON', ' ON ', 'Wstaw ON');
+    }
+    if (/\bCOUNT\b/i.test(sol)) addBtn('COUNT(*)', 'COUNT(*)', 'Wstaw COUNT(*)');
+    if (/\bSUM\b/i.test(sol)) addBtn('SUM()', 'SUM()', 'Wstaw SUM()');
+    if (/\bAVG\b/i.test(sol)) addBtn('AVG()', 'AVG()', 'Wstaw AVG()');
+    if (/\bMIN\b/i.test(sol)) addBtn('MIN()', 'MIN()', 'Wstaw MIN()');
+    if (/\bMAX\b/i.test(sol)) addBtn('MAX()', 'MAX()', 'Wstaw MAX()');
+    if (/\bROUND\b/i.test(sol)) addBtn('ROUND(, 2)', 'ROUND(, 2)', 'Wstaw ROUND');
+    if (/\bCOALESCE\b/i.test(sol)) addBtn('COALESCE()', 'COALESCE()', 'Wstaw COALESCE');
+    if (/\bCASE\b/i.test(sol)) addBtn('CASE WHEN', "CASE WHEN  THEN  ELSE  END", 'Wstaw CASE');
+    if (/\bFILTER\b/i.test(sol)) addBtn('FILTER (WHERE)', "FILTER (WHERE )", 'Wstaw FILTER');
+    if (/\bWITH\b/i.test(sol)) addBtn('WITH', "WITH  AS ()", 'Wstaw WITH');
+    if (/\bOVER\b/i.test(sol)) addBtn('OVER ()', "OVER ()", 'Wstaw OVER');
+    if (/\bROW_NUMBER\b/i.test(sol)) addBtn('ROW_NUMBER()', "ROW_NUMBER() OVER ()", 'Wstaw ROW_NUMBER');
+    if (/\bDENSE_RANK\b/i.test(sol)) addBtn('DENSE_RANK()', "DENSE_RANK() OVER ()", 'Wstaw DENSE_RANK');
+    if (/\bLAG\b/i.test(sol)) addBtn('LAG()', "LAG() OVER ()", 'Wstaw LAG');
+  }
+
+  // Tabele
+  var tbls = resolveTaskTables(variant ? variant.tables : null, sol);
+  if (!tbls.length && task && Array.isArray(task.tables)) tbls = task.tables.slice(0, 2);
+  tbls.forEach(function(t) {
+    addBtn('📦 ' + t, t, 'Wstaw tabelę ' + t, 'quick-tbl-chip');
+  });
+
+  // Kolumny z sol
+  var parsed = parseSqlDetails(sol, tbls);
+  (parsed.cols || []).forEach(function(c) {
+    if (c.name && c.name !== '*') {
+      addBtn(c.name, c.name, 'Wstaw kolumnę ' + c.name, 'quick-col-chip');
+    }
+  });
+
+  return '<div class="sql-quick-bar-wrap">' +
+    '<div class="quick-bar-label"><span>⚡ <strong>Quick-Bar:</strong> kliknij, by wstawić do zapytania</span><span class="interactive-hint">👆 kursor w edytorze</span></div>' +
+    '<div class="sql-quick-bar">' +
+      buttons.map(function(b) {
+        return '<button type="button" class="' + b.cls + '" data-insert-sql="' + esc(b.sql) + '" title="' + esc(b.title) + '">' + esc(b.label) + '</button>';
+      }).join('') +
+    '</div>' +
+  '</div>';
+}
+
+function renderEditorWidget(extraCols, actionType, variant, task) {
+  var quickBarHtml = (variant || task) ? renderQuickBar(task, variant) : '';
   return '' +
+    quickBarHtml +
     '<div class="ed">' +
       '<div id="sqlgut" aria-hidden="true"><span class="ln">1</span></div>' +
       '<div class="edwrap">' +
@@ -1950,7 +2084,7 @@ function renderTutorialView(task) {
         '</div>' +
       '</div>' +
       '<div class="fb-box warn" style="margin-top:10px">' + slide.note + '</div>' +
-      renderSqlPipelineSimulator() +
+      (task && task.stage >= 3 ? renderSqlPipelineSimulator() : '') +
     '</div>';
   } else if (sIdx === 2) {
     bodyHtml = '<div class="tut-card-inner">' +
@@ -2026,7 +2160,7 @@ function renderTutorialView(task) {
   '</div>';
 }
 
-// ZAKŁADKA 1: ŚCIEŻKA (156 ZADAŃ: 36 ROZGRZEWEK R1–R3 + 120 ZADAŃ 1–10 + SLAJDY SOLOLEARN + SEKWENCYJNE BLOKADY)
+// ZAKŁADKA 1: ŚCIEŻKA (128 ZADAŃ: 32 ROZGRZEWKI R1–R2 + 96 ZADAŃ 1–6 + SLAJDY SOLOLEARN + SEKWENCYJNE BLOKADY)
 function renderPathTab() {
   var activeTask = PATH_TASKS.find(function(t) { return t.id === state.activeTaskId; }) || PATH_TASKS[0];
 
@@ -2044,11 +2178,41 @@ function renderPathTab() {
     var variant = task.variants[vIdx];
     var totalSteps = task.variants.length;
     var curStepNum = vIdx + 1;
-    var curStepCode = variant.stepCode || (vIdx < 3 ? ('R' + (vIdx + 1)) : String(vIdx - 2));
-    var tierBadge = vIdx < 3
-      ? '🔥 Rozgrzewka (' + curStepCode + ' z R1–R3)'
-      : (vIdx >= 8 ? '🚀 Zaawansowane (' + curStepCode + ' z 6–10 · Miks)' : '📘 Podstawy (' + curStepCode + ' z 1–5)');
+    var curStepCode = variant.stepCode || (vIdx < 2 ? ('R' + (vIdx + 1)) : String(vIdx - 1));
+    var tierBadge = vIdx < 2
+      ? '🔥 Rozgrzewka (' + curStepCode + ' z R1–R2)'
+      : (vIdx >= 5 ? '🚀 Zaawansowane (' + curStepCode + ' · Miks)' : '📘 Podstawy (' + curStepCode + ' z 1–3)');
     var pct = Math.round((curStepNum / totalSteps) * 100);
+
+    var hasPrev = vIdx > 0;
+    var hasNext = (vIdx + 1 < totalSteps) && isStepUnlocked(task, vIdx + 1);
+
+    var dropdownHtml = '';
+    if (uiState.taskDropdownOpen) {
+      dropdownHtml = '<div class="task-dropdown-menu">' +
+        '<div class="task-dropdown-hdr">' +
+          '<span>📋 Zadania w tej pod-lekcji:</span>' +
+          '<button type="button" class="task-dropdown-close" data-act="toggleTaskDropdown">✕</button>' +
+        '</div>' +
+        '<div class="task-dropdown-items">' +
+          task.variants.map(function(v, idx) {
+            var isCur = idx === vIdx;
+            var isSolved = isStepSolved(task, idx);
+            var isUnlocked = isStepUnlocked(task, idx);
+            var icon = isCur ? '🎯' : (isSolved ? '✅' : (isUnlocked ? '🔓' : '🔒'));
+            var cls = 'task-dd-item' + (isCur ? ' active' : '') + (!isUnlocked ? ' locked' : '');
+            var code = v.stepCode || (idx < 2 ? ('R' + (idx + 1)) : String(idx - 1));
+            var title = (v.goal || v.prompt || '').replace(/^[A-Z0-9_]+\s*:\s*/i, '');
+            if (title.length > 55) title = title.slice(0, 52) + '…';
+            return '<button type="button" class="' + cls + '" data-act="jumpToVariant" data-vidx="' + idx + '"' + (!isUnlocked ? ' disabled' : '') + '>' +
+              '<span class="task-dd-icon">' + icon + '</span>' +
+              '<span class="task-dd-code">' + esc(code) + '</span>' +
+              '<span class="task-dd-text">' + esc(title) + '</span>' +
+            '</button>';
+          }).join('') +
+        '</div>' +
+      '</div>';
+    }
 
     return '<div class="card task-transition-enter">' +
       '<div class="task-nav-hdr">' +
@@ -2057,17 +2221,23 @@ function renderPathTab() {
       '</div>' +
       '<div class="sololearn-progress-wrap">' +
         '<div class="sololearn-progress-meta">' +
-          '<span class="sololearn-step-badge">ZADANIE ' + curStepNum + ' z ' + totalSteps + '</span>' +
+          '<div class="step-nav-cluster">' +
+            '<button type="button" class="step-nav-btn' + (!hasPrev ? ' disabled' : '') + '" data-act="prevStep" title="Poprzednie zadanie"' + (!hasPrev ? ' disabled' : '') + '>◀</button>' +
+            '<button type="button" class="sololearn-step-badge step-dropdown-btn" data-act="toggleTaskDropdown" title="Rozwiń listę zadań">ZADANIE ' + curStepNum + ' z ' + totalSteps + ' ▾</button>' +
+            '<button type="button" class="step-nav-btn' + (!hasNext ? ' disabled' : '') + '" data-act="nextStep" title="Następne odblokowane zadanie"' + (!hasNext ? ' disabled' : '') + '>▶</button>' +
+          '</div>' +
           '<span class="sololearn-tier-badge">' + esc(tierBadge) + '</span>' +
           '<span class="sololearn-pct">' + pct + '%</span>' +
         '</div>' +
         '<div class="sololearn-bar"><i style="width:' + pct + '%"></i></div>' +
+        dropdownHtml +
       '</div>' +
       '<h2 class="task-page-title">' + esc(task.title) + ' — Zadanie ' + esc(curStepCode) + '</h2>' +
       renderTaskSpecBox(variant, task) +
       buildTaskSchemaBox(variant.tables || task.tables, variant.sol) +
-      renderStepByStepCheatSheet(variant.sol, task.theory, false) +
-      renderEditorWidget(task.cols, 'checkPathTask') +
+      renderTeachFirstBox(variant.newFeature) +
+      renderStepByStepCheatSheet(variant.sol, task.theory, false, task) +
+      renderEditorWidget(task.cols, 'checkPathTask', variant, task) +
       renderExampleOutputBox(variant.sol) +
       renderHintStepperBox(variant, task) +
       '<div class="acts" style="margin-top:12px;border-top:1px solid var(--line);padding-top:10px">' +
@@ -2125,19 +2295,21 @@ function renderPathTab() {
       var isMastered = isLessonCoreCompleted(t.id);
 
       var statusChip = !lessonOpen
-        ? '<span class="chip open">🔒 Zablokowane (ukończ R1–R3 i 1–5 wyżej)</span>'
-        : isMastered
-          ? '<span class="chip done">✅ Odblokowano 6–10 (' + vSolved + '/13)</span>'
-          : '<span class="chip info">' + (tutDone ? 'Krok po kroku (' + vSolved + '/13) →' : '📖 Start (Slajdy) →') + '</span>';
+        ? '<span class="chip open">🔒 Zablokowane (ukończ 5 zadań wyżej)</span>'
+        : vSolved >= t.variants.length
+          ? '<span class="chip done">🏆 Ukończono (' + vSolved + '/' + t.variants.length + ')</span>'
+          : isMastered
+            ? '<span class="chip done">✅ Zaliczone (' + vSolved + '/' + t.variants.length + ') →</span>'
+            : '<span class="chip info">' + (tutDone ? 'Krok po kroku (' + vSolved + '/' + t.variants.length + ') →' : '📖 Start (Slajdy) →') + '</span>';
 
       h += '<button type="button" class="node-item' + (!lessonOpen ? ' locked' : '') + '" data-act="openPathTask" data-id="' + t.id + '">' +
         '<div>' +
           '<span class="node-title">' + (!lessonOpen ? '🔒 ' : isMastered ? '✅ ' : '📘 ') + esc(t.title) + '</span>' +
           '<div class="node-meta">' +
             '<span>Teoria: <strong>' + (tutDone ? '✓ 4/4' : '0/4') + '</strong></span>' +
-            '<span>· 🔥 R1–R3: <strong>' + warmupSolved + '/3</strong></span>' +
-            '<span>· 📘 Podstawy 1–5: <strong>' + basicSolved + '/5</strong></span>' +
-            '<span>· 🚀 Zaawansowane 6–10: <strong>' + (isAdvancedUnlocked(t.id) ? advSolved + '/5' : '🔒') + '</strong></span>' +
+            '<span>· 🔥 R1–R2: <strong>' + warmupSolved + '/2</strong></span>' +
+            '<span>· 📘 Podstawy 1–3: <strong>' + basicSolved + '/3</strong></span>' +
+            '<span>· 🚀 Zaawansowane 4–6: <strong>' + advSolved + '/' + (t.variants.length - 5) + '</strong></span>' +
           '</div>' +
         '</div>' +
         statusChip +
@@ -2534,6 +2706,18 @@ function render() {
   }
 }
 
+function scrollToResult() {
+  setTimeout(function() {
+    var resTarget = document.querySelector('.val-checklist') ||
+                    document.querySelector('.fb-box') ||
+                    document.querySelector('.tblwrap') ||
+                    document.querySelector('.out-card');
+    if (resTarget && typeof resTarget.scrollIntoView === 'function') {
+      resTarget.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+  }, 40);
+}
+
 // Zapamiętywanie stanu rozwinięcia/zwinięcia podglądu tabel oraz teorii przez użytkownika
 document.addEventListener('toggle', function(e) {
   if (e.target && e.target.classList) {
@@ -2557,6 +2741,15 @@ document.addEventListener('input', function(e) {
 });
 
 document.addEventListener('click', async function(e) {
+  // Zamknij rozwijaną listę zadań, jeśli kliknięto poza dropdown
+  if (uiState.taskDropdownOpen && !e.target.closest('.task-dropdown-menu') && !e.target.closest('[data-act="toggleTaskDropdown"]')) {
+    uiState.taskDropdownOpen = false;
+    if (!e.target.closest('[data-act]') && !e.target.closest('[data-insert-sql]')) {
+      render();
+      return;
+    }
+  }
+
   var insEl = e.target.closest('[data-insert-sql]');
   if (insEl && !e.target.closest('[data-act="previewTable"]')) {
     insertAtCursor(insEl.getAttribute('data-insert-sql'));
@@ -2609,6 +2802,7 @@ document.addEventListener('click', async function(e) {
     lastFeedback = null;
     lastChecklist = null;
     render();
+    scrollToResult();
   }
   else if (act === 'peekTable') {
     var tName = el.dataset.table;
@@ -2617,11 +2811,12 @@ document.addEventListener('click', async function(e) {
     lastChecklist = null;
     lastFeedback = { type: 'warn', title: '👁 Podgląd tabeli ' + tName + ' (pierwsze 5 wierszy)', msg: 'Twój kod w edytorze pozostał bez zmian.' };
     render();
+    scrollToResult();
   }
   else if (act === 'openPathTask') {
     var targetId = el.dataset.id;
     if (!isLessonUnlocked(targetId)) {
-      toast('🔒 Zablokowane! Ukończ najpierw rozgrzewkę R1–R3 oraz zadania podstawowe 1–5 w poprzednim dziale.');
+      toast('🔒 Zablokowane! Ukończ najpierw co najmniej 5 zadań (R1–R2 oraz 1–3) w poprzedniej pod-lekcji.');
       return;
     }
     state.activeTaskId = targetId;
@@ -2780,10 +2975,80 @@ document.addEventListener('click', async function(e) {
       return;
     }
     state.activeVariantIdx = reqIdx;
+    uiState.taskDropdownOpen = false;
     uiState.schemaBoxOpen = false;
     uiState.hintStep = 0;
     var pickedV = tVar.variants[state.activeVariantIdx] || tVar.variants[0];
     state.editorCode = '-- ' + tVar.title + ' (Zadanie ' + (pickedV.stepCode || (reqIdx + 1)) + ')\nSELECT ';
+    lastExecResult = null;
+    lastExpectedResult = null;
+    lastFeedback = null;
+    lastChecklist = null;
+    saveState();
+    render();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+  else if (act === 'toggleTaskDropdown') {
+    uiState.taskDropdownOpen = !uiState.taskDropdownOpen;
+    render();
+  }
+  else if (act === 'prevStep') {
+    if (state.activeVariantIdx > 0) {
+      state.activeVariantIdx--;
+      uiState.taskDropdownOpen = false;
+      uiState.schemaBoxOpen = false;
+      uiState.hintStep = 0;
+      var curTPrev = PATH_TASKS.find(function(x) { return x.id === state.activeTaskId; }) || PATH_TASKS[0];
+      var prevV = curTPrev.variants[state.activeVariantIdx] || curTPrev.variants[0];
+      state.editorCode = '-- ' + curTPrev.title + ' (Zadanie ' + (prevV.stepCode || (state.activeVariantIdx + 1)) + ')\nSELECT ';
+      lastExecResult = null;
+      lastExpectedResult = null;
+      lastFeedback = null;
+      lastChecklist = null;
+      saveState();
+      render();
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  }
+  else if (act === 'nextStep') {
+    var curTNext = PATH_TASKS.find(function(x) { return x.id === state.activeTaskId; }) || PATH_TASKS[0];
+    var nextIdx = state.activeVariantIdx + 1;
+    if (nextIdx < curTNext.variants.length) {
+      if (!isStepUnlocked(curTNext, nextIdx)) {
+        toast('🔒 Następne zadanie jest jeszcze zablokowane. Rozwiąż najpierw bieżące zadanie!');
+        return;
+      }
+      state.activeVariantIdx = nextIdx;
+      uiState.taskDropdownOpen = false;
+      uiState.schemaBoxOpen = false;
+      uiState.hintStep = 0;
+      var nextV = curTNext.variants[nextIdx] || curTNext.variants[0];
+      state.editorCode = '-- ' + curTNext.title + ' (Zadanie ' + (nextV.stepCode || (nextIdx + 1)) + ')\nSELECT ';
+      lastExecResult = null;
+      lastExpectedResult = null;
+      lastFeedback = null;
+      lastChecklist = null;
+      saveState();
+      render();
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  }
+  else if (act === 'jumpToVariant') {
+    var reqIdxJump = Number(el.dataset.vidx !== undefined ? el.dataset.vidx : el.dataset.idx) || 0;
+    var curTJump = PATH_TASKS.find(function(x) { return x.id === state.activeTaskId; }) || PATH_TASKS[0];
+    if (!isStepUnlocked(curTJump, reqIdxJump)) {
+      var lockMsgJump = 'Rozwiąż najpierw poprzednie zadania, aby odblokować to zadanie!';
+      toast('🔒 ' + lockMsgJump);
+      lastFeedback = { type: 'warn', title: '🔒 Ten krok jest jeszcze zablokowany', msg: lockMsgJump };
+      render();
+      return;
+    }
+    state.activeVariantIdx = reqIdxJump;
+    uiState.taskDropdownOpen = false;
+    uiState.schemaBoxOpen = false;
+    uiState.hintStep = 0;
+    var pickedVJump = curTJump.variants[state.activeVariantIdx] || curTJump.variants[0];
+    state.editorCode = '-- ' + curTJump.title + ' (Zadanie ' + (pickedVJump.stepCode || (reqIdxJump + 1)) + ')\nSELECT ';
     lastExecResult = null;
     lastExpectedResult = null;
     lastFeedback = null;
@@ -2797,6 +3062,7 @@ document.addEventListener('click', async function(e) {
     var nextStepIdx = (state.activeVariantIdx + 1);
     if (nextStepIdx < curTaskStep.variants.length) {
       state.activeVariantIdx = nextStepIdx;
+      uiState.taskDropdownOpen = false;
       uiState.schemaBoxOpen = false;
       uiState.hintStep = 0;
       var nextVObj = curTaskStep.variants[nextStepIdx];
@@ -2816,6 +3082,7 @@ document.addEventListener('click', async function(e) {
       var nextL = PATH_TASKS[curLessonIdx2 + 1];
       state.activeTaskId = nextL.id;
       state.activeVariantIdx = getFirstUnsolvedStepIdx(nextL);
+      uiState.taskDropdownOpen = false;
       uiState.schemaBoxOpen = false;
       uiState.theoryBoxOpen = null;
       uiState.hintStep = 0;
@@ -2834,6 +3101,7 @@ document.addEventListener('click', async function(e) {
       window.scrollTo(0, 0);
     } else {
       state.pathMode = 'list';
+      uiState.taskDropdownOpen = false;
       uiState.hintStep = 0;
       lastExecResult = null;
       lastExpectedResult = null;
@@ -2883,7 +3151,7 @@ document.addEventListener('click', async function(e) {
       lastExpectedResult = null;
       var wasCoreUnlocked = isLessonCoreCompleted(task.id);
       var vKey = getVariantKey(task, vIdx);
-      var isWarmStep = variant.tier === 'warmup' || vIdx < 3;
+      var isWarmStep = variant.tier === 'warmup' || vIdx < 2;
       if (!state.completedVariants[vKey]) {
         state.completedVariants[vKey] = true;
         state.xp += isWarmStep ? 10 : 15;
@@ -2902,15 +3170,15 @@ document.addEventListener('click', async function(e) {
           state.unlockedStage = task.stage + 1;
         }
         if (!wasCoreUnlocked) {
-          unlockBonusMsg = '\n🔓 Brawo! Ukończyłeś R1–R3 oraz zadania podstawowe 1–5 — odblokowałeś Zadania Zaawansowane (6–10) oraz kolejny dział na Mapie Ścieżki!';
-          toast('🔓 Odblokowano zadania 6–10 oraz następną lekcję!');
+          unlockBonusMsg = '\n🔓 Brawo! Rozwiązałeś 5 zadań w tej pod-lekcji — odblokowałeś Zadania Zaawansowane (4–6) oraz kolejną pod-lekcję na Mapie Ścieżki!';
+          toast('🔓 Odblokowano zadania 4–6 oraz kolejną pod-lekcję!');
         }
       }
       if (vIdx + 1 < task.variants.length) {
         var nextUnlockedStep = task.variants[vIdx + 1];
         unlockBonusMsg += '\n👉 Odblokowano kolejny krok: Zadanie ' + (nextUnlockedStep.stepCode || (vIdx + 2)) + '. Kliknij zielony przycisk poniżej!';
       } else {
-        unlockBonusMsg += '\n🏆 Wszystkie 13 zadań w tym dziale (R1–R3 oraz 1–10) zostały ukończone!';
+        unlockBonusMsg += '\n🏆 Wszystkie 8 zadań w tej pod-lekcji (R1–R2 oraz 1–6) zostały ukończone!';
       }
       var curLbl = variant.stepCode || (vIdx + 1);
       lastFeedback = { type: 'ok', title: '✅ Zadanie ' + curLbl + ' zaliczone! (+' + (isWarmStep ? 10 : 15) + ' XP)', msg: cmp.msg + unlockBonusMsg };
@@ -2926,6 +3194,7 @@ document.addEventListener('click', async function(e) {
       lastFeedback = { type: 'trap', title: '❌ Wynik różni się od wzorca', msg: pathErrMsg };
     }
     render();
+    scrollToResult();
   }
   else if (act === 'showSolution') {
     var task2 = PATH_TASKS.find(function(t) { return t.id === state.activeTaskId; }) || PATH_TASKS[0];
@@ -2937,6 +3206,7 @@ document.addEventListener('click', async function(e) {
     lastFeedback = { type: 'warn', title: '💡 Wczytano wzorcowe rozwiązanie', msg: 'Przeanalizuj kod, a następnie przełącz się na kolejne zadanie, aby napisać podobne zapytanie samodzielnie.' };
     saveState();
     render();
+    scrollToResult();
   }
   else if (act === 'submitDiag') {
     var dq = DIAG_QUESTIONS[state.diagIdx];
@@ -2971,6 +3241,7 @@ document.addEventListener('click', async function(e) {
         : 'Odpowiedź nie pasuje do wzorca. Sprawdź 3-punktową checklistę walidacji oraz porównaj swój wynik z wzorcem poniżej.';
       lastFeedback = { type: 'trap', title: 'Wynik niepoprawny', msg: diagErrMsg };
       render();
+      scrollToResult();
     }
   }
   else if (act === 'skipDiag') {
@@ -3099,6 +3370,7 @@ document.addEventListener('click', async function(e) {
       }
     }
     render();
+    scrollToResult();
   }
   else if (act === 'showLemurSol') {
     var lt2 = LEMUR_TASKS.find(function(x) { return x.id === state.activeLemurId; }) || LEMUR_TASKS[0];
@@ -3109,6 +3381,7 @@ document.addEventListener('click', async function(e) {
     lastFeedback = { type: 'warn', title: '💡 Wzorcowe rozwiązanie (' + lt2.title + ')', msg: lt2.hint || lt2.gapHint };
     saveState();
     render();
+    scrollToResult();
   }
   else if (act === 'lemurTrapHint') {
     var lt3 = LEMUR_TASKS.find(function(x) { return x.id === state.activeLemurId; }) || LEMUR_TASKS[0];
@@ -3290,7 +3563,7 @@ if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.
   });
 
   window.addEventListener('load', function() {
-    navigator.serviceWorker.register('./sw.js?v=10', { updateViaCache: 'none' }).then(function(registration) {
+    navigator.serviceWorker.register('./sw.js?v=11', { updateViaCache: 'none' }).then(function(registration) {
       document.addEventListener('visibilitychange', function() {
         if (document.visibilityState === 'visible') {
           registration.update().catch(function() {});
