@@ -1,13 +1,13 @@
-const CACHE_VERSION = 'sql-master-v9';
+const CACHE_VERSION = 'sql-master-v10';
 var CACHE_NAME = CACHE_VERSION;
 var LOCAL_ASSETS = [
   './',
   './index.html',
-  './css/style.css?v=9',
-  './js/data-dvdrental.js?v=9',
-  './js/data-tasks.js?v=9',
-  './js/data-interview.js?v=9',
-  './js/app.js?v=9',
+  './css/style.css?v=10',
+  './js/data-dvdrental.js?v=10',
+  './js/data-tasks.js?v=10',
+  './js/data-interview.js?v=10',
+  './js/app.js?v=10',
   './manifest.json',
   './icon.svg'
 ];

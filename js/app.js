@@ -4,7 +4,7 @@
 /* ==========================================================================
    0. KONFIGURACJA CHMURY SUPABASE (REST API — RANKING I PROFILE TESTERÓW)
    ========================================================================== */
-const APP_VERSION = 'v9';
+const APP_VERSION = 'v10';
 const DEFAULT_SUPABASE_URL = 'https://hpfrcykbzuzucglorpkr.supabase.co';
 const DEFAULT_SUPABASE_KEY = 'sb_publishable_5klYjdIKjT35Zl2OtOyGQA_DGxdJCHh';
 
@@ -949,8 +949,10 @@ function buildTaskSchemaBox(tableNames, solSql) {
     ? '<div class="join-keys-banner">🔗 Klucz łączenia tabel w tym zadaniu: <strong>' + sharedKeys.map(esc).join(', ') + '</strong></div>'
     : '';
 
-  return '<details class="helper-fold iv-spec-fold"' + (uiState.schemaBoxOpen ? ' open' : ' open') + '>' +
-    '<summary>🗄️ Specyfikacja tabel i przykładowe dane (Example Input: ' + metas.map(function(m){return m.table;}).join(', ') + ')</summary>' +
+  var isLevel1Open = !!uiState.schemaBoxOpen;
+
+  return '<details class="helper-fold iv-spec-fold"' + (isLevel1Open ? ' open' : '') + '>' +
+    '<summary>🗄️ Specyfikacja tabel (' + metas.map(function(m){return m.table;}).join(', ') + ') — kliknij, aby rozwinąć</summary>' +
     '<p class="small muted" style="margin:6px 0 8px">💡 Kliknij dowolną nazwę tabeli lub kolumny poniżej, aby wstawić ją do edytora SQL:</p>' +
     '<div style="display:flex;flex-direction:column;gap:10px">' +
       metas.map(function(m) {
@@ -965,6 +967,12 @@ function buildTaskSchemaBox(tableNames, solSql) {
         } else {
           sampleHtml = '<div style="margin-top:6px"><button type="button" class="btn sm" data-act="peekTable" data-table="' + esc(m.table) + '">👁 Pobierz przykładowe wiersze (' + esc(m.table) + ')</button></div>';
         }
+
+        // Poziom 2: osobny zagnieżdżony tag <details> pod kolumnami, domyślnie ZWINIĘTY (Punkt 11)
+        var level2Fold = '<details class="example-input-fold">' +
+          '<summary class="example-input-summary">👁️ Pokaż przykładowe wiersze z tabeli (Example Input — 4 wiersze)</summary>' +
+          '<div class="example-input-fold-body">' + sampleHtml + '</div>' +
+        '</details>';
 
         return '<div class="iv-tbl-card">' +
           '<div style="display:flex;flex-wrap:wrap;align-items:center;gap:5px">' +
@@ -982,7 +990,7 @@ function buildTaskSchemaBox(tableNames, solSql) {
               return '<button type="button" class="' + cls + '" data-act="ins" data-val="' + esc(colName) + '" data-insert-sql="' + esc(colName) + '" title="' + esc(ttl) + '">' + lbl + '</button>';
             }).join('') +
           '</div>' +
-          sampleHtml +
+          level2Fold +
         '</div>';
       }).join('') +
     '</div>' +
@@ -1243,8 +1251,10 @@ function buildCleanPolecenie(item, details) {
     [/\b[Ww]\s+tabeli\s+emp_salaries\b/gi, 'Na liście wynagrodzeń pracowników'],
     [/\b[Zz]\s+tabeli\s+dept_budgets\b/gi, 'Z zestawienia budżetów działów'],
     [/\b[Ww]\s+tabeli\s+dept_budgets\b/gi, 'W zestawieniu budżetów działów'],
-    [/\b[Zz]\s+tabeli\s+film_category\b/gi, 'Z tabeli przypisań filmów do kategorii'],
-    [/\b[Zz]\s+tabeli\s+film_actor\b/gi, 'Z tabeli obsady filmowej'],
+    [/\b[Zz]\s+tabeli\s+film_category\b/gi, 'Z przypisań filmów do kategorii'],
+    [/\b[Ww]\s+tabeli\s+film_category\b/gi, 'W przypisaniach filmów do kategorii'],
+    [/\b[Zz]\s+tabeli\s+film_actor\b/gi, 'Z tabeli obsady filmów'],
+    [/\b[Ww]\s+tabeli\s+film_actor\b/gi, 'W tabeli obsady filmów'],
     [/\b[Zz]\s+tabeli\s+film\b/gi, 'Z katalogu filmów'],
     [/\b[Ww]\s+tabeli\s+film\b/gi, 'W katalogu filmów'],
     [/\b[Zz]\s+tabeli\s+customer\b/gi, 'Z bazy klientów'],
@@ -1254,9 +1264,13 @@ function buildCleanPolecenie(item, details) {
     [/\b[Zz]\s+tabeli\s+payment\b/gi, 'Z rejestru płatności'],
     [/\b[Ww]\s+tabeli\s+payment\b/gi, 'W rejestrze płatności'],
     [/\b[Zz]\s+tabeli\s+actor\b/gi, 'Z listy aktorów'],
+    [/\b[Ww]\s+tabeli\s+actor\b/gi, 'Na liście aktorów'],
     [/\b[Zz]\s+tabeli\s+category\b/gi, 'Ze słownika kategorii'],
+    [/\b[Ww]\s+tabeli\s+category\b/gi, 'W słowniku kategorii'],
     [/\b[Zz]\s+tabeli\s+staff\b/gi, 'Z listy pracowników'],
+    [/\b[Ww]\s+tabeli\s+staff\b/gi, 'Wśród pracowników'],
     [/\b[Zz]\s+tabeli\s+store\b/gi, 'Z listy oddziałów sklepów'],
+    [/\b[Ww]\s+tabeli\s+store\b/gi, 'W oddziałach sklepów'],
     [/\bproduct_orders\b/gi, 'zamówień produktów'],
     [/\bapp_transactions\b/gi, 'transakcji w aplikacji'],
     [/\bsaas_users\b/gi, 'użytkowników platformy'],
@@ -1270,52 +1284,37 @@ function buildCleanPolecenie(item, details) {
     s = s.replace(tablePhraseReplacements[tIdx][0], tablePhraseReplacements[tIdx][1]);
   }
 
-  // 3. Usuń nawiasy zawierające surową składnię SQL, operatory, funkcje lub identyfikatory techniczne
-  for (var pass = 0; pass < 3; pass++) {
-    s = s.replace(/\s*\(([^()]*)\)/g, function(full, inner) {
-      if (/\b(SELECT|FROM|WHERE|GROUP BY|HAVING|ORDER BY|LIMIT|JOIN|LEFT|INNER|RIGHT|FULL|CROSS|COUNT|SUM|AVG|MIN|MAX|ROUND|COALESCE|NULLIF|CASE|WHEN|THEN|ELSE|END|OVER|PARTITION|ROW_NUMBER|RANK|DENSE_RANK|LAG|LEAD|FILTER|DISTINCT|BETWEEN|ILIKE|LIKE|NOT|AND|OR|ASC|DESC|NULL|AS|INTERVAL|DATE_TRUNC|EXTRACT|CAST|generate_series)\b/i.test(inner)) {
-        return '';
-      }
-      if (/[=_<>!*/%+]|::|[a-z]+_[a-z]+/i.test(inner)) {
-        return '';
-      }
-      if (/^\s*'(?:[^']+)'(?:\s*,\s*'(?:[^']+)')*\s*$/.test(inner)) {
-        return ' (' + inner.replace(/'/g, '') + ')';
-      }
-      if (/^\s*(?:title|rating|length|amount|email|active|city|country|name|revenue|units|arpu|diff|ratio|hours|days|rentals)\s*$/i.test(inner)) {
-        return '';
-      }
-      return full;
-    });
-  }
+  // 3. Bezpieczne usuwanie nawiasów zawierających wzory SQL (nie naruszające polskiego tekstu!)
+  s = s.replace(/\s*\([^)]*\b(SELECT|FROM|WHERE|GROUP|HAVING|ORDER|LIMIT|JOIN|COUNT|SUM|AVG|MIN|MAX|ROUND|COALESCE|NULLIF|OVER|PARTITION|ROW_NUMBER|RANK|DENSE_RANK|LAG|LEAD|FILTER|DISTINCT|BETWEEN|ILIKE|LIKE|ASC|DESC|NULL|AS|INTERVAL|DATE_TRUNC|generate_series)\b[^)]*\)/gi, '');
+  s = s.replace(/\s*\([^)]*[=><!*\/+%:]+[^)]*\)/g, '');
 
-  // 4. Zamień surowe nazwy kolumn i wyrażenia techniczne wplecione w zdanie na naturalny język polski
+  // 4. Zamiana technicznych nazw kolumn na naturalne polskie pojęcia
   var colToPolish = [
-    [/\b(?:\w+\.)?title\b/g, 'tytuł filmu'],
     [/\b(?:\w+\.)?rental_rate\b/g, 'cenę wypożyczenia'],
     [/\b(?:\w+\.)?replacement_cost\b/g, 'koszt odtworzenia'],
     [/\b(?:\w+\.)?release_year\b/g, 'rok wydania'],
     [/\b(?:\w+\.)?rental_duration\b/g, 'czas wypożyczenia'],
     [/\b(?:\w+\.)?rating\b/g, 'kategorię wiekową'],
     [/\b(?:\w+\.)?length\b/g, 'czas trwania'],
+    [/\b(?:\w+\.)?title\b/g, 'tytuł filmu'],
     [/\b(?:\w+\.)?film_id\b/g, 'identyfikator filmu'],
     [/\b(?:\w+\.)?customer_id\b/g, 'identyfikator klienta'],
     [/\b(?:\w+\.)?first_name\b/g, 'imię'],
     [/\b(?:\w+\.)?last_name\b/g, 'nazwisko'],
     [/\b(?:\w+\.)?create_date\b/g, 'datę rejestracji'],
-    [/\b(?:\w+\.)?active\s*=\s*1\b/gi, 'aktywnych'],
-    [/\b(?:\w+\.)?active\s*=\s*0\b/gi, 'nieaktywnych'],
-    [/\b(?:\w+\.)?active\b/g, 'status aktywności'],
-    [/\b(?:\w+\.)?store_id\b/g, 'identyfikator sklepu'],
-    [/\b(?:\w+\.)?staff_id\b/g, 'identyfikator pracownika'],
-    [/\b(?:\w+\.)?actor_id\b/g, 'identyfikator aktora'],
-    [/\b(?:\w+\.)?category_id\b/g, 'identyfikator kategorii'],
     [/\b(?:\w+\.)?rental_id\b/g, 'identyfikator wypożyczenia'],
     [/\b(?:\w+\.)?rental_date\b/g, 'datę wypożyczenia'],
     [/\b(?:\w+\.)?return_date\b/g, 'datę zwrotu'],
     [/\b(?:\w+\.)?payment_id\b/g, 'identyfikator płatności'],
     [/\b(?:\w+\.)?payment_date\b/g, 'datę płatności'],
     [/\b(?:\w+\.)?amount\b/g, 'kwotę płatności'],
+    [/\b(?:\w+\.)?staff_id\b/g, 'identyfikator pracownika'],
+    [/\b(?:\w+\.)?store_id\b/g, 'identyfikator sklepu'],
+    [/\b(?:\w+\.)?actor_id\b/g, 'identyfikator aktora'],
+    [/\b(?:\w+\.)?category_id\b/g, 'identyfikator kategorii'],
+    [/\b(?:\w+\.)?active\s*=\s*1\b/gi, 'aktywnych klientów'],
+    [/\b(?:\w+\.)?active\s*=\s*0\b/gi, 'nieaktywnych klientów'],
+    [/\b(?:\w+\.)?active\b/g, 'status aktywności'],
     [/\b(?:\w+\.)?emp_id\b/g, 'identyfikator pracownika'],
     [/\b(?:\w+\.)?emp_name\b/g, 'imię i nazwisko pracownika'],
     [/\b(?:\w+\.)?dept_id\b/g, 'identyfikator działu'],
@@ -1344,25 +1343,27 @@ function buildCleanPolecenie(item, details) {
     s = s.replace(colToPolish[cIdx][0], colToPolish[cIdx][1]);
   }
 
-  // 5. Wyczyść surowe wyrażenia AS <alias>, techniczne identyfikatory z podkreślnikiem (snake_case) oraz angielskie aliasy
+  // 5. Czysta obsługa fraz sortowania i klauzul technicznych
   s = s.replace(/\s+\bAS\s+[a-zA-Z_]\w*/gi, '');
   s = s.replace(/\s+jako\s+[a-zA-Z_]\w*/gi, '');
   s = s.replace(/\bSELECT\s+DISTINCT\b/gi, 'unikalne wartości');
-  s = s.replace(/\bDISTINCT\b/gi, 'unikalne');
+  s = s.replace(/\bDISTINCT\b/gi, 'unikalne wartości');
   s = s.replace(/\bORDER\s+BY\b/gi, 'posortowane po');
   s = s.replace(/\bGROUP\s+BY\b/gi, 'pogrupowane po');
   s = s.replace(/\bLIMIT\s+(\d+)/gi, 'ograniczając wynik do $1 wierszy');
   s = s.replace(/\bASC\b/g, 'rosnąco');
   s = s.replace(/\bDESC\b/g, 'malejąco');
 
-  // Usuń wszelkie pozostałe słowa z podkreślnikiem (snake_case) oraz angielskie nazwy aliasów wynikowych
-  s = s.replace(/\b[a-zA-Z0-9]*_[a-zA-Z0-9_]*\b/g, '');
-  s = s.replace(/\b(revenue|units|arpu|tx|cnt|avg|min|max|sum|diff|ratio|hours|days|rentals|film|customer|rental|payment|actor|staff|store|category|email|city|country|name)\b/gi, '');
+  // Bezpieczne usuwanie technicznych aliasów tylko gdy są wolnostojące (bez niszczenia polskich słów!)
+  s = s.replace(/\s+,\s*/g, ', ');
+  s = s.replace(/\s+\b(gross_rev|net_rev|units|arpu|tx_cnt|film_cnt|total_paid|avg_rate|min_len|max_len)\b/gi, '');
 
-  // Oczyść apostrofy wokół literałów w tekście (np. 'PG-13' -> PG-13) oraz podwójne spacje i wiszące znaki interpunkcyjne
+  // 6. Usuwanie wiszących polskich przyimków przed znakami interpunkcyjnymi lub na końcu zdania
+  s = s.replace(/\s+\b(po|w|z|ze|do|od|na|dla|o|oraz|i)\s*(?=[.,;?!]|$)/gi, '');
   s = s.replace(/'([^']+)'/g, '$1');
-  s = s.replace(/\s+([,.;:])/g, '$1');
+  s = s.replace(/\s+([,.;?!])/g, '$1');
   s = s.replace(/,\s*,+/g, ', ');
+  s = s.replace(/,\s*\./g, '.');
   s = s.replace(/\(\s*\)/g, '');
   s = s.replace(/\s{2,}/g, ' ').trim();
   s = s.replace(/[,;:]\s*$/, '.');
@@ -1385,17 +1386,23 @@ function buildDataLemurSpec(item, parentTask) {
   }
 
   if (details.cols.length > 0) {
-    var colBadges = details.cols.map(function(c) {
-      if (c.name === '*') {
-        return '<code>*</code> (wszystkie kolumny tabeli)';
-      }
-      var descPl = describeSqlExprPl(c.expr, c.name);
-      if (descPl) {
-        return '<code>' + c.name + '</code> (' + descPl + ')';
-      }
-      return '<code>' + c.name + '</code>';
-    });
-    assumptions.push('Wymagane kolumny w wyniku (w dokładnie tej kolejności): ' + colBadges.join(', ') + '.');
+    var hasAnyAlias = details.cols.some(function(c) { return c.hasAlias; });
+    var colsHtml = '<div class="dl-cols-sublist-title">Wymagane kolumny w wyniku (w dokładnie tej kolejności):</div>' +
+      '<ul class="dl-cols-sublist">' +
+      details.cols.map(function(c) {
+        if (c.name === '*') {
+          return '<li><code>*</code> — wszystkie kolumny tabeli źródłowej</li>';
+        }
+        var descPl = describeSqlExprPl(c.expr, c.name);
+        var aliasBadge = c.hasAlias ? ' <span class="dl-alias-tag">alias AS</span>' : '';
+        var colDesc = descPl ? (' — ' + descPl) : (' — kolumna <code>' + c.name + '</code>');
+        return '<li><code>' + c.name + '</code>' + aliasBadge + colDesc + '</li>';
+      }).join('') +
+      '</ul>';
+    if (hasAnyAlias) {
+      colsHtml += '<div class="dl-alias-tip">💡 <strong>Wskazówka:</strong> Pamiętaj o użyciu zapisu <code>kolumna AS nowa_nazwa</code>.</div>';
+    }
+    assumptions.push(colsHtml);
   }
 
   if (details.roundDigits !== null) {
@@ -1464,15 +1471,15 @@ function buildDataLemurSpec(item, parentTask) {
 }
 window.buildDataLemurSpec = buildDataLemurSpec;
 
-// Renderuje zunifikowaną specyfikację zadania w standardzie DataLemur (📌 Polecenie + 📋 Wymagania i założenia + 🎯 Example Output)
+// Renderuje zunifikowaną specyfikację zadania w standardzie DataLemur (📌 Polecenie + 📋 Wymagania i założenia)
 function renderTaskSpecBox(item, parentTask) {
   if (!item) return '';
-  if (!item._v9SpecDone) {
+  if (!item._v10SpecDone) {
     var spec = buildDataLemurSpec(item, parentTask || null);
     item.polecenie = spec.polecenie;
     item.assumptions = spec.assumptions;
     item.hints = spec.hints;
-    item._v9SpecDone = true;
+    item._v10SpecDone = true;
   }
   var polecenieTxt = item.polecenie || item.prompt || '';
   var assumptionsList = Array.isArray(item.assumptions) ? item.assumptions : [];
@@ -1492,7 +1499,6 @@ function renderTaskSpecBox(item, parentTask) {
       '<div class="dl-prompt-body">' + formatPrompt(polecenieTxt) + '</div>' +
     '</div>' +
     assumptionsHtml +
-    renderExampleOutputBox(item.sol) +
   '</div>';
 }
 
@@ -1530,42 +1536,104 @@ function getHintButtonLabel() {
 }
 
 // 8-liniowa ściąga krok po kroku (kolejność pisania zapytania SQL) z podświetleniem klauzul użytych w zadaniu
-var CHEAT_SHEET_8_LINES = [
-  { kw: 'SELECT', insert: 'SELECT ', syntax: 'kol1, kol2, COUNT(*) AS ile', desc: 'co chcesz wyświetlić lub policzyć' },
-  { kw: 'FROM', insert: '\nFROM ', syntax: 'tabela', desc: 'z której głównej tabeli bierzesz dane' },
-  { kw: 'JOIN ... ON', insert: '\nJOIN ', syntax: 'tabela2 ON t1.id = t2.id', desc: '(opcjonalnie) doklejenie drugiej tabeli po wspólnym kluczu' },
-  { kw: 'WHERE', insert: '\nWHERE ', syntax: 'warunek_wierszy', desc: '(opcjonalnie) sito odrzucające pojedyncze wiersze PRZED grupowaniem' },
-  { kw: 'GROUP BY', insert: '\nGROUP BY ', syntax: 'kol1', desc: '(opcjonalnie) podział wierszy na koszyki do policzenia SUM/COUNT/AVG' },
-  { kw: 'HAVING', insert: '\nHAVING ', syntax: 'COUNT(*) > 5', desc: '(opcjonalnie) sito na całe koszyki PO zgrupowaniu' },
-  { kw: 'ORDER BY', insert: '\nORDER BY ', syntax: 'kol1 DESC', desc: '(opcjonalnie) sortowanie gotowego wyniku (ASC rosnąco / DESC malejąco)' },
-  { kw: 'LIMIT', insert: '\nLIMIT ', syntax: '10;', desc: '(opcjonalnie) odcięcie wyniku do N pierwszych wierszy' }
+var ALL_CHEAT_CLAUSES = [
+  {
+    kw: 'SELECT',
+    check: function(s) { return true; },
+    insert: 'SELECT ',
+    syntax: 'kol1, kol2',
+    desc: 'wybiera kolumny do wyświetlenia w wyniku'
+  },
+  {
+    kw: 'AS',
+    check: function(s) { return /\bAS\b/i.test(s); },
+    insert: ' AS ',
+    syntax: 'kolumna AS nowa_nazwa',
+    desc: 'nadaje kolumnie nowy nagłówek / alias w wyniku'
+  },
+  {
+    kw: 'DISTINCT',
+    check: function(s) { return /\bDISTINCT\b/i.test(s); },
+    insert: 'DISTINCT ',
+    syntax: 'SELECT DISTINCT kolumna',
+    desc: 'usuwa duplikaty i zwraca unikalne wartości'
+  },
+  {
+    kw: 'FROM',
+    check: function(s) { return /\bFROM\b/i.test(s); },
+    insert: '\nFROM ',
+    syntax: 'FROM tabela',
+    desc: 'wskazuje główną tabelę źródłową'
+  },
+  {
+    kw: 'LEFT JOIN',
+    check: function(s) { return /\bLEFT\s+(?:OUTER\s+)?JOIN\b/i.test(s); },
+    insert: '\nLEFT JOIN ',
+    syntax: 'LEFT JOIN tabela2 ON t1.id = t2.id',
+    desc: 'dołącza rekordy z prawej tabeli bez utraty wierszy z lewej'
+  },
+  {
+    kw: 'JOIN ... ON',
+    check: function(s) { return /\bJOIN\b/i.test(s) && !/\bLEFT\s+(?:OUTER\s+)?JOIN\b/i.test(s); },
+    insert: '\nJOIN ',
+    syntax: 'JOIN tabela2 ON t1.id = t2.id',
+    desc: 'łączy tabele po wspólnym kluczu'
+  },
+  {
+    kw: 'WHERE',
+    check: function(s) { return /\bWHERE\b/i.test(s); },
+    insert: '\nWHERE ',
+    syntax: 'WHERE warunek',
+    desc: 'sito odrzucające pojedyncze wiersze niespełniające warunku'
+  },
+  {
+    kw: 'GROUP BY',
+    check: function(s) { return /\bGROUP\s+BY\b/i.test(s); },
+    insert: '\nGROUP BY ',
+    syntax: 'GROUP BY kolumna',
+    desc: 'grupuje wiersze do podliczenia SUM/COUNT/AVG'
+  },
+  {
+    kw: 'HAVING',
+    check: function(s) { return /\bHAVING\b/i.test(s); },
+    insert: '\nHAVING ',
+    syntax: 'HAVING warunek_grup',
+    desc: 'filtruje całe grupy po podliczeniu agregatów'
+  },
+  {
+    kw: 'ORDER BY',
+    check: function(s) { return /\bORDER\s+BY\b/i.test(s); },
+    insert: '\nORDER BY ',
+    syntax: 'ORDER BY kolumna ASC/DESC',
+    desc: 'sortuje gotowy wynik (rosnąco ASC lub malejąco DESC)'
+  },
+  {
+    kw: 'LIMIT',
+    check: function(s) { return /\bLIMIT\b/i.test(s); },
+    insert: '\nLIMIT ',
+    syntax: 'LIMIT N;',
+    desc: 'odcina wynik do pierwszych N wierszy'
+  }
 ];
 
-function isClauseUsedInSql(kw, sql) {
-  var s = String(sql || '').toUpperCase();
-  if (!s) return false;
-  if (kw === 'SELECT') return /\bSELECT\b/.test(s);
-  if (kw === 'FROM') return /\bFROM\b/.test(s);
-  if (kw === 'JOIN ... ON') return /\bJOIN\b/.test(s);
-  if (kw === 'WHERE') return /\bWHERE\b/.test(s);
-  if (kw === 'GROUP BY') return /\bGROUP\s+BY\b/.test(s);
-  if (kw === 'HAVING') return /\bHAVING\b/.test(s);
-  if (kw === 'ORDER BY') return /\bORDER\s+BY\b/.test(s);
-  if (kw === 'LIMIT') return /\bLIMIT\b/.test(s);
-  return false;
-}
-
 function renderStepByStepCheatSheet(solSql, lessonTheoryHtml, openByDefault) {
+  var s = String(solSql || '');
+  var usedClauses = ALL_CHEAT_CLAUSES.filter(function(row) {
+    return row.check(s);
+  });
+  if (usedClauses.length < 2) {
+    usedClauses = ALL_CHEAT_CLAUSES.slice(0, 2);
+  }
+
   var isOpen = uiState.theoryBoxOpen !== null ? uiState.theoryBoxOpen : (openByDefault !== false);
-  var rowsHtml = CHEAT_SHEET_8_LINES.map(function(row, idx) {
-    var active = isClauseUsedInSql(row.kw, solSql);
-    return '<div class="cheat-row' + (active ? ' used' : '') + '">' +
+  var rowsHtml = usedClauses.map(function(row, idx) {
+    return '<div class="cheat-row used">' +
       '<span class="cheat-num">' + (idx + 1) + '.</span>' +
-      '<button type="button" class="cheat-kw-btn' + (active ? ' active' : '') + '" data-insert-sql="' + esc(row.insert) + '" title="Kliknij, aby wstawić ' + esc(row.kw) + ' do edytora">' +
+      '<button type="button" class="cheat-kw-btn active" data-insert-sql="' + esc(row.insert) + '" title="Kliknij, aby wstawić ' + esc(row.kw) + ' do edytora">' +
         '[' + esc(row.kw) + ']' +
       '</button>' +
       '<code class="cheat-syn">' + esc(row.syntax) + '</code>' +
-      '<span class="cheat-desc">→ ' + esc(row.desc) + (active ? ' <strong class="cheat-tag">✓ w tym zadaniu</strong>' : '') + '</span>' +
+      '<span class="cheat-desc">→ ' + esc(row.desc) + '</span>' +
     '</div>';
   }).join('');
 
@@ -1574,7 +1642,7 @@ function renderStepByStepCheatSheet(solSql, lessonTheoryHtml, openByDefault) {
     : '';
 
   return '<details class="theory-box cheat-8-box"' + (isOpen ? ' open' : '') + '>' +
-    '<summary>🧭 Ściąga krok po kroku (kolejność pisania zapytania — kliknij klauzulę, by wstawić do edytora)</summary>' +
+    '<summary>🧭 Kontekstowa ściąga składni dla tego zadania (' + usedClauses.length + ' ' + (usedClauses.length === 1 ? 'klauzula' : usedClauses.length < 5 ? 'klauzule' : 'klauzul') + ' — kliknij, by wstawić)</summary>' +
     '<div class="theory-body">' +
       '<div class="cheat-8-grid">' + rowsHtml + '</div>' +
       extraLessonHtml +
@@ -1974,26 +2042,33 @@ function renderPathTab() {
       state.activeVariantIdx = vIdx;
     }
     var variant = task.variants[vIdx];
-
+    var totalSteps = task.variants.length;
+    var curStepNum = vIdx + 1;
     var curStepCode = variant.stepCode || (vIdx < 3 ? ('R' + (vIdx + 1)) : String(vIdx - 2));
     var tierBadge = vIdx < 3
       ? '🔥 Rozgrzewka (' + curStepCode + ' z R1–R3)'
-      : (vIdx >= 8 ? '🚀 Zadania Zaawansowane (Zadanie ' + curStepCode + ' z 6–10 · Miks działów)' : '📘 Zadania Podstawowe (Zadanie ' + curStepCode + ' z 1–5)');
+      : (vIdx >= 8 ? '🚀 Zaawansowane (' + curStepCode + ' z 6–10 · Miks)' : '📘 Podstawy (' + curStepCode + ' z 1–5)');
+    var pct = Math.round((curStepNum / totalSteps) * 100);
 
-    return '<div class="card">' +
-      '<div class="ws-bar">' +
-        '<button type="button" class="btn sm" data-act="backToPathList">← Mapa Ścieżki</button>' +
-        '<div style="display:flex;gap:6px;flex-wrap:wrap">' +
-          '<button type="button" class="btn sm" data-act="openTutorialSlides">📖 Teoria + Symulator (Slajdy 1–4)</button>' +
-          '<button type="button" class="btn sm" data-act="shuffleVariant">🎲 Losuj odblokowane</button>' +
-        '</div>' +
+    return '<div class="card task-transition-enter">' +
+      '<div class="task-nav-hdr">' +
+        '<button type="button" class="btn back-path-btn" data-act="backToPathList">← Mapa Ścieżki</button>' +
+        '<button type="button" class="btn sm ghost sololearn-theory-btn" data-act="openTutorialSlides">📖 Teoria</button>' +
       '</div>' +
-      '<span class="chip info">Etap ' + task.stage + ' · Krok ' + (vIdx + 1) + '/13 · ' + esc(tierBadge) + '</span>' +
-      '<h2 style="margin-top:8px">' + esc(task.title) + ' — Zadanie ' + esc(curStepCode) + '</h2>' +
+      '<div class="sololearn-progress-wrap">' +
+        '<div class="sololearn-progress-meta">' +
+          '<span class="sololearn-step-badge">ZADANIE ' + curStepNum + ' z ' + totalSteps + '</span>' +
+          '<span class="sololearn-tier-badge">' + esc(tierBadge) + '</span>' +
+          '<span class="sololearn-pct">' + pct + '%</span>' +
+        '</div>' +
+        '<div class="sololearn-bar"><i style="width:' + pct + '%"></i></div>' +
+      '</div>' +
+      '<h2 class="task-page-title">' + esc(task.title) + ' — Zadanie ' + esc(curStepCode) + '</h2>' +
       renderTaskSpecBox(variant, task) +
-      renderStepByStepCheatSheet(variant.sol, task.theory, false) +
       buildTaskSchemaBox(variant.tables || task.tables, variant.sol) +
+      renderStepByStepCheatSheet(variant.sol, task.theory, false) +
       renderEditorWidget(task.cols, 'checkPathTask') +
+      renderExampleOutputBox(variant.sol) +
       renderHintStepperBox(variant, task) +
       '<div class="acts" style="margin-top:12px;border-top:1px solid var(--line);padding-top:10px">' +
         '<button type="button" class="btn sm warn" data-act="stepHint">' + esc(getHintButtonLabel()) + '</button>' +
@@ -2092,17 +2167,24 @@ function renderDiagTab() {
   }
 
   var q = DIAG_QUESTIONS[state.diagIdx];
-  return '<div class="card">' +
-    '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px">' +
-      '<span class="chip mid">Diagnoza · Pytanie ' + (state.diagIdx + 1) + ' z ' + DIAG_QUESTIONS.length + '</span>' +
-      '<span class="chip info">Sprawdza: Etap ' + q.stage + '</span>' +
+  var totalDiag = DIAG_QUESTIONS.length;
+  var curDNum = state.diagIdx + 1;
+  var dPct = Math.round((curDNum / totalDiag) * 100);
+  return '<div class="card task-transition-enter">' +
+    '<div class="sololearn-progress-wrap">' +
+      '<div class="sololearn-progress-meta">' +
+        '<span class="sololearn-step-badge">PYTANIE ' + curDNum + ' z ' + totalDiag + '</span>' +
+        '<span class="sololearn-tier-badge">Sprawdza: Etap ' + q.stage + '</span>' +
+        '<span class="sololearn-pct">' + dPct + '%</span>' +
+      '</div>' +
+      '<div class="sololearn-bar"><i style="width:' + dPct + '%"></i></div>' +
     '</div>' +
-    '<div class="bar"><i style="width:' + Math.round((state.diagIdx / DIAG_QUESTIONS.length) * 100) + '%"></i></div>' +
-    '<h2>' + esc(q.title) + '</h2>' +
+    '<h2 class="task-page-title">' + esc(q.title) + '</h2>' +
     renderTaskSpecBox(q, null) +
-    renderStepByStepCheatSheet(q.sol, '', false) +
     buildTaskSchemaBox(q.tables, q.sol) +
+    renderStepByStepCheatSheet(q.sol, '', false) +
     renderEditorWidget(null, 'submitDiag') +
+    renderExampleOutputBox(q.sol) +
     renderHintStepperBox(q, null) +
     '<div class="acts" style="margin-top:12px;border-top:1px solid var(--line);padding-top:12px;justify-content:space-between">' +
       '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
@@ -2126,7 +2208,7 @@ function renderLemurTab() {
   var tasksList = window.INTERVIEW_TASKS || window.LEMUR_TASKS || [];
   var openGapsCnt = state.gaps.filter(function(g) { return g.lvl <= 1; }).length;
   var nav = '<div class="subnav">' +
-    '<button type="button" class="' + (state.lemurSubTab === 'tasks' ? 'active' : '') + '" data-act="lemurSub" data-sub="tasks">🎯 Wyzwania Rekrutacyjne (' + tasksList.length + ')</button>' +
+    '<button type="button" class="' + (state.lemurSubTab === 'tasks' ? 'active' : '') + '" data-act="backToLemurList" title="Kliknij, aby wrócić do listy wyzwań">🎯 Wyzwania Rekrutacyjne (' + tasksList.length + ')</button>' +
     '<button type="button" class="' + (state.lemurSubTab === 'gaps' ? 'active' : '') + '" data-act="lemurSub" data-sub="gaps">🧠 Twój Rejestr Luk (' + state.gaps.length + (openGapsCnt ? ' · 🔥' + openGapsCnt : '') + ')</button>' +
   '</div>';
 
@@ -2161,19 +2243,28 @@ function renderLemurTab() {
     if (task && state.activeLemurId !== task.id) state.activeLemurId = task.id;
     var isSolved = !!state.completedLemur[task.id];
     var bdg = diffBadge(task.difficulty);
-    return nav + '<div class="card">' +
-      '<div class="ws-bar">' +
-        '<button class="btn sm" data-act="backToLemurList">← Wróć do listy (' + tasksList.length + ' zadań)</button>' +
-        '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">' +
-          '<span class="chip ' + bdg.cls + '">' + bdg.lbl + '</span>' +
-          '<span class="chip info">' + esc(task.categoryTag || 'Analiza SQL') + '</span>' +
+    var taskIdx = tasksList.findIndex(function(x) { return x.id === task.id; });
+    var curNum = (taskIdx >= 0 ? taskIdx : 0) + 1;
+    var pct = Math.round((curNum / tasksList.length) * 100);
+
+    return nav + '<div class="card task-transition-enter">' +
+      '<div class="sololearn-progress-wrap" style="margin-top:2px">' +
+        '<div class="sololearn-progress-meta">' +
+          '<span class="sololearn-step-badge">ZADANIE ' + curNum + ' z ' + tasksList.length + '</span>' +
+          '<div style="display:flex;gap:6px;align-items:center">' +
+            '<span class="chip ' + bdg.cls + '">' + bdg.lbl + '</span>' +
+            '<span class="chip info">' + esc(task.categoryTag || 'Analiza SQL') + '</span>' +
+          '</div>' +
+          '<span class="sololearn-pct">' + pct + '%</span>' +
         '</div>' +
+        '<div class="sololearn-bar"><i style="width:' + pct + '%"></i></div>' +
       '</div>' +
-      '<h2>' + (isSolved ? '✅ ' : '') + esc(task.title) + '</h2>' +
+      '<h2 class="task-page-title">' + (isSolved ? '✅ ' : '') + esc(task.title) + '</h2>' +
       renderTaskSpecBox(task, null) +
-      renderStepByStepCheatSheet(task.sol, '', false) +
       buildTaskSchemaBox(task.tables, task.sol) +
+      renderStepByStepCheatSheet(task.sol, '', false) +
       renderEditorWidget(task.cols, 'checkLemurTask') +
+      renderExampleOutputBox(task.sol) +
       renderHintStepperBox(task, null) +
       '<div class="acts" style="margin-top:12px;border-top:1px solid var(--line);padding-top:10px">' +
         '<button type="button" class="btn sm warn" data-act="stepHint">' + esc(getHintButtonLabel()) + '</button>' +
@@ -2699,6 +2790,7 @@ document.addEventListener('click', async function(e) {
     lastChecklist = null;
     saveState();
     render();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   }
   else if (act === 'nextTaskStep') {
     var curTaskStep = PATH_TASKS.find(function(x) { return x.id === state.activeTaskId; }) || PATH_TASKS[0];
@@ -2715,7 +2807,7 @@ document.addEventListener('click', async function(e) {
       lastChecklist = null;
       saveState();
       render();
-      window.scrollTo(0, 0);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
     }
   }
   else if (act === 'nextLessonAfterComplete') {
@@ -2930,12 +3022,14 @@ document.addEventListener('click', async function(e) {
   }
   else if (act === 'lemurSub') {
     state.lemurSubTab = el.dataset.sub;
+    state.lemurMode = 'list';
     lastExecResult = null;
     lastExpectedResult = null;
     lastFeedback = null;
     lastChecklist = null;
     saveState();
     render();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   }
   else if (act === 'lemurFilter') {
     uiState.lemurDiffFilter = el.dataset.diff || 'all';
@@ -2954,10 +3048,11 @@ document.addEventListener('click', async function(e) {
     lastChecklist = null;
     saveState();
     render();
-    window.scrollTo(0, 0);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   }
   else if (act === 'backToLemurList') {
     state.lemurMode = 'list';
+    state.lemurSubTab = 'tasks';
     uiState.hintStep = 0;
     lastExecResult = null;
     lastExpectedResult = null;
@@ -2965,7 +3060,7 @@ document.addEventListener('click', async function(e) {
     lastChecklist = null;
     saveState();
     render();
-    window.scrollTo(0, 0);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   }
   else if (act === 'checkLemurTask') {
     var lt = LEMUR_TASKS.find(function(x) { return x.id === state.activeLemurId; }) || LEMUR_TASKS[0];
@@ -3195,7 +3290,7 @@ if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.
   });
 
   window.addEventListener('load', function() {
-    navigator.serviceWorker.register('./sw.js?v=9', { updateViaCache: 'none' }).then(function(registration) {
+    navigator.serviceWorker.register('./sw.js?v=10', { updateViaCache: 'none' }).then(function(registration) {
       document.addEventListener('visibilitychange', function() {
         if (document.visibilityState === 'visible') {
           registration.update().catch(function() {});
