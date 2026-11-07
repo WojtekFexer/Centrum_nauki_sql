@@ -257,7 +257,7 @@ details.theory-box[open] summary::after { content: "▲"; }
 .theory-body li { margin-bottom: 6px; }
 .theory-body code { font: 500 12px var(--mono); background: var(--surface); color: var(--kw); padding: 1px 5px; border-radius: 5px; border: 1px solid var(--line); }
 .theory-code { background: var(--code-bg); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; overflow-x: auto; }
-.theory-code code { background: transparent; border: 0; padding: 0; color: var(--str); white-space: pre-wrap; display: block; font: 500 12.5px/1.5 var(--mono); }
+.theory-code code { background: transparent; border: 0; padding: 0; color: var(--ink); white-space: pre-wrap; display: block; font: 500 12.5px/1.5 var(--mono); }
 
 /* Prompt Box inside Workspace */
 .prompt-box {
@@ -490,7 +490,7 @@ input[type=text], input[type=password], select {
 
 .tut-lines { display: flex; flex-direction: column; gap: 8px; }
 .tut-line-item { background: var(--surface); border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 9px; padding: 8px 11px; }
-.tut-line-code code { font: 600 12px var(--mono); color: var(--str); display: block; margin-bottom: 3px; white-space: pre-wrap; }
+.tut-line-code code { font: 600 12px var(--mono); color: var(--ink); display: block; margin-bottom: 3px; white-space: pre-wrap; }
 .tut-line-desc { font-size: 12.5px; color: var(--ink); }
 
 .quiz-opts { display: flex; flex-direction: column; gap: 8px; }
@@ -1262,8 +1262,411 @@ tr.lb-me td { background: var(--done-soft); color: var(--ink); }
 
 /* Wskaźnik interaktywności */
 .interactive-hint {
-  font-size: 11px;
-  color: var(--txt-muted);
-  margin-top: 4px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #38bdf8;
+  background: rgba(56, 189, 248, 0.1);
+  border: 1px dashed rgba(56, 189, 248, 0.45);
+  border-radius: 8px;
+  padding: 6px 10px;
+  margin: 6px 0 8px;
 }
+
+/* ==========================================================================
+   STANDARD v12: KOLOROWANIE SKŁADNI DBEAVER, UX, NAWIGACJA I SAMOUCZEK
+   ========================================================================== */
+.sql-kw {
+  color: #ff9e3b;
+  font-weight: 700;
+}
+.sql-fn {
+  color: #c084fc;
+  font-weight: 600;
+}
+.sql-str {
+  color: #4ade80;
+}
+.sql-num {
+  color: #38bdf8;
+}
+.sql-comment {
+  color: #64748B;
+  font-style: italic;
+}
+.sql-alias {
+  color: #facc15;
+  background: rgba(250, 204, 21, 0.14);
+  border-radius: 3px;
+}
+:root[data-theme="light"] .sql-kw { color: #c2410c; }
+:root[data-theme="light"] .sql-fn { color: #7e22ce; }
+:root[data-theme="light"] .sql-str { color: #15803d; }
+:root[data-theme="light"] .sql-num { color: #0369a1; }
+:root[data-theme="light"] .sql-alias {
+  color: #854d0e;
+  background: rgba(234, 179, 8, 0.22);
+}
+
+/* Zabezpieczenie identycznej geometrii znaków w warstwie <pre id="sqlhl"> względem <textarea id="answer"> */
+#sqlhl .sql-kw,
+#sqlhl .sql-fn,
+#sqlhl .sql-str,
+#sqlhl .sql-num,
+#sqlhl .sql-comment,
+#sqlhl .sql-alias {
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+  letter-spacing: 0;
+  word-spacing: 0;
+  padding: 0;
+  margin: 0;
+  border: 0;
+}
+
+.teach-first-code code {
+  color: var(--ink);
+}
+.cheat-syn {
+  color: var(--ink);
+}
+
+/* Pulsowanie obramowania nieklikniętych elementów interaktywnych na slajdach */
+@keyframes pulseInteractiveBorder {
+  0%, 100% {
+    border-color: rgba(56, 189, 248, 0.45);
+    box-shadow: 0 0 0 0 rgba(56, 189, 248, 0.25);
+  }
+  50% {
+    border-color: #38bdf8;
+    box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.18);
+  }
+}
+.pulse-unclicked {
+  animation: pulseInteractiveBorder 2s infinite ease-in-out;
+}
+.order-pill {
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.order-pill:hover {
+  border-color: #38bdf8;
+  color: var(--ink);
+}
+.order-pill.inspected {
+  outline: 2px solid #facc15;
+}
+.exec-step {
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+  transition: all 0.15s ease;
+}
+.exec-step:hover {
+  border-color: #38bdf8;
+  opacity: 1;
+}
+.exec-step.inspected {
+  outline: 2px solid #facc15;
+  opacity: 1;
+}
+.clause-explain-box {
+  margin-top: 8px;
+  margin-bottom: 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(56, 189, 248, 0.08);
+  border: 1px solid rgba(56, 189, 248, 0.4);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+/* Animacja zmiany zadania (600 ms) oraz pasek "Teraz rozwiązujesz" i pigułka odblokowania 5/8 */
+@keyframes taskStepFlash {
+  0% {
+    border-color: #facc15;
+    box-shadow: 0 0 0 4px rgba(250, 204, 21, 0.35), 0 0 18px rgba(56, 189, 248, 0.45);
+    transform: translateY(-1px);
+  }
+  60% {
+    border-color: #38bdf8;
+    box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.25);
+  }
+  100% {
+    border-color: var(--line);
+    box-shadow: none;
+    transform: translateY(0);
+  }
+}
+.task-step-flash {
+  animation: taskStepFlash 0.6s ease-out;
+}
+
+.task-now-solving-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 12px;
+  margin-bottom: 10px;
+  border-radius: 10px;
+  background: linear-gradient(90deg, rgba(79, 117, 255, 0.16), rgba(56, 189, 248, 0.08));
+  border: 1px solid rgba(79, 117, 255, 0.45);
+  font-size: 13px;
+  color: var(--ink);
+}
+
+.unlock-progress-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  color: var(--ink);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+.unlock-progress-pill.unlocked {
+  background: rgba(16, 185, 129, 0.15);
+  border-color: rgba(16, 185, 129, 0.5);
+  color: var(--done);
+}
+.unlock-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.udot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.22);
+  border: 1px solid rgba(245, 158, 11, 0.5);
+  display: inline-block;
+}
+.udot.on {
+  background: #facc15;
+  border-color: #facc15;
+  box-shadow: 0 0 4px rgba(250, 204, 21, 0.7);
+}
+
+/* Przyciski nawigacji mobilnej pod kciuk (Ścieżka i Rekrutacja) */
+.back-path-btn {
+  min-height: 42px;
+  padding: 8px 14px;
+  font-weight: 700;
+  font-size: 13.5px;
+  border-radius: 12px;
+  background: var(--surface-2);
+  border: 1.5px solid var(--accent);
+  color: var(--ink);
+}
+.sololearn-theory-btn {
+  min-height: 42px;
+  padding: 8px 14px;
+  font-weight: 700;
+  font-size: 13px;
+  border-radius: 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  color: var(--ink);
+}
+.lemur-back-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  width: 100%;
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 14px;
+  padding: 12px 16px;
+  margin-bottom: 12px;
+  cursor: pointer;
+  text-align: left;
+  font: 700 14px var(--body);
+  box-shadow: 0 6px 18px rgba(79, 117, 255, 0.28);
+  transition: transform 0.12s ease, filter 0.15s ease;
+}
+.lemur-back-banner:hover {
+  filter: brightness(1.07);
+}
+.lemur-back-banner:active {
+  transform: scale(0.99);
+}
+.lemur-back-sub {
+  font-size: 12.5px;
+  font-weight: 600;
+  background: rgba(0, 0, 0, 0.22);
+  padding: 4px 10px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+/* Sufler błędu przecinka przed FROM w PGlite */
+.pg-error-sufler-pill {
+  margin-bottom: 8px;
+  padding: 7px 11px;
+  border-radius: 8px;
+  background: rgba(250, 204, 21, 0.16);
+  border: 1px solid rgba(250, 204, 21, 0.55);
+  color: #fde047;
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.45;
+}
+:root[data-theme="light"] .pg-error-sufler-pill {
+  color: #854d0e;
+  background: #fef9c3;
+}
+
+/* Wymagania i założenia: nierozbijalna pigułka wyliczeń przed AS */
+.dl-cols-sublist li {
+  margin-bottom: 7px;
+}
+.req-col-row {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  vertical-align: middle;
+  max-width: 100%;
+}
+.req-calc-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: rgba(192, 132, 252, 0.15);
+  border: 1px solid rgba(192, 132, 252, 0.42);
+  color: #e9d5ff;
+  font: 600 11.5px var(--mono);
+  white-space: nowrap;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+:root[data-theme="light"] .req-calc-pill {
+  color: #6b21a8;
+  background: #f3e8ff;
+}
+
+/* Naprawa kart i nagłówków pod-lekcji (1.1, 1.2) na Mapie Ścieżki dla ekranów 360px-375px */
+.stage-box,
+.node-list,
+.node-item {
+  min-width: 0;
+  overflow-wrap: break-word;
+}
+.node-item {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  padding: 12px;
+}
+.node-item > div:first-child {
+  min-width: 0;
+  width: 100%;
+}
+.node-hdr-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+}
+.node-title-wrap {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+.node-num-badge {
+  font: 700 12px var(--mono);
+  color: #38bdf8;
+  background: rgba(56, 189, 248, 0.12);
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  padding: 1px 6px;
+  border-radius: 6px;
+  flex-shrink: 0;
+}
+.node-title-txt {
+  font-weight: 700;
+  font-size: 14px;
+  line-height: 1.35;
+  color: var(--ink);
+  min-width: 0;
+  overflow-wrap: break-word;
+}
+.node-prog-badge {
+  flex-shrink: 0;
+  font: 700 11.5px var(--mono);
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+
+/* Przesuwany Samouczek Powitalny SoloLearn (4 karty + PWA) */
+.onboarding-open-btn {
+  background: linear-gradient(135deg, rgba(56, 189, 248, 0.18), rgba(139, 92, 246, 0.18));
+  border: 1.5px solid #38bdf8;
+  color: var(--ink);
+  font-weight: 700;
+}
+.onboarding-modal-card {
+  max-width: 480px;
+  padding: 18px;
+  touch-action: pan-y;
+}
+.onboarding-dots {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin: 10px 0 14px;
+}
+.ob-dot {
+  width: 28px;
+  height: 7px;
+  border-radius: 99px;
+  background: var(--line);
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.ob-dot.active {
+  width: 42px;
+  background: #38bdf8;
+}
+.ob-dot.done {
+  background: var(--done);
+}
+.onboarding-slide-body {
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 14px;
+  min-height: 250px;
+}
+.pwa-box {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--code-bg);
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  font-size: 12.5px;
+}
+
 

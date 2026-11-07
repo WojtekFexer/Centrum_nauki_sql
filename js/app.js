@@ -4,7 +4,7 @@
 /* ==========================================================================
    0. KONFIGURACJA CHMURY SUPABASE (REST API — RANKING I PROFILE TESTERÓW)
    ========================================================================== */
-const APP_VERSION = 'v11';
+const APP_VERSION = 'v12';
 const DEFAULT_SUPABASE_URL = 'https://hpfrcykbzuzucglorpkr.supabase.co';
 const DEFAULT_SUPABASE_KEY = 'sb_publishable_5klYjdIKjT35Zl2OtOyGQA_DGxdJCHh';
 
@@ -430,6 +430,12 @@ var lastExecResult = null;
 var lastExpectedResult = null;
 var lastFeedback = null;
 var lastChecklist = null;
+var ONBOARDING_KEY = 'sql_master_onboarding_seen';
+var hasSeenOnboarding = false;
+try {
+  hasSeenOnboarding = localStorage.getItem(ONBOARDING_KEY) === '1';
+} catch (e) {}
+
 var uiState = {
   schemaBoxOpen: false,
   theoryBoxOpen: null,
@@ -441,14 +447,30 @@ var uiState = {
   quizPassed: false,
   sqlAnimStep: 0,
   sqlAnimRunning: false,
-  authModalOpen: !(state.userProfile && state.userProfile.nick),
+  authModalOpen: hasSeenOnboarding && !(state.userProfile && state.userProfile.nick),
   authError: '',
   leaderboard: null,
   leaderboardSource: 'local',
   lastSyncTime: null,
   syncing: false,
-  taskDropdownOpen: false
+  taskDropdownOpen: false,
+  onboardingOpen: !hasSeenOnboarding,
+  onboardingSlideIdx: 0,
+  clickedClauses: {},
+  selectedClause: null,
+  stepFlashActive: false
 };
+
+function triggerStepFlash() {
+  uiState.stepFlashActive = true;
+  clearTimeout(window._stepFlashTimer);
+  window._stepFlashTimer = setTimeout(function() {
+    uiState.stepFlashActive = false;
+    document.querySelectorAll('.task-step-flash').forEach(function(el) {
+      el.classList.remove('task-step-flash');
+    });
+  }, 620);
+}
 
 /* --- PROGRESJA SOLOLEARN: SEKWENCYJNE BLOKADY KROK PO KROKU (R1→R2→1→2→3→4→5→6) --- */
 function getVariantKey(taskOrId, vIdx) {
@@ -816,8 +838,137 @@ function esc(s) {
   });
 }
 
+var DBEAVER_KW_SET = new Set([
+  'SELECT', 'FROM', 'WHERE', 'AS', 'DISTINCT', 'ORDER', 'BY', 'LIMIT', 'OFFSET',
+  'AND', 'OR', 'IN', 'BETWEEN', 'ILIKE', 'LIKE', 'IS', 'NOT', 'NULL',
+  'JOIN', 'INNER', 'LEFT', 'RIGHT', 'FULL', 'CROSS', 'ON', 'GROUP', 'HAVING',
+  'CASE', 'WHEN', 'THEN', 'ELSE', 'END', 'ASC', 'DESC', 'WITH', 'OVER',
+  'PARTITION', 'FILTER', 'EXISTS', 'UNION', 'ALL'
+]);
+
+var DBEAVER_FN_SET = new Set([
+  'ROUND', 'COUNT', 'SUM', 'AVG', 'MIN', 'MAX', 'COALESCE', 'NULLIF',
+  'DATE_TRUNC', 'CAST', 'EXTRACT', 'TO_CHAR', 'ROW_NUMBER', 'RANK',
+  'DENSE_RANK', 'LAG', 'LEAD', 'GENERATE_SERIES', 'LOWER', 'UPPER',
+  'TRIM', 'LENGTH'
+]);
+
+var DBEAVER_NON_ALIAS_SET = new Set([
+  'OUTER', 'NATURAL', 'LATERAL', 'USING', 'WINDOW', 'FETCH', 'INTERSECT',
+  'EXCEPT', 'FOR', 'INTO', 'VALUES', 'SET', ' ONLY', 'TRUE', 'FALSE'
+]);
+
+var SQL_TOK = /(--[^\n]*|\/\*[\s\S]*?(?:\*\/|$))|('(?:[^']|'')*(?:'|$))|(\b\d+(?:\.\d+)?\b)|([A-Za-z_]\w*)|([\u2018\u2019\u201A\u201B\u201C\u201D])|([\s\S])/g;
+
+function detectSqlTableAliases(sqlText) {
+  var aliases = new Set();
+  var clean = String(sqlText || '')
+    .replace(/--[^\n]*/g, function(m) { return ' '.repeat(m.length); })
+    .replace(/\/\*[\s\S]*?(?:\*\/|$)/g, function(m) { return ' '.repeat(m.length); })
+    .replace(/'(?:[^']|'')*(?:'|$)/g, function(m) { return ' '.repeat(m.length); });
+
+  var reFromJoin = /\b(?:FROM|JOIN)\s+([A-Za-z_]\w*)(?:\s+AS\s+|\s+)([A-Za-z_]\w*)\b/gi;
+  var m;
+  while ((m = reFromJoin.exec(clean)) !== null) {
+    var tbl = m[1].toUpperCase();
+    var cand = m[2].toUpperCase();
+    if (
+      !DBEAVER_KW_SET.has(tbl) &&
+      !DBEAVER_KW_SET.has(cand) &&
+      !DBEAVER_FN_SET.has(cand) &&
+      !DBEAVER_NON_ALIAS_SET.has(cand)
+    ) {
+      aliases.add(m[2].toLowerCase());
+    }
+  }
+
+  var reGenSeries = /\bgenerate_series\s*\([^)]*\)\s*(?:AS\s+)?([A-Za-z_]\w*)\b/gi;
+  while ((m = reGenSeries.exec(clean)) !== null) {
+    var gsAlias = m[1].toUpperCase();
+    if (!DBEAVER_KW_SET.has(gsAlias) && !DBEAVER_FN_SET.has(gsAlias)) {
+      aliases.add(m[1].toLowerCase());
+    }
+  }
+
+  var reDotPrefix = /\b([A-Za-z_]\w*)\.(?=[A-Za-z_*])/g;
+  while ((m = reDotPrefix.exec(clean)) !== null) {
+    var pref = m[1].toUpperCase();
+    if (!DBEAVER_KW_SET.has(pref) && !DBEAVER_FN_SET.has(pref)) {
+      aliases.add(m[1].toLowerCase());
+    }
+  }
+
+  return aliases;
+}
+
+function highlightSQL(sqlText) {
+  var raw = String(sqlText == null ? '' : sqlText);
+  if (!raw) return '';
+  var aliasSet = detectSqlTableAliases(raw);
+  var out = '', m;
+  SQL_TOK.lastIndex = 0;
+
+  while ((m = SQL_TOK.exec(raw)) !== null) {
+    var x = m[0];
+    var idx = m.index;
+    var cls = null;
+
+    if (m[1]) {
+      cls = 'sql-comment';
+    } else if (m[2]) {
+      cls = 'sql-str';
+    } else if (m[3]) {
+      cls = 'sql-num';
+    } else if (m[5]) {
+      cls = 't-bad';
+    } else if (m[4]) {
+      var prevChar = idx > 0 ? raw[idx - 1] : '';
+      var beforeSlice = raw.slice(Math.max(0, idx - 24), idx);
+      var isDirectlyAfterFromOrJoin = /\b(?:FROM|JOIN)\s+$/i.test(beforeSlice);
+      var upper = x.toUpperCase();
+      var lower = x.toLowerCase();
+
+      if (prevChar !== '.' && !isDirectlyAfterFromOrJoin && aliasSet.has(lower)) {
+        cls = 'sql-alias';
+      } else if (prevChar !== '.' && DBEAVER_KW_SET.has(upper)) {
+        cls = 'sql-kw';
+      } else if (prevChar !== '.' && DBEAVER_FN_SET.has(upper)) {
+        cls = 'sql-fn';
+      }
+    }
+
+    out += cls ? '<span class="' + cls + '">' + esc(x) + '</span>' : esc(x);
+  }
+  return out;
+}
+window.highlightSQL = highlightSQL;
+
+function unescapeHtmlEntities(str) {
+  return String(str == null ? '' : str)
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&amp;/g, '&');
+}
+
+function highlightHtmlCodeBlocks(htmlStr) {
+  return String(htmlStr == null ? '' : htmlStr).replace(/<code([^>]*)>([\s\S]*?)<\/code>/gi, function(_, attrs, inner) {
+    if (inner.indexOf('<span') > -1) return '<code' + attrs + '>' + inner + '</code>';
+    var rawSql = unescapeHtmlEntities(inner);
+    return '<code' + attrs + '>' + highlightSQL(rawSql) + '</code>';
+  });
+}
+
 function formatPrompt(txt) {
-  return esc(txt).replace(/`([^`]+)`/g, '<code class="inline">$1</code>').replace(/\n/g, '<br>');
+  var parts = String(txt == null ? '' : txt).split(/(`[^`]+`)/g);
+  return parts.map(function(part) {
+    if (part.length >= 2 && part.charAt(0) === '`' && part.charAt(part.length - 1) === '`') {
+      var rawCode = part.slice(1, -1);
+      return '<code class="inline">' + highlightSQL(rawCode) + '</code>';
+    }
+    return esc(part).replace(/\n/g, '<br>');
+  }).join('');
 }
 
 function toast(msg) {
@@ -843,10 +994,6 @@ function registerGapTrap(gapId, name, hint) {
 /* ==========================================================================
    7. DWUWARSTWOWY EDYTOR SQL + POMOCNIK TABEL ZADANIA
    ========================================================================== */
-var SQL_KW = new Set('select from where join left right inner outer on group by order having with as and or not null in is case when then else end over partition desc asc distinct limit between like ilike union all exists coalesce cast row_number rank dense_rank filter interval date_trunc generate_series intersect except'.split(' '));
-var SQL_AGG = new Set(['sum','count','avg','min','max']);
-var SQL_TOK = /(--[^\n]*|\/\*[\s\S]*?(?:\*\/|$))|('(?:[^']|'')*(?:'|$))|(\b\d+(?:\.\d+)?\b)|([A-Za-z_]\w*)|([\u2018\u2019\u201A\u201B\u201C\u201D])|([\s\S])/g;
-
 function sqlUpdate() {
   var code = document.getElementById('answer');
   if (!code) return;
@@ -860,21 +1007,7 @@ function sqlUpdate() {
   code.style.height = 'auto';
   code.style.height = Math.max(130, code.scrollHeight + 4) + 'px';
 
-  var out = '', m;
-  SQL_TOK.lastIndex = 0;
-  while ((m = SQL_TOK.exec(t))) {
-    var x = m[0], c = null;
-    if (m[1]) c = 'cmt';
-    else if (m[2]) c = 'str';
-    else if (m[3]) c = 'num';
-    else if (m[5]) c = 'bad';
-    else if (m[4]) {
-      var w = x.toLowerCase();
-      if (SQL_AGG.has(w)) c = 'agg';
-      else if (SQL_KW.has(w)) c = 'kw';
-    }
-    out += c ? '<span class="t-' + c + '">' + esc(x) + '</span>' : esc(x);
-  }
+  var out = highlightSQL(t);
   if (t.slice(-1) === '\n') out += ' ';
   hl.innerHTML = out;
   hl.scrollTop = code.scrollTop;
@@ -949,27 +1082,29 @@ function buildTaskSchemaBox(tableNames, solSql) {
     : '';
 
   var isLevel1Open = !!uiState.schemaBoxOpen;
+  var summaryLbl = metas.length === 1
+    ? '🗄️ Tabela: ' + esc(metas[0].table) + ' (' + metas[0].cols.length + ' kolumn)'
+    : '🗄️ Tabele: ' + metas.map(function(m) { return esc(m.table) + ' (' + m.cols.length + ' kol.)'; }).join(', ');
 
   return '<details class="helper-fold iv-spec-fold"' + (isLevel1Open ? ' open' : '') + '>' +
-    '<summary>🗄️ Specyfikacja tabel (' + metas.map(function(m){return m.table;}).join(', ') + ') — kliknij, aby rozwinąć</summary>' +
-    '<p class="small muted" style="margin:6px 0 8px">💡 Kliknij dowolną nazwę tabeli lub kolumny poniżej, aby wstawić ją do edytora SQL:</p>' +
-    '<div style="display:flex;flex-direction:column;gap:10px">' +
+    '<summary>' + summaryLbl + '</summary>' +
+    '<div style="display:flex;flex-direction:column;gap:10px;margin-top:8px">' +
       metas.map(function(m) {
         var sample = tableSamples[m.table] || interviewSamples[m.table];
         var sampleHtml = '';
         if (sample && sample.columns && sample.columns.length) {
           var rowCnt = (sample.values || []).length;
           sampleHtml = '<div class="example-input-box">' +
-            '<div class="example-input-hdr">📊 Przykładowe wiersze (Example Input — tabela <code>' + esc(m.table) + '</code>, pierwsze ' + Math.min(4, rowCnt) + ' wiersze):</div>' +
+            '<div class="example-input-hdr">📊 Example Input — tabela <code>' + esc(m.table) + '</code> (pierwsze ' + Math.min(4, rowCnt) + ' wiersze):</div>' +
             renderSingleTable(sample, 4) +
           '</div>';
         } else {
-          sampleHtml = '<div style="margin-top:6px"><button type="button" class="btn sm" data-act="peekTable" data-table="' + esc(m.table) + '">👁 Pobierz przykładowe wiersze (' + esc(m.table) + ')</button></div>';
+          sampleHtml = '<div style="margin-top:6px"><button type="button" class="btn sm" data-act="peekTable" data-table="' + esc(m.table) + '">👁 Pobierz Example Input (' + esc(m.table) + ')</button></div>';
         }
 
-        // Poziom 2: osobny zagnieżdżony tag <details> pod kolumnami, domyślnie ZWINIĘTY (Punkt 11)
+        // Poziom 2: osobny zagnieżdżony tag <details> pod kolumnami, domyślnie ZWINIĘTY
         var level2Fold = '<details class="example-input-fold">' +
-          '<summary class="example-input-summary">👁️ Pokaż przykładowe wiersze z tabeli (Example Input — 4 wiersze)</summary>' +
+          '<summary class="example-input-summary">👁️ Example Input (' + esc(m.table) + ' — 4 wiersze)</summary>' +
           '<div class="example-input-fold-body">' + sampleHtml + '</div>' +
         '</details>';
 
@@ -1176,53 +1311,55 @@ function parseSqlDetails(sol, fallbackTables) {
 
 function describeSqlExprPl(expr, alias) {
   var e = String(expr || '').trim();
-  if (e === '*') return 'wszystkie kolumny tabeli (<code>*</code>)';
+  if (e === '*') return 'wszystkie kolumny tabeli <span class="req-calc-pill">*</span>';
   var u = e.toUpperCase();
-  if (u === 'COUNT(*)') return 'liczba wierszy (<code>COUNT(*)</code>)';
+  if (u === 'COUNT(*)') return 'liczba wierszy <span class="req-calc-pill">wyliczenie COUNT(*)</span>';
   if (/^COUNT\s*\(\s*DISTINCT\s+([^)]+)\)/i.test(e)) {
     var mCd = /^COUNT\s*\(\s*DISTINCT\s+([^)]+)\)/i.exec(e);
-    return 'liczba unikalnych wartości <code>' + mCd[1].trim() + '</code>';
+    return 'liczba unikalnych wartości <span class="req-calc-pill">wyliczenie z ' + esc(mCd[1].trim()) + '</span>';
   }
   if (/^COUNT\s*\(([^)]+)\)\s*FILTER\s*\(\s*WHERE\s+([^)]+)\)/i.test(e)) {
     var mCf = /^COUNT\s*\(([^)]+)\)\s*FILTER\s*\(\s*WHERE\s+([^)]+)\)/i.exec(e);
-    return 'liczba wierszy spełniających warunek <code>' + mCf[2].trim() + '</code>';
+    return 'liczba wierszy spełniających warunek <span class="req-calc-pill">FILTER: ' + esc(mCf[2].trim()) + '</span>';
   }
   if (/^COUNT\s*\(([^)]+)\)/i.test(e)) {
     var mC = /^COUNT\s*\(([^)]+)\)/i.exec(e);
-    return 'liczba niepustych wartości <code>' + mC[1].trim() + '</code>';
+    return 'liczba niepustych wartości <span class="req-calc-pill">wyliczenie z ' + esc(mC[1].trim()) + '</span>';
   }
   if (/^ROUND\s*\(\s*AVG\s*\(([^)]+)\)\s*,\s*(\d+)\s*\)/i.test(e)) {
     var mRa = /^ROUND\s*\(\s*AVG\s*\(([^)]+)\)\s*,\s*(\d+)\s*\)/i.exec(e);
-    return 'średnia z <code>' + mRa[1].trim() + '</code> zaokrąglona do ' + mRa[2] + ' miejsc po przecinku';
+    return 'średnia zaokrąglona do ' + mRa[2] + ' miejsc <span class="req-calc-pill">wyliczenie z ' + esc(mRa[1].trim()) + '</span>';
   }
   if (/^ROUND\s*\((.+),\s*(\d+)\s*\)$/i.test(e)) {
     var mR = /^ROUND\s*\((.+),\s*(\d+)\s*\)$/i.exec(e);
-    return 'wartość wyrażenia <code>' + mR[1].trim() + '</code> zaokrąglona do ' + mR[2] + ' miejsc po przecinku';
+    return 'wartość zaokrąglona do ' + mR[2] + ' miejsc <span class="req-calc-pill">wyliczenie: ' + esc(mR[1].trim()) + '</span>';
   }
   if (/^SUM\s*\(([^)]+)\)/i.test(e)) {
     var mS = /^SUM\s*\(([^)]+)\)/i.exec(e);
-    return 'suma <code>' + mS[1].trim() + '</code>';
+    return 'suma wartości <span class="req-calc-pill">wyliczenie z ' + esc(mS[1].trim()) + '</span>';
   }
   if (/^AVG\s*\(([^)]+)\)/i.test(e)) {
     var mA = /^AVG\s*\(([^)]+)\)/i.exec(e);
-    return 'średnia wartość <code>' + mA[1].trim() + '</code>';
+    return 'średnia wartość <span class="req-calc-pill">wyliczenie z ' + esc(mA[1].trim()) + '</span>';
   }
   if (/^MIN\s*\(([^)]+)\)/i.test(e)) {
     var mMin = /^MIN\s*\(([^)]+)\)/i.exec(e);
-    return 'wartość minimalna <code>' + mMin[1].trim() + '</code>';
+    return 'wartość minimalna <span class="req-calc-pill">wyliczenie z ' + esc(mMin[1].trim()) + '</span>';
   }
   if (/^MAX\s*\(([^)]+)\)/i.test(e)) {
     var mMax = /^MAX\s*\(([^)]+)\)/i.exec(e);
-    return 'wartość maksymalna <code>' + mMax[1].trim() + '</code>';
+    return 'wartość maksymalna <span class="req-calc-pill">wyliczenie z ' + esc(mMax[1].trim()) + '</span>';
   }
   if (/\bOVER\s*\(/i.test(e)) {
-    return 'wynik funkcji okna <code>' + e + '</code>';
+    return 'wynik funkcji okna <span class="req-calc-pill">' + esc(e) + '</span>';
   }
   if (/\bCASE\s+WHEN\b/i.test(e)) {
-    return 'wyrażenie warunkowe <code>CASE WHEN ... END</code>';
+    return 'wyrażenie warunkowe <span class="req-calc-pill">CASE WHEN ... END</span>';
   }
+  var colRefMatch = /\b([a-zA-Z_]\w*)\b/.exec(e.replace(/\b(ROUND|COALESCE|NULLIF|LOWER|UPPER|TRIM|LENGTH|CAST|DATE_TRUNC|EXTRACT|INTERVAL)\b/gi, ''));
   if (e !== alias) {
-    return 'wyliczenie <code>' + e + '</code>';
+    var colHint = colRefMatch ? ('wyliczenie z ' + colRefMatch[1] + ': ' + e) : ('wyliczenie: ' + e);
+    return 'wartość wyliczona <span class="req-calc-pill">' + esc(colHint) + '</span>';
   }
   return '';
 }
@@ -1390,42 +1527,40 @@ function buildDataLemurSpec(item, parentTask) {
       '<ul class="dl-cols-sublist">' +
       details.cols.map(function(c) {
         if (c.name === '*') {
-          return '<li>wszystkie kolumny tabeli (<code>*</code>)</li>';
+          return '<li><span class="req-col-row">wszystkie kolumny tabeli <span class="req-calc-pill">*</span></span></li>';
         }
         if (!c.hasAlias) {
-          // a) JEŚLI ALIAS NIE JEST POTRZEBNY: sama kolumna bez słowa AS
-          return '<li>kolumna <code>' + esc(c.name) + '</code></li>';
+          return '<li><span class="req-col-row">kolumna <code>' + esc(c.name) + '</code></span></li>';
         }
-        // b) JEŚLI WYMAGANY JEST ALIAS AS: [opis / kolumna źródłowa] -> [kolorowe AS] -> [docelowa nazwa aliasu]
         var isSimpleRename = /^[a-zA-Z_]\w*(?:\.[a-zA-Z_]\w*)?$/.test(c.expr);
         var sourceDesc = '';
         if (isSimpleRename) {
-          sourceDesc = 'kolumna <code>' + esc(c.expr) + '</code>';
+          sourceDesc = 'kolumna <code>' + esc(c.expr) + '</code> <span class="req-calc-pill">wyliczenie z ' + esc(c.expr) + '</span>';
         } else {
           var descPl = describeSqlExprPl(c.expr, c.name);
-          sourceDesc = descPl || ('wyrażenie <code>' + esc(c.expr) + '</code>');
+          sourceDesc = descPl || ('wyrażenie <span class="req-calc-pill">wyliczenie: ' + esc(c.expr) + '</span>');
         }
-        return '<li>' + sourceDesc + ' <span class="sql-as-badge">AS</span> <code>' + esc(c.name) + '</code></li>';
+        return '<li><span class="req-col-row">' + sourceDesc + ' <span class="sql-as-badge">AS</span> <code>' + esc(c.name) + '</code></span></li>';
       }).join('') +
       '</ul>';
     if (hasAnyAlias) {
-      colsHtml += '<div class="dl-alias-tip">💡 <strong>Wskazówka:</strong> Pamiętaj o użyciu zapisu <code>kolumna AS nowa_nazwa</code>.</div>';
+      colsHtml += '<div class="dl-alias-tip">💡 <strong>Wskazówka:</strong> Pamiętaj o użyciu zapisu <code>' + highlightSQL('kolumna AS nowa_nazwa') + '</code>.</div>';
     }
     assumptions.push(colsHtml);
   }
 
   if (details.roundDigits !== null) {
-    assumptions.push('Zaokrąglij wartości ułamkowe do <strong>' + details.roundDigits + ' miejsc po przecinku</strong> za pomocą <code>ROUND(..., ' + details.roundDigits + ')</code>.');
+    assumptions.push('Zaokrąglij wartości ułamkowe do <strong>' + details.roundDigits + ' miejsc po przecinku</strong> za pomocą <code>' + highlightSQL('ROUND(..., ' + details.roundDigits + ')') + '</code>.');
   }
 
   if (details.hasDistinct && !/COUNT\s*\(\s*DISTINCT/i.test(sol)) {
-    assumptions.push('Zwróć wyłącznie unikalne wiersze (zastosuj <code>SELECT DISTINCT</code>).');
+    assumptions.push('Zwróć wyłącznie unikalne wiersze (zastosuj <code>' + highlightSQL('SELECT DISTINCT') + '</code>).');
   }
 
   if (details.orderBy) {
-    assumptions.push('Sortowanie wyniku: <code>ORDER BY ' + details.orderBy + '</code>' + (details.limit ? ' oraz ograniczenie do <code>LIMIT ' + details.limit + '</code> wierszy.' : '.'));
+    assumptions.push('Sortowanie wyniku: <code>' + highlightSQL('ORDER BY ' + details.orderBy) + '</code>' + (details.limit ? ' oraz ograniczenie do <code>' + highlightSQL('LIMIT ' + details.limit) + '</code> wierszy.' : '.'));
   } else if (details.limit) {
-    assumptions.push('Ogranicz liczbę zwracanych wierszy do: <code>LIMIT ' + details.limit + '</code>.');
+    assumptions.push('Ogranicz liczbę zwracanych wierszy do: <code>' + highlightSQL('LIMIT ' + details.limit) + '</code>.');
   } else if (item.order === false) {
     assumptions.push('Kolejność wierszy w wyniku nie ma znaczenia.');
   }
@@ -1483,12 +1618,12 @@ window.buildDataLemurSpec = buildDataLemurSpec;
 // Renderuje zunifikowaną specyfikację zadania w standardzie DataLemur (📌 Polecenie + 📋 Wymagania i założenia)
 function renderTaskSpecBox(item, parentTask) {
   if (!item) return '';
-  if (!item._v10SpecDone) {
+  if (!item._v12SpecDone) {
     var spec = buildDataLemurSpec(item, parentTask || null);
     item.polecenie = spec.polecenie;
     item.assumptions = spec.assumptions;
     item.hints = spec.hints;
-    item._v10SpecDone = true;
+    item._v12SpecDone = true;
   }
   var polecenieTxt = item.polecenie || item.prompt || '';
   var assumptionsList = Array.isArray(item.assumptions) ? item.assumptions : [];
@@ -1550,7 +1685,7 @@ var ALL_CHEAT_CLAUSES = [
     kw: 'SELECT',
     check: function(s) { return true; },
     insert: 'SELECT ',
-    syntax: 'kol1, kol2',
+    syntax: 'SELECT kol1, kol2',
     desc: 'wybiera kolumny do wyświetlenia w wyniku'
   },
   {
@@ -1558,7 +1693,7 @@ var ALL_CHEAT_CLAUSES = [
     check: function(s) { return /\bAS\b/i.test(s); },
     insert: ' AS ',
     syntax: 'kolumna AS nowa_nazwa',
-    desc: 'nadaje kolumnie nowy nagłówek / alias w wyniku'
+    desc: 'nadaje kolumnie nową, czytelną nazwę w wyniku raportu'
   },
   {
     kw: 'DISTINCT',
@@ -1578,21 +1713,21 @@ var ALL_CHEAT_CLAUSES = [
     kw: 'LEFT JOIN',
     check: function(s) { return /\bLEFT\s+(?:OUTER\s+)?JOIN\b/i.test(s); },
     insert: '\nLEFT JOIN ',
-    syntax: 'LEFT JOIN tabela2 ON t1.id = t2.id',
+    syntax: 'LEFT JOIN tabela2 t2 ON t1.id = t2.id',
     desc: 'dołącza rekordy z prawej tabeli bez utraty wierszy z lewej'
   },
   {
     kw: 'JOIN ... ON',
     check: function(s) { return /\bJOIN\b/i.test(s) && !/\bLEFT\s+(?:OUTER\s+)?JOIN\b/i.test(s); },
     insert: '\nJOIN ',
-    syntax: 'JOIN tabela2 ON t1.id = t2.id',
+    syntax: 'JOIN tabela2 t2 ON t1.id = t2.id',
     desc: 'łączy tabele po wspólnym kluczu'
   },
   {
     kw: 'WHERE',
     check: function(s) { return /\bWHERE\b/i.test(s); },
     insert: '\nWHERE ',
-    syntax: 'WHERE warunek',
+    syntax: "WHERE rating = 'PG-13'",
     desc: 'sito odrzucające pojedyncze wiersze niespełniające warunku'
   },
   {
@@ -1606,31 +1741,43 @@ var ALL_CHEAT_CLAUSES = [
     kw: 'HAVING',
     check: function(s) { return /\bHAVING\b/i.test(s); },
     insert: '\nHAVING ',
-    syntax: 'HAVING warunek_grup',
+    syntax: 'HAVING COUNT(*) > 5',
     desc: 'filtruje całe grupy po podliczeniu agregatów'
   },
   {
     kw: 'ORDER BY',
     check: function(s) { return /\bORDER\s+BY\b/i.test(s); },
     insert: '\nORDER BY ',
-    syntax: 'ORDER BY kolumna ASC/DESC',
+    syntax: 'ORDER BY kolumna DESC',
     desc: 'sortuje gotowy wynik (rosnąco ASC lub malejąco DESC)'
   },
   {
     kw: 'LIMIT',
     check: function(s) { return /\bLIMIT\b/i.test(s); },
     insert: '\nLIMIT ',
-    syntax: 'LIMIT N;',
+    syntax: 'LIMIT 10;',
     desc: 'odcina wynik do pierwszych N wierszy'
   }
 ];
 
-function renderTeachFirstBox(newFeature) {
-  if (!newFeature) return '';
+function renderTeachFirstBox(newFeature, task, variant) {
+  var nf = newFeature;
+  var sol = String((variant && variant.sol) || '');
+  // Dla AS w 1.1/1.2 dopilnuj prostego i czytelnego wyjaśnienia (nawet jeśli zadanie z AS nie miało obiektu newFeature)
+  if (task && (task.id === 'p1_1' || task.id === 'p1_2') && /\bAS\b/i.test(sol)) {
+    if (!nf || /\bAS\b/i.test(nf.title)) {
+      nf = {
+        title: (nf && nf.title) ? nf.title : 'Zmiana nazwy kolumny: AS (alias)',
+        desc: 'Słowo kluczowe AS nadaje kolumnie nową, czytelną nazwę w nagłówku wyniku raportu (np. length AS duration_min zmienia techniczny nagłówek length na czytelne duration_min).',
+        example: (nf && nf.example) ? nf.example : 'SELECT title, length AS duration_min FROM film;'
+      };
+    }
+  }
+  if (!nf) return '';
   return '<div class="teach-first-box">' +
-    '<div class="teach-first-hdr">🆕 Nowy element w tym zadaniu: <strong>' + esc(newFeature.title) + '</strong></div>' +
-    '<p class="teach-first-desc">' + esc(newFeature.desc) + '</p>' +
-    (newFeature.example ? '<div class="teach-first-code"><code>' + esc(newFeature.example) + '</code></div>' : '') +
+    '<div class="teach-first-hdr">🆕 Nowy element w tym zadaniu: <strong>' + esc(nf.title) + '</strong></div>' +
+    '<p class="teach-first-desc">' + formatPrompt(nf.desc) + '</p>' +
+    (nf.example ? '<div class="teach-first-code"><code>' + highlightSQL(nf.example) + '</code></div>' : '') +
   '</div>';
 }
 
@@ -1653,12 +1800,40 @@ function renderStepByStepCheatSheet(solSql, lessonTheoryHtml, openByDefault, tas
         desc: 'wskazuje tabelę, z której pobieramy dane.'
       }
     ];
+  } else if (task && task.id === 'p1_2') {
+    usedClauses = [
+      {
+        kw: 'SELECT',
+        insert: 'SELECT ',
+        syntax: 'SELECT kolumna1, kolumna2',
+        desc: 'wybiera kolumny oraz wykonuje obliczenia (+, -, *, /).'
+      },
+      {
+        kw: 'AS',
+        insert: ' AS ',
+        syntax: 'length AS duration_min',
+        desc: 'nadaje kolumnie nową, czytelną nazwę w wyniku raportu.'
+      },
+      {
+        kw: 'FROM',
+        insert: '\nFROM ',
+        syntax: 'FROM film',
+        desc: 'wskazuje tabelę źródłową z danymi.'
+      }
+    ];
   } else {
-    usedClauses = ALL_CHEAT_CLAUSES.filter(function(row) {
+    var matched = ALL_CHEAT_CLAUSES.filter(function(row) {
       return row.check(s);
     });
-    if (usedClauses.length < 2) {
-      usedClauses = ALL_CHEAT_CLAUSES.slice(0, 2);
+    if (matched.length < 2) {
+      matched = [ALL_CHEAT_CLAUSES[0], ALL_CHEAT_CLAUSES[3]];
+    }
+    if (matched.length > 4) {
+      // Zachowaj maksymalnie 4 najważniejsze elementy składni dla bieżącego zadania
+      var priority = matched.filter(function(r) { return r.kw !== 'SELECT' && r.kw !== 'FROM'; });
+      usedClauses = [matched[0]].concat(priority.slice(-3));
+    } else {
+      usedClauses = matched;
     }
   }
 
@@ -1667,19 +1842,19 @@ function renderStepByStepCheatSheet(solSql, lessonTheoryHtml, openByDefault, tas
     return '<div class="cheat-row used">' +
       '<span class="cheat-num">' + (idx + 1) + '.</span>' +
       '<button type="button" class="cheat-kw-btn active" data-insert-sql="' + esc(row.insert) + '" title="Kliknij, aby wstawić ' + esc(row.kw) + ' do edytora">' +
-        '[' + esc(row.kw) + ']' +
+        highlightSQL(row.kw) +
       '</button>' +
-      '<code class="cheat-syn">' + esc(row.syntax) + '</code>' +
+      '<code class="cheat-syn">' + highlightSQL(row.syntax) + '</code>' +
       '<span class="cheat-desc">→ ' + esc(row.desc) + '</span>' +
     '</div>';
   }).join('');
 
-  var extraLessonHtml = (lessonTheoryHtml && (!task || task.id !== 'p1_1'))
-    ? '<div class="cheat-lesson-extra"><div class="small muted" style="margin-bottom:4px;font-weight:700">📌 Notatka do bieżącego działu:</div>' + lessonTheoryHtml + '</div>'
+  var extraLessonHtml = (lessonTheoryHtml && (!task || (task.id !== 'p1_1' && task.id !== 'p1_2')))
+    ? '<div class="cheat-lesson-extra"><div class="small muted" style="margin-bottom:4px;font-weight:700">📌 Notatka do bieżącego działu:</div>' + highlightHtmlCodeBlocks(lessonTheoryHtml) + '</div>'
     : '';
 
   return '<details class="theory-box cheat-8-box"' + (isOpen ? ' open' : '') + '>' +
-    '<summary>🧭 Kontekstowa ściąga składni dla tego zadania (' + usedClauses.length + ' ' + (usedClauses.length === 1 ? 'klauzula' : usedClauses.length < 5 ? 'klauzule' : 'klauzul') + ' — kliknij, by wstawić)</summary>' +
+    '<summary>🧭 Kontekstowa ściąga składni (' + usedClauses.length + ' ' + (usedClauses.length === 1 ? 'element' : usedClauses.length < 5 ? 'elementy' : 'elementów') + ' — kliknij, by wstawić)</summary>' +
     '<div class="theory-body">' +
       '<div class="cheat-8-grid">' + rowsHtml + '</div>' +
       extraLessonHtml +
@@ -1795,7 +1970,7 @@ function renderQuickBar(task, variant) {
   });
 
   return '<div class="sql-quick-bar-wrap">' +
-    '<div class="quick-bar-label"><span>⚡ <strong>Quick-Bar:</strong> kliknij, by wstawić do zapytania</span><span class="interactive-hint">👆 kursor w edytorze</span></div>' +
+    '<div class="quick-bar-label"><span>⚡ <strong>Quick-Bar:</strong> kliknij, by wstawić do zapytania</span></div>' +
     '<div class="sql-quick-bar">' +
       buttons.map(function(b) {
         return '<button type="button" class="' + b.cls + '" data-insert-sql="' + esc(b.sql) + '" title="' + esc(b.title) + '">' + esc(b.label) + '</button>';
@@ -1843,6 +2018,70 @@ function renderSingleTable(resObj, maxRows) {
     '</tbody></table></div>';
 }
 
+// Nowa numeracja zadań w Ścieżce: 🔥 Rozgrzewka 1 z 2 / 🎯 Zadanie 1 z 6 + zwięzłe nazwy 3–5 słów
+function getStepSwitchLabel(vIdx, totalSteps) {
+  var mainCnt = Math.max(1, (totalSteps || 8) - 2);
+  if (vIdx < 2) {
+    return '🔥 Rozgrzewka ' + (vIdx + 1) + ' z 2';
+  }
+  return '🎯 Zadanie ' + (vIdx - 1) + ' z ' + mainCnt;
+}
+
+function getVariantShortDesc(task, variant, vIdx) {
+  if (!variant) return 'Zadanie SQL';
+  if (variant.shortTitle) return variant.shortTitle;
+  if (variant.title) return variant.title;
+  var sol = String(variant.sol || '');
+  var tbls = resolveTaskTables(variant.tables || (task && task.tables), sol);
+  var tbl = tbls[0] || 'film';
+
+  if (variant.newFeature && variant.newFeature.title) {
+    var nfTitle = variant.newFeature.title.replace(/\s*\([^)]*\)/g, '').trim();
+    if (nfTitle.split(/\s+/).length <= 4) return nfTitle + ' (' + tbl + ')';
+  }
+  if (/^\s*WITH\b/i.test(sol) && /\bLAG\b/i.test(sol)) return 'CTE i porównanie LAG';
+  if (/^\s*WITH\b/i.test(sol) && /\bROW_NUMBER\b/i.test(sol)) return 'CTE i ranking TOP N';
+  if (/^\s*WITH\b/i.test(sol)) return 'Zapytanie CTE (' + tbl + ')';
+  if (/\bDENSE_RANK\b/i.test(sol)) return 'Ranking DENSE_RANK (' + tbl + ')';
+  if (/\bRANK\s*\(/i.test(sol)) return 'Ranking RANK (' + tbl + ')';
+  if (/\bROW_NUMBER\b/i.test(sol)) return 'Numeracja ROW_NUMBER (' + tbl + ')';
+  if (/\bLAG\s*\(/i.test(sol)) return 'Poprzedni wiersz LAG (' + tbl + ')';
+  if (/\bLEAD\s*\(/i.test(sol)) return 'Kolejny wiersz LEAD (' + tbl + ')';
+  if (/\bSUM\s*\([^)]+\)\s*OVER/i.test(sol)) return 'Suma narastająca (' + tbl + ')';
+  if (/\bFILTER\s*\(\s*WHERE/i.test(sol)) return 'Agregacja FILTER (' + tbl + ')';
+  if (/\(\s*SELECT\b/i.test(sol)) return 'Podzapytanie w WHERE (' + tbl + ')';
+  if (/\bCASE\s+WHEN\b/i.test(sol)) return 'Warunek CASE WHEN (' + tbl + ')';
+  if (/\bCOALESCE\b/i.test(sol)) return 'Zastępowanie NULL (' + tbl + ')';
+  if (/\bLEFT\s+JOIN\b/i.test(sol) && /\bIS\s+NULL\b/i.test(sol)) return 'Szukanie braków (' + tbl + ')';
+  if (/\bLEFT\s+JOIN\b/i.test(sol)) return 'Złączenie LEFT JOIN (' + tbl + ')';
+  if (/\bJOIN\b/i.test(sol)) return 'Łączenie tabel (' + tbls.slice(0, 2).join(' + ') + ')';
+  if (/\bHAVING\b/i.test(sol)) return 'Filtr grup HAVING (' + tbl + ')';
+  if (/\bGROUP\s+BY\b/i.test(sol)) return 'Grupowanie tabeli ' + tbl;
+  if (/\bROUND\s*\(\s*AVG/i.test(sol)) return 'Średnia z ROUND (' + tbl + ')';
+  if (/\b(COUNT|SUM|AVG|MIN|MAX)\s*\(/i.test(sol)) return 'Funkcje agregujące (' + tbl + ')';
+  if (/\bILIKE\b/i.test(sol)) return 'Wyszukiwanie ILIKE (' + tbl + ')';
+  if (/\bBETWEEN\b/i.test(sol)) return 'Przedział BETWEEN (' + tbl + ')';
+  if (/\bIN\s*\(/i.test(sol)) return 'Filtr listy IN (' + tbl + ')';
+  if (/\bIS\s+(?:NOT\s+)?NULL\b/i.test(sol)) return 'Sprawdzanie NULL (' + tbl + ')';
+  if (/\bAND\b/i.test(sol) && /\bOR\b/i.test(sol)) return 'Łączenie AND z OR (' + tbl + ')';
+  if (/\b(AND|OR)\b/i.test(sol)) return 'Warunki złożone (' + tbl + ')';
+  if (/\bWHERE\b/i.test(sol)) return 'Filtrowanie tabeli ' + tbl;
+  if (/\bORDER\s+BY\b/i.test(sol) && /\bLIMIT\b/i.test(sol)) return 'Ranking TOP z ' + tbl;
+  if (/\bORDER\s+BY\b/i.test(sol)) return 'Sortowanie tabeli ' + tbl;
+  if (/\bLIMIT\b/i.test(sol)) return 'Limit wierszy z ' + tbl;
+  if (/\bDISTINCT\b/i.test(sol)) return 'Unikalne wartości z ' + tbl;
+  if (/[+\-*\/]/.test(sol) && /\bAS\b/i.test(sol)) return 'Wyliczenie i alias (' + tbl + ')';
+  if (/\bAS\b/i.test(sol)) return 'Alias AS w tabeli ' + tbl;
+  if (/SELECT\s+\*/i.test(sol)) return 'Wszystkie kolumny ' + tbl;
+  if (vIdx === 0) return 'Podgląd tabeli ' + tbl;
+  return 'Wybór kolumn z ' + tbl;
+}
+
+function getVariantShortTitle(task, variant, vIdx) {
+  var prefix = vIdx < 2 ? ('🔥 R' + (vIdx + 1) + ': ') : ('🎯 Zad. ' + (vIdx - 1) + ': ');
+  return prefix + getVariantShortDesc(task, variant, vIdx);
+}
+
 function renderResultBox() {
   var h = '';
   if (lastFeedback) {
@@ -1851,10 +2090,9 @@ function renderResultBox() {
       var curT = PATH_TASKS.find(function(t) { return t.id === state.activeTaskId; }) || PATH_TASKS[0];
       var curVIdx = state.activeVariantIdx % curT.variants.length;
       if (curVIdx + 1 < curT.variants.length) {
-        var nextVar = curT.variants[curVIdx + 1];
-        var nextLbl = nextVar.stepCode ? ('Zadanie ' + nextVar.stepCode) : ('Krok ' + (curVIdx + 2));
+        var nextSwitchLbl = getStepSwitchLabel(curVIdx + 1, curT.variants.length);
         nextBtnHtml = '<div style="margin-top:10px">' +
-          '<button type="button" class="btn success next-step-cta" data-act="nextTaskStep">🚀 Następne zadanie (' + esc(nextLbl) + ') →</button>' +
+          '<button type="button" class="btn success next-step-cta" data-act="nextTaskStep">🚀 Następne zadanie (' + esc(nextSwitchLbl) + ') →</button>' +
         '</div>';
       } else {
         var curLessonIdx = PATH_TASKS.findIndex(function(t) { return t.id === curT.id; });
@@ -1865,6 +2103,10 @@ function renderResultBox() {
           '</button>' +
         '</div>';
       }
+    } else if (lastFeedback.type === 'ok' && currentTab === 'lemur' && state.lemurMode === 'solve') {
+      nextBtnHtml = '<div style="margin-top:10px">' +
+        '<button type="button" class="btn success next-step-cta" data-act="backToLemurList">📋 Wróć do listy zadań rekrutacyjnych</button>' +
+      '</div>';
     }
     h += '<div class="fb-box ' + lastFeedback.type + '">' +
       '<strong>' + esc(lastFeedback.title) + '</strong>' +
@@ -1878,8 +2120,13 @@ function renderResultBox() {
   if (lastExecResult) {
     if (lastExecResult.error) {
       var lnBadge = lastExecResult.errorLine ? ' w linii ' + lastExecResult.errorLine : '';
-      var snippetHtml = lastExecResult.errorSnippet ? '<div style="margin-top:6px;padding:6px 10px;background:rgba(0,0,0,0.25);border-radius:6px;font-family:var(--mono);font-size:12px">Linia ' + lastExecResult.errorLine + ': <code>' + esc(lastExecResult.errorSnippet) + '</code></div>' : '';
-      h += '<div class="fb-box trap"><strong>⚠️ Błąd SQL' + esc(lnBadge) + ':</strong> <span class="small">' + esc(lastExecResult.error) + '</span>' + snippetHtml + '</div>';
+      var suflerHtml = /syntax error at or near\s+"FROM"/i.test(lastExecResult.error)
+        ? '<div class="pg-error-sufler-pill">💡 Podpowiedź: Sprawdź, czy przed słowem FROM nie został przecinek po ostatniej kolumnie.</div>'
+        : '';
+      var snippetHtml = lastExecResult.errorSnippet
+        ? '<div style="margin-top:6px;padding:6px 10px;background:rgba(0,0,0,0.25);border-radius:6px;font-family:var(--mono);font-size:12px">Linia ' + lastExecResult.errorLine + ': <code>' + highlightSQL(lastExecResult.errorSnippet) + '</code></div>'
+        : '';
+      h += '<div class="fb-box trap">' + suflerHtml + '<strong>⚠️ Błąd SQL' + esc(lnBadge) + ':</strong> <span class="small">' + esc(lastExecResult.error) + '</span>' + snippetHtml + '</div>';
     } else if (lastExpectedResult && lastExpectedResult.columns) {
       var uCnt = (lastExecResult.values || []).length;
       var eCnt = (lastExpectedResult.values || []).length;
@@ -1988,25 +2235,196 @@ var SQL_PIPELINE_SIM_STEPS = [
   }
 ];
 
+var CLAUSE_EXPLANATIONS_PL = {
+  'SELECT': {
+    title: 'SELECT — wybór i wyliczanie kolumn raportu',
+    desc: 'Wskazuje, które kolumny lub wyliczenia (oraz aliasy AS) mają znaleźć się w ostatecznym wyniku.',
+    sql: 'SELECT title, length AS duration_min\nFROM film;'
+  },
+  'DISTINCT': {
+    title: 'DISTINCT — usuwanie duplikatów',
+    desc: 'Odrzuca powtarzające się wiersze, zostawiając tylko unikalne wartości wybranych kolumn.',
+    sql: 'SELECT DISTINCT rating\nFROM film;'
+  },
+  'FROM': {
+    title: 'FROM — pobranie tabeli źródłowej (Krok #1 bazy!)',
+    desc: 'Silnik PostgreSQL ZAWSZE zaczyna od FROM — najpierw otwiera tabelę w pamięci, zanim sprawdzi jakiekolwiek kolumny.',
+    sql: 'SELECT title\nFROM film;'
+  },
+  'FROM / JOIN': {
+    title: 'FROM / JOIN — pobranie i połączenie tabel',
+    desc: 'Baza ładuje główną tabelę z FROM i dopasowuje do niej wiersze z tabeli w JOIN po wspólnym kluczu w ON.',
+    sql: 'SELECT f.title, l.name\nFROM film f\nJOIN language l ON f.language_id = l.language_id;'
+  },
+  'JOIN': {
+    title: 'JOIN ... ON — łączenie danych z dwóch tabel',
+    desc: 'Dokleja kolumny z drugiej tabeli tam, gdzie identyfikatory w warunku ON są sobie równe.',
+    sql: 'SELECT c.first_name, a.district\nFROM customer c\nJOIN address a ON c.address_id = a.address_id;'
+  },
+  'WHERE': {
+    title: 'WHERE — sito pojedynczych wierszy',
+    desc: 'Sprawdza każdy wiersz z osobna. Wiersze, które nie spełniają warunku, odpadają od razu przed grupowaniem i przed SELECT.',
+    sql: "SELECT title, rental_rate\nFROM film\nWHERE rental_rate >= 2.99;"
+  },
+  'GROUP BY': {
+    title: 'GROUP BY — podział wierszy na koszyki (grupy)',
+    desc: 'Zbiera wiersze o tej samej wartości (np. ten sam rating) do jednego koszyka, aby policzyć dla niego COUNT, SUM lub AVG.',
+    sql: 'SELECT rating, COUNT(*) AS film_count\nFROM film\nGROUP BY rating;'
+  },
+  'HAVING': {
+    title: 'HAVING — filtr gotowych grup po agregacji',
+    desc: 'Działa dopiero PO GROUP BY — odsiewa całe koszyki na podstawie wyniku funkcji agregującej (np. COUNT(*) > 5).',
+    sql: 'SELECT rating, COUNT(*) AS film_count\nFROM film\nGROUP BY rating\nHAVING COUNT(*) >= 4;'
+  },
+  'ORDER BY': {
+    title: 'ORDER BY — sortowanie wyniku końcowego',
+    desc: 'Układa wiersze rosnąco (ASC) lub malejąco (DESC). Działa po SELECT, więc zna już wszystkie aliasy AS!',
+    sql: 'SELECT title, length AS duration_min\nFROM film\nORDER BY duration_min DESC;'
+  },
+  'LIMIT': {
+    title: 'LIMIT — odcięcie pierwszych N wierszy',
+    desc: 'Na samym końcu odcina wynik do zadanej liczby wierszy (np. TOP 5 rekordów).',
+    sql: 'SELECT title, rental_rate\nFROM film\nORDER BY rental_rate DESC\nLIMIT 5;'
+  },
+  'WITH': {
+    title: 'WITH (CTE) — nazwana tabela tymczasowa',
+    desc: 'Tworzy czytelny krok pomocniczy przed głównym zapytaniem SELECT, działający jak tymczasowa tabela.',
+    sql: 'WITH long_films AS (\n  SELECT film_id, title, length FROM film WHERE length > 120\n)\nSELECT title, length FROM long_films;'
+  }
+};
+
+function getProgressivePipelineForTask(task, slide) {
+  var tid = task && task.id ? task.id : 'p1_1';
+  var stg = task && task.stage ? task.stage : 1;
+  var writeList = [];
+  var execRaw = [];
+
+  if (tid === 'p1_1' || tid === 'p1_2') {
+    writeList = ['SELECT', 'FROM'];
+    execRaw = [
+      { key: 'FROM', lbl: 'FROM', desc: 'Pobranie tabeli z bazy' },
+      { key: 'SELECT', lbl: 'SELECT', desc: 'Wybór kolumn i nadanie aliasów AS' }
+    ];
+  } else if (tid === 'p1_3') {
+    writeList = ['SELECT', 'DISTINCT', 'FROM'];
+    execRaw = [
+      { key: 'FROM', lbl: 'FROM', desc: 'Pobranie tabeli z bazy' },
+      { key: 'SELECT', lbl: 'SELECT', desc: 'Wybór wskazanych kolumn' },
+      { key: 'DISTINCT', lbl: 'DISTINCT', desc: 'Usunięcie duplikatów z wyniku' }
+    ];
+  } else if (tid === 'p1_4') {
+    writeList = ['SELECT', 'FROM', 'ORDER BY', 'LIMIT'];
+    execRaw = [
+      { key: 'FROM', lbl: 'FROM', desc: 'Pobranie tabeli z bazy' },
+      { key: 'SELECT', lbl: 'SELECT', desc: 'Wybór kolumn i aliasów AS' },
+      { key: 'ORDER BY', lbl: 'ORDER BY', desc: 'Sortowanie wyniku (widzi aliasy AS!)' },
+      { key: 'LIMIT', lbl: 'LIMIT', desc: 'Odcięcie pierwszych N wierszy' }
+    ];
+  } else if (stg === 2 || tid === 'p3_1') {
+    writeList = ['SELECT', 'FROM', 'WHERE', 'ORDER BY', 'LIMIT'];
+    execRaw = [
+      { key: 'FROM', lbl: 'FROM', desc: 'Pobranie tabeli z bazy' },
+      { key: 'WHERE', lbl: 'WHERE', desc: 'Sito pojedynczych wierszy' },
+      { key: 'SELECT', lbl: 'SELECT', desc: 'Wyliczenia i aliasy AS' },
+      { key: 'ORDER BY', lbl: 'ORDER BY', desc: 'Sortowanie wyniku' },
+      { key: 'LIMIT', lbl: 'LIMIT', desc: 'Odcięcie pierwszych N wierszy' }
+    ];
+  } else if (tid === 'p3_2') {
+    writeList = ['SELECT', 'FROM', 'WHERE', 'GROUP BY', 'ORDER BY', 'LIMIT'];
+    execRaw = [
+      { key: 'FROM', lbl: 'FROM', desc: 'Pobranie tabeli z bazy' },
+      { key: 'WHERE', lbl: 'WHERE', desc: 'Sito pojedynczych wierszy przed grupowaniem' },
+      { key: 'GROUP BY', lbl: 'GROUP BY', desc: 'Podział wierszy na koszyki (grupy)' },
+      { key: 'SELECT', lbl: 'SELECT', desc: 'Policzenie COUNT/SUM/AVG dla grup' },
+      { key: 'ORDER BY', lbl: 'ORDER BY', desc: 'Sortowanie gotowych grup' },
+      { key: 'LIMIT', lbl: 'LIMIT', desc: 'Odcięcie pierwszych N wierszy' }
+    ];
+  } else if (tid === 'p3_3') {
+    writeList = ['SELECT', 'FROM', 'WHERE', 'GROUP BY', 'HAVING', 'ORDER BY', 'LIMIT'];
+    execRaw = [
+      { key: 'FROM', lbl: 'FROM', desc: 'Pobranie tabeli z bazy' },
+      { key: 'WHERE', lbl: 'WHERE', desc: 'Sito pojedynczych wierszy' },
+      { key: 'GROUP BY', lbl: 'GROUP BY', desc: 'Podział na koszyki (grupy)' },
+      { key: 'HAVING', lbl: 'HAVING', desc: 'Filtr całych koszyków po agregacji' },
+      { key: 'SELECT', lbl: 'SELECT', desc: 'Wycięcie kolumn i aliasów AS' },
+      { key: 'ORDER BY', lbl: 'ORDER BY', desc: 'Sortowanie wyniku' },
+      { key: 'LIMIT', lbl: 'LIMIT', desc: 'Odcięcie pierwszych N wierszy' }
+    ];
+  } else if (stg === 4) {
+    writeList = ['SELECT', 'FROM', 'JOIN', 'WHERE', 'GROUP BY', 'HAVING', 'ORDER BY', 'LIMIT'];
+    execRaw = [
+      { key: 'FROM / JOIN', lbl: 'FROM / JOIN', desc: 'Pobranie i złączenie tabel po kluczu ON' },
+      { key: 'WHERE', lbl: 'WHERE', desc: 'Sito pojedynczych wierszy' },
+      { key: 'GROUP BY', lbl: 'GROUP BY', desc: 'Podział na koszyki (grupy)' },
+      { key: 'HAVING', lbl: 'HAVING', desc: 'Filtr całych koszyków po agregacji' },
+      { key: 'SELECT', lbl: 'SELECT', desc: 'Wyliczenia i aliasy AS' },
+      { key: 'ORDER BY', lbl: 'ORDER BY', desc: 'Sortowanie wyniku' },
+      { key: 'LIMIT', lbl: 'LIMIT', desc: 'Odcięcie pierwszych N wierszy' }
+    ];
+  } else {
+    writeList = ['WITH', 'SELECT', 'FROM', 'JOIN', 'WHERE', 'GROUP BY', 'HAVING', 'ORDER BY', 'LIMIT'];
+    execRaw = [
+      { key: 'WITH', lbl: 'WITH (CTE)', desc: 'Przygotowanie tabel pomocniczych CTE' },
+      { key: 'FROM / JOIN', lbl: 'FROM / JOIN', desc: 'Pobranie i złączenie tabel' },
+      { key: 'WHERE', lbl: 'WHERE', desc: 'Sito pojedynczych wierszy' },
+      { key: 'GROUP BY', lbl: 'GROUP BY', desc: 'Podział na koszyki (grupy)' },
+      { key: 'HAVING', lbl: 'HAVING', desc: 'Filtr całych koszyków po agregacji' },
+      { key: 'SELECT', lbl: 'SELECT (+ OVER)', desc: 'Wyliczenia, aliasy AS i funkcje okna' },
+      { key: 'ORDER BY', lbl: 'ORDER BY', desc: 'Sortowanie wyniku' },
+      { key: 'LIMIT', lbl: 'LIMIT', desc: 'Odcięcie pierwszych N wierszy' }
+    ];
+  }
+
+  return {
+    writeSteps: writeList,
+    execSteps: execRaw.map(function(item, i) {
+      return {
+        num: i + 1,
+        key: item.key,
+        lbl: (i + 1) + '. ' + item.lbl,
+        desc: item.desc
+      };
+    })
+  };
+}
+
+function formatQuizOptionSql(optTxt) {
+  var s = String(optTxt || '');
+  if (s.indexOf('`') > -1) {
+    return formatPrompt(s);
+  }
+  if (/^\s*(SELECT|FROM|WHERE|GROUP\s+BY|HAVING|ORDER\s+BY|LIMIT|JOIN|LEFT\s+JOIN|INNER\s+JOIN|WITH)\b/i.test(s)) {
+    return '<code class="sql-inline-code">' + highlightSQL(s) + '</code>';
+  }
+  return highlightHtmlCodeBlocks(esc(s));
+}
+
 function renderSqlPipelineSimulator() {
   var activeStep = uiState.sqlAnimStep || 1;
   if (activeStep < 1 || activeStep > SQL_PIPELINE_SIM_STEPS.length) activeStep = 1;
   var cur = SQL_PIPELINE_SIM_STEPS[activeStep - 1];
 
   var pillsHtml = SQL_PIPELINE_SIM_STEPS.map(function(s) {
-    var cls = 'sim-step-pill' + (s.step === activeStep ? ' active' : '') + (s.step < activeStep ? ' done' : '');
+    var stepKey = 'sim_' + s.step;
+    var unclicked = !uiState.clickedClauses[stepKey] && s.step !== activeStep;
+    var cls = 'sim-step-pill' + (s.step === activeStep ? ' active' : '') + (s.step < activeStep ? ' done' : '') + (unclicked ? ' pulse-unclicked' : '');
+    var rawClause = s.clause.replace(/^\d+\.\s*/, '');
+    var numPrefix = (s.clause.match(/^\d+\.\s*/) || [''])[0];
     return '<button type="button" class="' + cls + '" data-act="setSqlAnimStep" data-step="' + s.step + '">' +
-      esc(s.clause) +
+      esc(numPrefix) + highlightSQL(rawClause) +
     '</button>';
   }).join('<span class="sim-arr">→</span>');
 
   var tblHtml = '<div class="tblwrap sim-tbl"><table><thead><tr>' +
-    cur.cols.map(function(c) { return '<th>' + esc(c) + '</th>'; }).join('') +
+    cur.cols.map(function(c) { return '<th>' + highlightSQL(c) + '</th>'; }).join('') +
     '</tr></thead><tbody>' +
     cur.preview.map(function(r) {
       return '<tr>' + r.map(function(v) { return '<td>' + esc(v) + '</td>'; }).join('') + '</tr>';
     }).join('') +
     '</tbody></table></div>';
+
+  var curNumPrefix = (cur.clause.match(/^\d+\.\s*/) || [''])[0];
+  var curRawSql = cur.clause.replace(/^\d+\.\s*/, '');
 
   return '<div class="sql-sim-box">' +
     '<div class="sql-sim-hdr">' +
@@ -2018,10 +2436,11 @@ function renderSqlPipelineSimulator() {
         (uiState.sqlAnimRunning ? '⏳ Animacja trwa…' : '▶ Uruchom animację krok po kroku') +
       '</button>' +
     '</div>' +
+    '<div class="interactive-hint">👆 Dotknij wybrany klocek poniżej, aby zobaczyć jak działa</div>' +
     '<div class="sim-pills-row">' + pillsHtml + '</div>' +
     '<div class="sim-stage-card">' +
       '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;margin-bottom:6px">' +
-        '<code class="sim-clause-code">' + esc(cur.clause) + '</code>' +
+        '<code class="sim-clause-code">' + esc(curNumPrefix) + highlightSQL(curRawSql) + '</code>' +
         '<span class="chip done">' + esc(cur.badge) + '</span>' +
       '</div>' +
       '<p class="small" style="margin:0 0 8px">' + formatPrompt(cur.desc) + '</p>' +
@@ -2052,50 +2471,67 @@ function renderTutorialView(task) {
     bodyHtml = '<div class="tut-card-inner">' +
       '<span class="chip info">Karta 1/4 · Składnia i cel klauzuli</span>' +
       '<h3 style="margin:8px 0">' + esc(slide.title) + '</h3>' +
-      '<div class="theory-code" style="margin-bottom:12px"><code>' + esc(slide.syntax) + '</code></div>' +
-      '<ul class="tut-list">' + (slide.bullets || []).map(function(b) { return '<li>' + b + '</li>'; }).join('') + '</ul>' +
+      '<div class="theory-code" style="margin-bottom:12px"><code>' + highlightSQL(slide.syntax) + '</code></div>' +
+      '<ul class="tut-list">' + (slide.bullets || []).map(function(b) { return '<li>' + highlightHtmlCodeBlocks(b) + '</li>'; }).join('') + '</ul>' +
     '</div>';
   } else if (sIdx === 1) {
     var fw = slide.focusWrite || [];
-    var fe = slide.focusExec || [];
+    var prog = getProgressivePipelineForTask(task, slide);
+    var activeClauseKey = uiState.selectedClause || (fw[0] && CLAUSE_EXPLANATIONS_PL[fw[0]] ? fw[0] : prog.writeSteps[0]);
+    var clauseInfo = CLAUSE_EXPLANATIONS_PL[activeClauseKey] || CLAUSE_EXPLANATIONS_PL['SELECT'];
+
     bodyHtml = '<div class="tut-card-inner">' +
-      '<span class="chip mid">Karta 2/4 · Architektura silnika PostgreSQL</span>' +
+      '<span class="chip mid">Karta 2/4 · Architektura silnika PostgreSQL (Progresywny potok)</span>' +
       '<h3 style="margin:8px 0">' + esc(slide.title) + '</h3>' +
+      '<div class="interactive-hint">👆 Dotknij wybrany klocek poniżej, aby zobaczyć jak działa</div>' +
       '<div class="order-box">' +
-        '<div class="order-label">✍️ Kolejność pisania w kodzie SQL:</div>' +
+        '<div class="order-label">✍️ Kolejność pisania w kodzie SQL (poznane dotąd klauzule):</div>' +
         '<div class="order-flow">' +
-          WRITE_ORDER_STEPS.map(function(w, idx) {
-            var hi = fw.indexOf(w) > -1;
+          prog.writeSteps.map(function(w, idx) {
+            var hi = fw.indexOf(w) > -1 || activeClauseKey === w;
+            var wasClicked = !!uiState.clickedClauses[w];
+            var pulseCls = !wasClicked ? ' pulse-unclicked' : '';
             return (idx > 0 ? '<span class="order-arr">→</span>' : '') +
-              '<span class="order-pill' + (hi ? ' active' : '') + '">' + esc(w) + '</span>';
+              '<button type="button" class="order-pill' + (hi ? ' active' : '') + pulseCls + '" data-act="inspectClause" data-clause="' + esc(w) + '">' + highlightSQL(w) + '</button>';
           }).join('') +
         '</div>' +
       '</div>' +
       '<div class="order-box exec">' +
-        '<div class="order-label">⚙️ Prawdziwa kolejność wykonywania pod maską PostgreSQL:</div>' +
+        '<div class="order-label">⚙️ Prawdziwa kolejność wykonywania przez bazę PostgreSQL:</div>' +
         '<div class="exec-grid">' +
-          EXEC_ORDER_STEPS.map(function(st) {
-            var hi = fe.indexOf(st.num) > -1;
-            return '<div class="exec-step' + (hi ? ' active' : '') + '">' +
-              '<strong>' + esc(st.lbl) + '</strong>' +
+          prog.execSteps.map(function(st) {
+            var hi = fw.indexOf(st.key) > -1 || activeClauseKey === st.key || (st.key === 'FROM / JOIN' && fw.indexOf('JOIN') > -1);
+            var wasClicked = !!uiState.clickedClauses[st.key];
+            var pulseCls = !wasClicked ? ' pulse-unclicked' : '';
+            return '<button type="button" class="exec-step' + (hi ? ' active' : '') + pulseCls + '" data-act="inspectClause" data-clause="' + esc(st.key) + '" style="text-align:left;cursor:pointer;font-family:inherit">' +
+              '<strong>' + esc(st.num + '. ') + highlightSQL(st.key) + '</strong>' +
               '<span>' + esc(st.desc) + '</span>' +
-            '</div>';
+            '</button>';
           }).join('') +
         '</div>' +
       '</div>' +
-      '<div class="fb-box warn" style="margin-top:10px">' + slide.note + '</div>' +
+      (clauseInfo
+        ? '<div class="teach-first-box" style="margin-top:10px">' +
+            '<div class="teach-first-hdr">🔍 Jak działa klocek: <code>' + highlightSQL(activeClauseKey) + '</code></div>' +
+            '<div class="teach-first-body">' +
+              '<strong>' + esc(clauseInfo.title) + '</strong> — ' + esc(clauseInfo.desc) +
+              '<div class="theory-code" style="margin-top:6px"><code>' + highlightSQL(clauseInfo.sql) + '</code></div>' +
+            '</div>' +
+          '</div>'
+        : '') +
+      '<div class="fb-box warn" style="margin-top:10px">' + highlightHtmlCodeBlocks(slide.note) + '</div>' +
       (task && task.stage >= 3 ? renderSqlPipelineSimulator() : '') +
     '</div>';
   } else if (sIdx === 2) {
     bodyHtml = '<div class="tut-card-inner">' +
       '<span class="chip info">Karta 3/4 · Przykład krok po kroku</span>' +
       '<h3 style="margin:8px 0">' + esc(slide.title) + '</h3>' +
-      '<div class="theory-code" style="margin-bottom:12px"><code>' + esc(slide.code) + '</code></div>' +
+      '<div class="theory-code" style="margin-bottom:12px"><code>' + highlightSQL(slide.code) + '</code></div>' +
       '<div class="tut-lines">' +
         (slide.lines || []).map(function(ln, idx) {
           return '<div class="tut-line-item">' +
-            '<div class="tut-line-code"><code>' + esc(ln.line) + '</code></div>' +
-            '<div class="tut-line-desc"><strong>Krok ' + (idx + 1) + ':</strong> ' + esc(ln.desc) + '</div>' +
+            '<div class="tut-line-code"><code>' + highlightSQL(ln.line) + '</code></div>' +
+            '<div class="tut-line-desc"><strong>Krok ' + (idx + 1) + ':</strong> ' + highlightHtmlCodeBlocks(esc(ln.desc)) + '</div>' +
           '</div>';
         }).join('') +
       '</div>' +
@@ -2104,13 +2540,15 @@ function renderTutorialView(task) {
     var qz = slide.quiz;
     var sel = uiState.quizSelected;
     var passed = uiState.quizPassed || isDone;
+    var sampleVar = (task && task.variants && task.variants[0]) ? task.variants[0] : null;
     bodyHtml = '<div class="tut-card-inner">' +
       '<span class="chip done">Karta 4/4 · Interaktywne sprawdzenie (+15 XP)</span>' +
       '<h3 style="margin:8px 0">' + esc(slide.title) + '</h3>' +
-      '<div class="prompt-box" style="margin-bottom:12px"><strong>❓ Pytanie:</strong> ' + formatPrompt(qz.question) + '</div>' +
+      '<div class="prompt-box" style="margin-bottom:10px"><strong>❓ Pytanie:</strong> ' + formatPrompt(qz.question) + '</div>' +
+      '<div class="interactive-hint">👆 Dotknij wybrany klocek poniżej, aby zobaczyć jak działa</div>' +
       '<div class="quiz-opts">' +
         qz.options.map(function(optTxt, oIdx) {
-          var optCls = 'quiz-opt-btn';
+          var optCls = 'quiz-opt-btn' + (sel === null ? ' pulse-unclicked' : '');
           if (sel === oIdx) {
             optCls += (oIdx === qz.correct) ? ' correct' : ' wrong';
           } else if (passed && oIdx === qz.correct) {
@@ -2119,7 +2557,7 @@ function renderTutorialView(task) {
           var prefix = ['A', 'B', 'C'][oIdx] || (oIdx + 1);
           return '<button type="button" class="' + optCls + '" data-act="pickQuizOpt" data-opt="' + oIdx + '">' +
             '<span class="quiz-letter">' + prefix + '</span>' +
-            '<span>' + formatPrompt(optTxt) + '</span>' +
+            '<span>' + formatQuizOptionSql(optTxt) + '</span>' +
           '</button>';
         }).join('') +
       '</div>' +
@@ -2127,7 +2565,16 @@ function renderTutorialView(task) {
         ? '<div class="fb-box trap"><strong>❌ Jeszcze nie to!</strong> <span class="small">Sprawdź wskazówki z Karty 2 (Kolejność wykonywania SQL) i kliknij inną odpowiedź.</span></div>'
         : '') +
       (passed
-        ? '<div class="fb-box ok"><strong>✅ Świetnie! Teoria opanowana.</strong><p class="small" style="margin:4px 0 0">' + esc(qz.explanation) + '</p></div>'
+        ? '<div class="fb-box ok"><strong>✅ Świetnie! Teoria opanowana.</strong><p class="small" style="margin:4px 0 0">' + highlightHtmlCodeBlocks(esc(qz.explanation)) + '</p></div>'
+        : '') +
+      (sampleVar
+        ? '<div class="teach-first-box" style="margin-top:12px">' +
+            '<div class="teach-first-hdr">📋 Ściąga z przykładowym zadaniem (' + esc(task.title) + ')</div>' +
+            '<div class="teach-first-body">' +
+              '<div class="small muted" style="margin-bottom:4px">Przykład z 🔥 Rozgrzewki 1 z 2:</div>' +
+              '<div class="theory-code"><code>' + highlightSQL(formatSqlPretty(sampleVar.sol)) + '</code></div>' +
+            '</div>' +
+          '</div>'
         : '') +
     '</div>';
   }
@@ -2136,7 +2583,7 @@ function renderTutorialView(task) {
   var navBtns = '<div class="acts" style="justify-content:space-between;margin-top:14px;border-top:1px solid var(--line);padding-top:12px">' +
     (sIdx > 0
       ? '<button type="button" class="btn sm" data-act="prevSlide">← Wstecz</button>'
-      : '<button type="button" class="btn sm" data-act="backToPathList">← Mapa Ścieżki</button>') +
+      : '<button type="button" class="btn back-path-btn" data-act="backToPathList">← Mapa ścieżki</button>') +
     '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
       (sIdx < slides.length - 1
         ? '<button type="button" class="btn primary" data-act="nextSlide">Dalej (' + (sIdx + 2) + '/' + slides.length + ') →</button>'
@@ -2148,7 +2595,7 @@ function renderTutorialView(task) {
 
   return '<div class="card">' +
     '<div class="ws-bar">' +
-      '<button type="button" class="btn sm" data-act="backToPathList">← Wróć do Mapy Ścieżki</button>' +
+      '<button type="button" class="btn back-path-btn" data-act="backToPathList">← Mapa ścieżki</button>' +
       '<span class="chip info">📖 Lekcja · Okno ' + (sIdx + 1) + ' z ' + slides.length + '</span>' +
       (isDone ? '<button type="button" class="btn sm primary" data-act="finishTutorial">Przejdź do edytora SQL →</button>' : '') +
     '</div>' +
@@ -2178,11 +2625,20 @@ function renderPathTab() {
     var variant = task.variants[vIdx];
     var totalSteps = task.variants.length;
     var curStepNum = vIdx + 1;
-    var curStepCode = variant.stepCode || (vIdx < 2 ? ('R' + (vIdx + 1)) : String(vIdx - 1));
-    var tierBadge = vIdx < 2
-      ? '🔥 Rozgrzewka (' + curStepCode + ' z R1–R2)'
-      : (vIdx >= 5 ? '🚀 Zaawansowane (' + curStepCode + ' · Miks)' : '📘 Podstawy (' + curStepCode + ' z 1–3)');
+    var stepSwitchLbl = getStepSwitchLabel(vIdx, totalSteps);
+    var shortTaskTitle = getVariantShortTitle(task, variant, vIdx);
     var pct = Math.round((curStepNum / totalSteps) * 100);
+
+    var solvedInLesson = countTotalLessonSolved(task.id);
+    var unlockGoal = 5;
+    var isNextLessonUnlocked = solvedInLesson >= unlockGoal || isLessonCoreCompleted(task.id);
+    var unlockDotsHtml = '';
+    for (var di = 0; di < unlockGoal; di++) {
+      unlockDotsHtml += '<i class="udot' + (di < solvedInLesson ? ' on' : '') + '"></i>';
+    }
+    var unlockPillHtml = isNextLessonUnlocked
+      ? '<span class="unlock-progress-pill unlocked">🌟 Kolejna lekcja odblokowana! (' + solvedInLesson + '/' + totalSteps + ')</span>'
+      : '<span class="unlock-progress-pill">🔓 Odblokowanie: <strong>' + Math.min(solvedInLesson, unlockGoal) + '/5</strong> <span class="unlock-dots">' + unlockDotsHtml + '</span></span>';
 
     var hasPrev = vIdx > 0;
     var hasNext = (vIdx + 1 < totalSteps) && isStepUnlocked(task, vIdx + 1);
@@ -2191,7 +2647,7 @@ function renderPathTab() {
     if (uiState.taskDropdownOpen) {
       dropdownHtml = '<div class="task-dropdown-menu">' +
         '<div class="task-dropdown-hdr">' +
-          '<span>📋 Zadania w tej pod-lekcji:</span>' +
+          '<span>📋 Zadania w tej pod-lekcji (' + solvedInLesson + '/' + totalSteps + '):</span>' +
           '<button type="button" class="task-dropdown-close" data-act="toggleTaskDropdown">✕</button>' +
         '</div>' +
         '<div class="task-dropdown-items">' +
@@ -2199,44 +2655,44 @@ function renderPathTab() {
             var isCur = idx === vIdx;
             var isSolved = isStepSolved(task, idx);
             var isUnlocked = isStepUnlocked(task, idx);
-            var icon = isCur ? '🎯' : (isSolved ? '✅' : (isUnlocked ? '🔓' : '🔒'));
+            var icon = isCur ? '▶' : (isSolved ? '✅' : (isUnlocked ? '🔓' : '🔒'));
             var cls = 'task-dd-item' + (isCur ? ' active' : '') + (!isUnlocked ? ' locked' : '');
-            var code = v.stepCode || (idx < 2 ? ('R' + (idx + 1)) : String(idx - 1));
-            var title = (v.goal || v.prompt || '').replace(/^[A-Z0-9_]+\s*:\s*/i, '');
-            if (title.length > 55) title = title.slice(0, 52) + '…';
+            var shortTitle = getVariantShortTitle(task, v, idx);
             return '<button type="button" class="' + cls + '" data-act="jumpToVariant" data-vidx="' + idx + '"' + (!isUnlocked ? ' disabled' : '') + '>' +
               '<span class="task-dd-icon">' + icon + '</span>' +
-              '<span class="task-dd-code">' + esc(code) + '</span>' +
-              '<span class="task-dd-text">' + esc(title) + '</span>' +
+              '<span class="task-dd-text">' + esc(shortTitle) + '</span>' +
             '</button>';
           }).join('') +
         '</div>' +
       '</div>';
     }
 
+    var flashCls = uiState.stepFlashActive ? ' task-step-flash' : '';
+
     return '<div class="card task-transition-enter">' +
       '<div class="task-nav-hdr">' +
-        '<button type="button" class="btn back-path-btn" data-act="backToPathList">← Mapa Ścieżki</button>' +
-        '<button type="button" class="btn sm ghost sololearn-theory-btn" data-act="openTutorialSlides">📖 Teoria</button>' +
+        '<button type="button" class="btn back-path-btn" data-act="backToPathList">← Mapa ścieżki</button>' +
+        '<button type="button" class="btn sololearn-theory-btn" data-act="openTutorialSlides">📖 Slajdy lekcji</button>' +
       '</div>' +
-      '<div class="sololearn-progress-wrap">' +
+      '<div class="sololearn-progress-wrap' + flashCls + '">' +
         '<div class="sololearn-progress-meta">' +
           '<div class="step-nav-cluster">' +
             '<button type="button" class="step-nav-btn' + (!hasPrev ? ' disabled' : '') + '" data-act="prevStep" title="Poprzednie zadanie"' + (!hasPrev ? ' disabled' : '') + '>◀</button>' +
-            '<button type="button" class="sololearn-step-badge step-dropdown-btn" data-act="toggleTaskDropdown" title="Rozwiń listę zadań">ZADANIE ' + curStepNum + ' z ' + totalSteps + ' ▾</button>' +
+            '<button type="button" class="sololearn-step-badge step-dropdown-btn" data-act="toggleTaskDropdown" title="Rozwiń listę zadań">' + esc(stepSwitchLbl) + ' ▾</button>' +
             '<button type="button" class="step-nav-btn' + (!hasNext ? ' disabled' : '') + '" data-act="nextStep" title="Następne odblokowane zadanie"' + (!hasNext ? ' disabled' : '') + '>▶</button>' +
           '</div>' +
-          '<span class="sololearn-tier-badge">' + esc(tierBadge) + '</span>' +
-          '<span class="sololearn-pct">' + pct + '%</span>' +
+          unlockPillHtml +
         '</div>' +
         '<div class="sololearn-bar"><i style="width:' + pct + '%"></i></div>' +
         dropdownHtml +
       '</div>' +
-      '<h2 class="task-page-title">' + esc(task.title) + ' — Zadanie ' + esc(curStepCode) + '</h2>' +
+      '<div class="task-now-solving-banner' + flashCls + '">' +
+        '➡️ Teraz rozwiązujesz: <strong>' + esc(stepSwitchLbl) + '</strong> <span class="muted">(' + esc(shortTaskTitle) + ')</span>' +
+      '</div>' +
+      '<h2 class="task-page-title">' + esc(task.title) + '</h2>' +
       renderTaskSpecBox(variant, task) +
       buildTaskSchemaBox(variant.tables || task.tables, variant.sol) +
-      renderTeachFirstBox(variant.newFeature) +
-      renderStepByStepCheatSheet(variant.sol, task.theory, false, task) +
+      renderTeachFirstBox(variant.newFeature, task, variant) +
       renderEditorWidget(task.cols, 'checkPathTask', variant, task) +
       renderExampleOutputBox(variant.sol) +
       renderHintStepperBox(variant, task) +
@@ -2245,6 +2701,7 @@ function renderPathTab() {
         '<button type="button" class="btn sm" data-act="showSolution">💡 Pokaż wzorcowy kod</button>' +
         '<button type="button" class="btn sm" data-act="aiHint">🤖 Podpowiedź AI</button>' +
       '</div>' +
+      renderStepByStepCheatSheet(variant.sol, task.theory, false, task) +
     '</div>';
   }
 
@@ -2258,16 +2715,22 @@ function renderPathTab() {
       '<h2>Znasz już podstawy SQL?</h2>' +
       '<p>Rozwiąż 10-pytaniową Diagnozę i przeskocz podstawy</p>' +
       '<div class="sub-hero">Możesz rozwiązywać lub pomijać zadania, których jeszcze nie znasz. Aplikacja odblokuje Twój poziom i zapisze luki.</div>' +
-      '<button class="btn ghost" data-act="tab" data-tab="diag">🎯 Uruchom Diagnozę (10 pytań)</button>' +
+      '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">' +
+        '<button class="btn ghost" style="margin-top:0" data-act="tab" data-tab="diag">🎯 Uruchom Diagnozę (10 pytań)</button>' +
+        '<button class="btn ghost" style="margin-top:0" data-act="openOnboarding">🎓 Samouczek SQL (Od zera)</button>' +
+      '</div>' +
     '</section>';
   }
 
   h += '<div class="card">' +
     '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">' +
-      '<div><h2 style="margin:0">Mapa Ścieżki SQL (Progresja Krok po Kroku)</h2>' +
+      '<div style="min-width:0;flex:1"><h2 style="margin:0">Mapa Ścieżki SQL (Progresja Krok po Kroku)</h2>' +
       '<p class="small muted" style="margin:2px 0 0">Zaliczone działy: <strong>' + doneLessons + '/' + PATH_TASKS.length + '</strong> · Rozwiązane zadania: <strong>' + doneVariants + '/' + totalVariants + '</strong>' +
       (state.testerUnlockAll ? ' · <span class="chip mid">🔓 Tryb testerski aktywny</span>' : '') + '</p></div>' +
-      '<button class="btn primary sm" data-act="continuePath">▶ Kontynuuj naukę</button>' +
+      '<div style="display:flex;gap:6px;flex-wrap:wrap">' +
+        '<button type="button" class="btn sm onboarding-open-btn" data-act="openOnboarding">🎓 Samouczek SQL (4 karty)</button>' +
+        '<button type="button" class="btn primary sm" data-act="continuePath">▶ Kontynuuj naukę</button>' +
+      '</div>' +
     '</div>' +
     '<div class="bar"><i style="width:' + Math.round((doneLessons / PATH_TASKS.length) * 100) + '%"></i></div>' +
   '</div>';
@@ -2278,8 +2741,8 @@ function renderPathTab() {
     var allDone = tasksInStage.every(function(t) { return isLessonCoreCompleted(t.id); });
 
     h += '<div class="stage-box ' + (allDone ? 'completed' : stageOpen ? 'unlocked' : 'locked-stage') + '">' +
-      '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px">' +
-        '<strong>' + (stageOpen ? '' : '🔒 ') + esc(st.name) + '</strong>' +
+      '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">' +
+        '<strong style="min-width:0;overflow-wrap:break-word">' + (stageOpen ? '' : '🔒 ') + esc(st.name) + '</strong>' +
         '<span class="chip ' + (allDone ? 'done' : stageOpen ? 'mid' : 'open') + '">' + (allDone ? 'Opanowany' : stageOpen ? 'Odblokowany' : '🔒 Zablokowany') + '</span>' +
       '</div>' +
       '<p class="small muted" style="margin:4px 0 10px">' + esc(st.desc) + '</p>' +
@@ -2294,25 +2757,31 @@ function renderPathTab() {
       var tutDone = !!(state.tutorialsDone && state.tutorialsDone[t.id]);
       var isMastered = isLessonCoreCompleted(t.id);
 
-      var statusChip = !lessonOpen
-        ? '<span class="chip open">🔒 Zablokowane (ukończ 5 zadań wyżej)</span>'
-        : vSolved >= t.variants.length
-          ? '<span class="chip done">🏆 Ukończono (' + vSolved + '/' + t.variants.length + ')</span>'
-          : isMastered
-            ? '<span class="chip done">✅ Zaliczone (' + vSolved + '/' + t.variants.length + ') →</span>'
-            : '<span class="chip info">' + (tutDone ? 'Krok po kroku (' + vSolved + '/' + t.variants.length + ') →' : '📖 Start (Slajdy) →') + '</span>';
+      var numMatch = String(t.title || '').match(/^(\d+\.\d+)\s*(.*)$/);
+      var subNum = numMatch ? numMatch[1] : '';
+      var cleanLessonTitle = numMatch ? numMatch[2] : t.title;
+
+      var progCls = vSolved >= 5 ? ' done' : '';
+      var sampleShortTitles = [0, 2, 4].map(function(i) {
+        return t.variants[i] ? getVariantShortTitle(t, t.variants[i], i) : '';
+      }).filter(Boolean).join(' · ');
 
       h += '<button type="button" class="node-item' + (!lessonOpen ? ' locked' : '') + '" data-act="openPathTask" data-id="' + t.id + '">' +
-        '<div>' +
-          '<span class="node-title">' + (!lessonOpen ? '🔒 ' : isMastered ? '✅ ' : '📘 ') + esc(t.title) + '</span>' +
-          '<div class="node-meta">' +
-            '<span>Teoria: <strong>' + (tutDone ? '✓ 4/4' : '0/4') + '</strong></span>' +
-            '<span>· 🔥 R1–R2: <strong>' + warmupSolved + '/2</strong></span>' +
-            '<span>· 📘 Podstawy 1–3: <strong>' + basicSolved + '/3</strong></span>' +
-            '<span>· 🚀 Zaawansowane 4–6: <strong>' + advSolved + '/' + (t.variants.length - 5) + '</strong></span>' +
+        '<div style="width:100%;min-width:0">' +
+          '<div class="node-hdr-row">' +
+            '<div class="node-title-wrap">' +
+              (subNum ? '<span class="node-num-badge">' + (!lessonOpen ? '🔒 ' : isMastered ? '✅ ' : '') + esc(subNum) + '</span>' : '') +
+              '<span class="node-title-txt">' + esc(cleanLessonTitle) + '</span>' +
+            '</div>' +
+            '<span class="node-prog-badge' + progCls + '">' + vSolved + '/' + t.variants.length + '</span>' +
           '</div>' +
+          '<div class="node-meta">' +
+            '<span>📖 Slajdy: <strong>' + (tutDone ? '✓ 4/4' : '0/4') + '</strong></span>' +
+            '<span>· 🔥 Rozgrzewka: <strong>' + warmupSolved + '/2</strong></span>' +
+            '<span>· 🎯 Zadania: <strong>' + (basicSolved + advSolved) + '/6</strong></span>' +
+          '</div>' +
+          (sampleShortTitles ? '<div class="small muted" style="margin-top:4px;font-size:11px;overflow-wrap:break-word">' + esc(sampleShortTitles) + '</div>' : '') +
         '</div>' +
-        statusChip +
       '</button>';
     });
     h += '</div></div>';
@@ -2354,7 +2823,6 @@ function renderDiagTab() {
     '<h2 class="task-page-title">' + esc(q.title) + '</h2>' +
     renderTaskSpecBox(q, null) +
     buildTaskSchemaBox(q.tables, q.sol) +
-    renderStepByStepCheatSheet(q.sol, '', false) +
     renderEditorWidget(null, 'submitDiag') +
     renderExampleOutputBox(q.sol) +
     renderHintStepperBox(q, null) +
@@ -2365,6 +2833,7 @@ function renderDiagTab() {
       '</div>' +
       '<button type="button" class="btn sm" data-act="resetDiag">Restart</button>' +
     '</div>' +
+    renderStepByStepCheatSheet(q.sol, '', false) +
   '</div>';
 }
 
@@ -2419,10 +2888,18 @@ function renderLemurTab() {
     var curNum = (taskIdx >= 0 ? taskIdx : 0) + 1;
     var pct = Math.round((curNum / tasksList.length) * 100);
 
-    return nav + '<div class="card task-transition-enter">' +
+    var topClickBanner = '<div class="subnav">' +
+      '<button type="button" class="active lemur-back-banner" data-act="backToLemurList" title="Wróć do listy wyzwań rekrutacyjnych">' +
+        '<span>🎯 Wyzwania rekrutacyjne (' + tasksList.length + ')</span>' +
+        '<span class="lemur-back-sub">← Wróć do listy zadań</span>' +
+      '</button>' +
+      '<button type="button" class="' + (state.lemurSubTab === 'gaps' ? 'active' : '') + '" data-act="lemurSub" data-sub="gaps">🧠 Twój Rejestr Luk (' + state.gaps.length + (openGapsCnt ? ' · 🔥' + openGapsCnt : '') + ')</button>' +
+    '</div>';
+
+    return topClickBanner + '<div class="card task-transition-enter">' +
       '<div class="sololearn-progress-wrap" style="margin-top:2px">' +
         '<div class="sololearn-progress-meta">' +
-          '<span class="sololearn-step-badge">ZADANIE ' + curNum + ' z ' + tasksList.length + '</span>' +
+          '<span class="sololearn-step-badge">WYZWANIE ' + curNum + ' z ' + tasksList.length + '</span>' +
           '<div style="display:flex;gap:6px;align-items:center">' +
             '<span class="chip ' + bdg.cls + '">' + bdg.lbl + '</span>' +
             '<span class="chip info">' + esc(task.categoryTag || 'Analiza SQL') + '</span>' +
@@ -2434,7 +2911,6 @@ function renderLemurTab() {
       '<h2 class="task-page-title">' + (isSolved ? '✅ ' : '') + esc(task.title) + '</h2>' +
       renderTaskSpecBox(task, null) +
       buildTaskSchemaBox(task.tables, task.sol) +
-      renderStepByStepCheatSheet(task.sol, '', false) +
       renderEditorWidget(task.cols, 'checkLemurTask') +
       renderExampleOutputBox(task.sol) +
       renderHintStepperBox(task, null) +
@@ -2443,6 +2919,7 @@ function renderLemurTab() {
         '<button type="button" class="btn sm" data-act="lemurTrapHint">🛡️ Jaka tu jest pułapka?</button>' +
         '<button type="button" class="btn sm" data-act="showLemurSol">💡 Pokaż wzorcowe rozwiązanie</button>' +
       '</div>' +
+      renderStepByStepCheatSheet(task.sol, '', false) +
     '</div>';
   }
 
@@ -2535,6 +3012,109 @@ var SUPABASE_SQL_SNIPPET = [
   'ALTER TABLE public.sql_profiles ENABLE ROW LEVEL SECURITY;',
   'CREATE POLICY "Public test access" ON public.sql_profiles FOR ALL USING (true) WITH CHECK (true);'
 ].join('\n');
+
+function renderOnboardingModal() {
+  if (!uiState.onboardingOpen) return '';
+  var idx = Math.max(0, Math.min(3, uiState.onboardingSlideIdx || 0));
+  uiState.onboardingSlideIdx = idx;
+
+  var slides = [
+    {
+      badge: 'Karta 1/4 · Wprowadzenie dla początkujących',
+      title: '👋 Po co w ogóle jest SQL?',
+      body:
+        '<p class="small" style="font-size:13.5px;line-height:1.6">Wyobraź sobie, że firma ma gigantyczny arkusz z milionem zamówień albo filmów. W zwykłym Excelu taki plik zawiesza komputer.</p>' +
+        '<div class="pwa-box">' +
+          '<strong>📦 Baza danych = uporządkowany magazyn tabel</strong>' +
+          '<p class="small muted" style="margin:4px 0 0">Zamiast jednego ciężkiego pliku dane leżą w przejrzystych tabelach (np. osobno filmy, osobno klienci, osobno płatności).</p>' +
+        '</div>' +
+        '<div class="pwa-box" style="margin-top:8px">' +
+          '<strong>⚡ SQL = język prostych pytań do bazy</strong>' +
+          '<p class="small muted" style="margin:4px 0 0">Wpisujesz krótkie pytanie po angielsku (np. <em>„pokaż tytuły filmów z tabeli film”</em>), a baza w <strong>1 sekundę</strong> zwraca gotowy raport!</p>' +
+        '</div>'
+    },
+    {
+      badge: 'Karta 2/4 · Budowa tabeli',
+      title: '📊 Jak wygląda tabela w bazie danych?',
+      body:
+        '<p class="small" style="font-size:13px;line-height:1.55">Każda tabela ma swoją nazwę (np. <code>film</code>) i składa się z pionowych <strong>kolumn</strong> oraz poziomych <strong>wierszy</strong>:</p>' +
+        '<div class="tblwrap" style="margin:8px 0">' +
+          '<table>' +
+            '<thead><tr>' +
+              '<th>film_id <span class="muted">(Kolumna)</span></th>' +
+              '<th>title <span class="muted">(Kolumna)</span></th>' +
+              '<th>rental_rate <span class="muted">(Kolumna)</span></th>' +
+            '</tr></thead>' +
+            '<tbody>' +
+              '<tr><td>1</td><td>Academy Dinosaur</td><td>0.99</td></tr>' +
+              '<tr><td>2</td><td>Ace Goldfinger</td><td>4.99</td></tr>' +
+              '<tr><td>3</td><td>Adaptation Holes</td><td>2.99</td></tr>' +
+            '</tbody>' +
+          '</table>' +
+        '</div>' +
+        '<ul class="tut-list" style="margin-top:6px">' +
+          '<li><strong>Kolumna (pionowo):</strong> jedna konkretna cecha, np. <code>title</code> (tytuł) lub <code>rental_rate</code> (cena wypożyczenia).</li>' +
+          '<li><strong>Wiersz (poziomo):</strong> jeden kompletny obiekt, np. pełne dane filmu <em>Academy Dinosaur</em>.</li>' +
+        '</ul>'
+    },
+    {
+      badge: 'Karta 3/4 · Twoje pierwsze słowa w SQL',
+      title: '🚀 Twoje pierwsze zapytanie: SELECT i FROM',
+      body:
+        '<p class="small" style="font-size:13px;line-height:1.55">Każde podstawowe pytanie do bazy składa się z dwóch słów kluczowych pokolorowanych w stylu edytora <strong>DBeaver</strong>:</p>' +
+        '<div class="theory-code" style="margin:8px 0;font-size:14px"><code>' + highlightSQL('SELECT title\nFROM film;') + '</code></div>' +
+        '<div class="pwa-box">' +
+          '<strong>1️⃣ <span class="sql-kw">FROM</span> film — Z KTÓREJ tabeli bierzesz dane?</strong>' +
+          '<p class="small muted" style="margin:4px 0 0">Silnik bazy zawsze zaczyna od <code>FROM</code>: otwiera pudełko o nazwie <code>film</code>.</p>' +
+        '</div>' +
+        '<div class="pwa-box" style="margin-top:8px">' +
+          '<strong>2️⃣ <span class="sql-kw">SELECT</span> title — KTÓRE kolumny chcesz zobaczyć?</strong>' +
+          '<p class="small muted" style="margin:4px 0 0">Wybiera z otwartej tabeli tylko kolumnę <code>title</code> i wyświetla ją na ekranie. Średnik <code>;</code> na końcu oznacza „koniec pytania”.</p>' +
+        '</div>'
+    },
+    {
+      badge: 'Karta 4/4 · Nawigacja i pełny ekran PWA',
+      title: '📱 Jak uczyć się wygodnie na telefonie?',
+      body:
+        '<ul class="tut-list" style="margin-bottom:8px">' +
+          '<li><strong>Klikaj klocki nad edytorem:</strong> dotknij nazwy kolumny lub <code>SELECT</code> w pasku <em>SQL Quick-Bar</em>, aby wkleić ją bez pisania na klawiaturze.</li>' +
+          '<li><strong>Zasada 5 z 8 zadań:</strong> każda lekcja ma 2 krótkie rozgrzewki (🔥 1–2) i 6 zadań (🎯 1–6). Rozwiąż <strong>5 z 8</strong>, aby odblokować kolejny temat!</li>' +
+        '</ul>' +
+        '<div class="pwa-box">' +
+          '<strong>📲 Włącz pełny ekran bez pasków przeglądarki (PWA):</strong>' +
+          '<p class="small" style="margin:6px 0 4px"><strong>🍏 iPhone (Safari):</strong> kliknij ikonę <strong>Udostępnij</strong> (kwadrat ze strzałką w górę na dole ekranu) → wybierz <strong>Dodaj do ekranu początkowego</strong>.</p>' +
+          '<p class="small" style="margin:0"><strong>🤖 Android (Chrome):</strong> kliknij <strong>Menu ⋮</strong> (trzy kropki w prawym górnym rogu) → wybierz <strong>Zainstaluj aplikację</strong> (lub <em>Dodaj do ekranu głównego</em>).</p>' +
+        '</div>'
+    }
+  ];
+
+  var cur = slides[idx];
+  var dotsHtml = '<div class="onboarding-dots">' + [0, 1, 2, 3].map(function(i) {
+    return '<button type="button" class="onboarding-dot' + (i === idx ? ' active' : '') + '" data-act="goOnboardingSlide" data-idx="' + i + '" aria-label="Karta ' + (i + 1) + '"></button>';
+  }).join('') + '</div>';
+
+  return '<div class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="onbModalTitle">' +
+    '<div class="modal-card onboarding-modal-card">' +
+      '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px">' +
+        '<span class="chip info">' + esc(cur.badge) + '</span>' +
+        '<button type="button" class="btn sm" data-act="closeOnboarding">✕ Zamknij</button>' +
+      '</div>' +
+      dotsHtml +
+      '<div class="onboarding-slide-body">' +
+        '<h2 id="onbModalTitle" style="margin:2px 0 8px">' + esc(cur.title) + '</h2>' +
+        cur.body +
+      '</div>' +
+      '<div class="acts" style="margin-top:14px;justify-content:space-between;border-top:1px solid var(--line);padding-top:12px">' +
+        (idx > 0
+          ? '<button type="button" class="btn sm" data-act="prevOnboardingSlide">← Wstecz</button>'
+          : '<button type="button" class="btn sm" data-act="closeOnboarding">Pomiń samouczek</button>') +
+        (idx < 3
+          ? '<button type="button" class="btn primary" data-act="nextOnboardingSlide">Dalej (' + (idx + 1) + '/4) →</button>'
+          : '<button type="button" class="btn success" data-act="closeOnboarding">🚀 Zaczynamy naukę SQL!</button>') +
+      '</div>' +
+    '</div>' +
+  '</div>';
+}
 
 function renderAuthModal() {
   if (!uiState.authModalOpen) return '';
@@ -2687,7 +3267,7 @@ function render() {
                : currentTab === 'lemur' ? renderLemurTab()
                : currentTab === 'schema' ? renderSchemaTab()
                : renderProfileTab();
-  v.innerHTML = mainHtml + renderAuthModal();
+  v.innerHTML = mainHtml + renderOnboardingModal() + renderAuthModal();
 
   document.querySelectorAll('.tab').forEach(function(b) {
     if (b.dataset.tab === currentTab) b.setAttribute('aria-current', 'page');
@@ -2705,6 +3285,46 @@ function render() {
     sqlUpdate();
   }
 }
+
+// Obsługa gestów przesuwania (swipe) dla Samouczka Powitalnego i Slajdów Lekcji na telefonie
+var _touchStartX = null;
+var _touchStartY = null;
+document.addEventListener('touchstart', function(e) {
+  if (!e.touches || e.touches.length !== 1) return;
+  if (e.target.closest('.onboarding-modal-card') || e.target.closest('.tut-card-inner')) {
+    _touchStartX = e.touches[0].clientX;
+    _touchStartY = e.touches[0].clientY;
+  } else {
+    _touchStartX = null;
+    _touchStartY = null;
+  }
+}, { passive: true });
+
+document.addEventListener('touchend', function(e) {
+  if (_touchStartX === null || !e.changedTouches || !e.changedTouches.length) return;
+  var dx = e.changedTouches[0].clientX - _touchStartX;
+  var dy = e.changedTouches[0].clientY - _touchStartY;
+  _touchStartX = null;
+  _touchStartY = null;
+  if (Math.abs(dx) < 48 || Math.abs(dx) < Math.abs(dy) * 1.3) return;
+  if (uiState.onboardingOpen) {
+    if (dx < 0 && uiState.onboardingSlideIdx < 3) {
+      uiState.onboardingSlideIdx++;
+      render();
+    } else if (dx > 0 && uiState.onboardingSlideIdx > 0) {
+      uiState.onboardingSlideIdx--;
+      render();
+    }
+  } else if (currentTab === 'path' && state.pathMode === 'tutorial') {
+    if (dx < 0 && uiState.tutorialSlideIdx < 3) {
+      uiState.tutorialSlideIdx++;
+      render();
+    } else if (dx > 0 && uiState.tutorialSlideIdx > 0) {
+      uiState.tutorialSlideIdx--;
+      render();
+    }
+  }
+}, { passive: true });
 
 function scrollToResult() {
   setTimeout(function() {
@@ -2813,10 +3433,38 @@ document.addEventListener('click', async function(e) {
     render();
     scrollToResult();
   }
+  else if (act === 'openOnboarding') {
+    uiState.onboardingOpen = true;
+    uiState.onboardingSlideIdx = 0;
+    render();
+  }
+  else if (act === 'closeOnboarding') {
+    uiState.onboardingOpen = false;
+    try { localStorage.setItem(ONBOARDING_KEY, '1'); } catch (err) {}
+    render();
+  }
+  else if (act === 'nextOnboardingSlide') {
+    uiState.onboardingSlideIdx = Math.min(3, (uiState.onboardingSlideIdx || 0) + 1);
+    render();
+  }
+  else if (act === 'prevOnboardingSlide') {
+    uiState.onboardingSlideIdx = Math.max(0, (uiState.onboardingSlideIdx || 0) - 1);
+    render();
+  }
+  else if (act === 'goOnboardingSlide') {
+    uiState.onboardingSlideIdx = Math.max(0, Math.min(3, Number(el.dataset.idx) || 0));
+    render();
+  }
+  else if (act === 'inspectClause') {
+    var clKey = el.dataset.clause || 'SELECT';
+    uiState.selectedClause = clKey;
+    uiState.clickedClauses[clKey] = true;
+    render();
+  }
   else if (act === 'openPathTask') {
     var targetId = el.dataset.id;
     if (!isLessonUnlocked(targetId)) {
-      toast('🔒 Zablokowane! Ukończ najpierw co najmniej 5 zadań (R1–R2 oraz 1–3) w poprzedniej pod-lekcji.');
+      toast('🔒 Zablokowane! Ukończ najpierw co najmniej 5 zadań (🔥 Rozgrzewka 1–2 oraz 🎯 Zadanie 1–3) w poprzedniej pod-lekcji.');
       return;
     }
     state.activeTaskId = targetId;
@@ -2826,13 +3474,13 @@ document.addEventListener('click', async function(e) {
     uiState.theoryBoxOpen = null;
     uiState.hintStep = 0;
     uiState.tutorialSlideIdx = 0;
+    uiState.selectedClause = null;
     uiState.quizSelected = null;
     uiState.quizPassed = !!(state.tutorialsDone && state.tutorialsDone[targetId]);
     // Przy pierwszym wejściu w lekcję otwórz slajdy teorii SoloLearn (1-4)
     state.pathMode = (state.tutorialsDone && state.tutorialsDone[targetId]) ? 'solve' : 'tutorial';
     if (t) {
-      var curV = t.variants[state.activeVariantIdx] || t.variants[0];
-      state.editorCode = '-- ' + t.title + ' (Zadanie ' + (curV.stepCode || 'R1') + ')\nSELECT ';
+      state.editorCode = '-- ' + t.title + ' (' + getStepSwitchLabel(state.activeVariantIdx, t.variants.length) + ')\nSELECT ';
     }
     lastExecResult = null;
     lastExpectedResult = null;
@@ -2853,11 +3501,11 @@ document.addEventListener('click', async function(e) {
     uiState.theoryBoxOpen = null;
     uiState.hintStep = 0;
     uiState.tutorialSlideIdx = 0;
+    uiState.selectedClause = null;
     uiState.quizSelected = null;
     uiState.quizPassed = !!(state.tutorialsDone && state.tutorialsDone[nextTask.id]);
     state.pathMode = (state.tutorialsDone && state.tutorialsDone[nextTask.id]) ? 'solve' : 'tutorial';
-    var nextVarObj = nextTask.variants[state.activeVariantIdx] || nextTask.variants[0];
-    state.editorCode = '-- ' + nextTask.title + ' (Zadanie ' + (nextVarObj.stepCode || 'R1') + ')\nSELECT ';
+    state.editorCode = '-- ' + nextTask.title + ' (' + getStepSwitchLabel(state.activeVariantIdx, nextTask.variants.length) + ')\nSELECT ';
     lastExecResult = null;
     lastExpectedResult = null;
     lastFeedback = null;
@@ -2868,6 +3516,7 @@ document.addEventListener('click', async function(e) {
   }
   else if (act === 'openTutorialSlides') {
     uiState.tutorialSlideIdx = 0;
+    uiState.selectedClause = null;
     uiState.quizSelected = null;
     uiState.quizPassed = !!(state.tutorialsDone && state.tutorialsDone[state.activeTaskId]);
     state.pathMode = 'tutorial';
@@ -2877,7 +3526,9 @@ document.addEventListener('click', async function(e) {
   else if (act === 'setSqlAnimStep') {
     clearInterval(window._sqlAnimTimer);
     uiState.sqlAnimRunning = false;
-    uiState.sqlAnimStep = Math.max(1, Math.min(SQL_PIPELINE_SIM_STEPS.length, Number(el.dataset.step) || 1));
+    var stepNum = Math.max(1, Math.min(SQL_PIPELINE_SIM_STEPS.length, Number(el.dataset.step) || 1));
+    uiState.sqlAnimStep = stepNum;
+    uiState.clickedClauses['sim_' + stepNum] = true;
     render();
   }
   else if (act === 'runSqlAnim') {
@@ -2943,9 +3594,8 @@ document.addEventListener('click', async function(e) {
     if (!isStepUnlocked(fTask, state.activeVariantIdx)) {
       state.activeVariantIdx = getFirstUnsolvedStepIdx(fTask);
     }
-    var fVar = fTask.variants[state.activeVariantIdx] || fTask.variants[0];
     if (!state.editorCode || state.editorCode.indexOf('SELECT') === -1) {
-      state.editorCode = '-- ' + fTask.title + ' (Zadanie ' + (fVar.stepCode || 'R1') + ')\nSELECT ';
+      state.editorCode = '-- ' + fTask.title + ' (' + getStepSwitchLabel(state.activeVariantIdx, fTask.variants.length) + ')\nSELECT ';
     }
     saveState();
     render();
@@ -2978,13 +3628,13 @@ document.addEventListener('click', async function(e) {
     uiState.taskDropdownOpen = false;
     uiState.schemaBoxOpen = false;
     uiState.hintStep = 0;
-    var pickedV = tVar.variants[state.activeVariantIdx] || tVar.variants[0];
-    state.editorCode = '-- ' + tVar.title + ' (Zadanie ' + (pickedV.stepCode || (reqIdx + 1)) + ')\nSELECT ';
+    state.editorCode = '-- ' + tVar.title + ' (' + getStepSwitchLabel(reqIdx, tVar.variants.length) + ')\nSELECT ';
     lastExecResult = null;
     lastExpectedResult = null;
     lastFeedback = null;
     lastChecklist = null;
     saveState();
+    triggerStepFlash();
     render();
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
@@ -2999,13 +3649,13 @@ document.addEventListener('click', async function(e) {
       uiState.schemaBoxOpen = false;
       uiState.hintStep = 0;
       var curTPrev = PATH_TASKS.find(function(x) { return x.id === state.activeTaskId; }) || PATH_TASKS[0];
-      var prevV = curTPrev.variants[state.activeVariantIdx] || curTPrev.variants[0];
-      state.editorCode = '-- ' + curTPrev.title + ' (Zadanie ' + (prevV.stepCode || (state.activeVariantIdx + 1)) + ')\nSELECT ';
+      state.editorCode = '-- ' + curTPrev.title + ' (' + getStepSwitchLabel(state.activeVariantIdx, curTPrev.variants.length) + ')\nSELECT ';
       lastExecResult = null;
       lastExpectedResult = null;
       lastFeedback = null;
       lastChecklist = null;
       saveState();
+      triggerStepFlash();
       render();
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
@@ -3022,13 +3672,13 @@ document.addEventListener('click', async function(e) {
       uiState.taskDropdownOpen = false;
       uiState.schemaBoxOpen = false;
       uiState.hintStep = 0;
-      var nextV = curTNext.variants[nextIdx] || curTNext.variants[0];
-      state.editorCode = '-- ' + curTNext.title + ' (Zadanie ' + (nextV.stepCode || (nextIdx + 1)) + ')\nSELECT ';
+      state.editorCode = '-- ' + curTNext.title + ' (' + getStepSwitchLabel(nextIdx, curTNext.variants.length) + ')\nSELECT ';
       lastExecResult = null;
       lastExpectedResult = null;
       lastFeedback = null;
       lastChecklist = null;
       saveState();
+      triggerStepFlash();
       render();
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
@@ -3047,13 +3697,13 @@ document.addEventListener('click', async function(e) {
     uiState.taskDropdownOpen = false;
     uiState.schemaBoxOpen = false;
     uiState.hintStep = 0;
-    var pickedVJump = curTJump.variants[state.activeVariantIdx] || curTJump.variants[0];
-    state.editorCode = '-- ' + curTJump.title + ' (Zadanie ' + (pickedVJump.stepCode || (reqIdxJump + 1)) + ')\nSELECT ';
+    state.editorCode = '-- ' + curTJump.title + ' (' + getStepSwitchLabel(reqIdxJump, curTJump.variants.length) + ')\nSELECT ';
     lastExecResult = null;
     lastExpectedResult = null;
     lastFeedback = null;
     lastChecklist = null;
     saveState();
+    triggerStepFlash();
     render();
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
@@ -3065,13 +3715,13 @@ document.addEventListener('click', async function(e) {
       uiState.taskDropdownOpen = false;
       uiState.schemaBoxOpen = false;
       uiState.hintStep = 0;
-      var nextVObj = curTaskStep.variants[nextStepIdx];
-      state.editorCode = '-- ' + curTaskStep.title + ' (Zadanie ' + (nextVObj.stepCode || (nextStepIdx + 1)) + ')\nSELECT ';
+      state.editorCode = '-- ' + curTaskStep.title + ' (' + getStepSwitchLabel(nextStepIdx, curTaskStep.variants.length) + ')\nSELECT ';
       lastExecResult = null;
       lastExpectedResult = null;
       lastFeedback = null;
       lastChecklist = null;
       saveState();
+      triggerStepFlash();
       render();
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
@@ -3087,11 +3737,11 @@ document.addEventListener('click', async function(e) {
       uiState.theoryBoxOpen = null;
       uiState.hintStep = 0;
       uiState.tutorialSlideIdx = 0;
+      uiState.selectedClause = null;
       uiState.quizSelected = null;
       uiState.quizPassed = !!(state.tutorialsDone && state.tutorialsDone[nextL.id]);
       state.pathMode = (state.tutorialsDone && state.tutorialsDone[nextL.id]) ? 'solve' : 'tutorial';
-      var nextLV = nextL.variants[state.activeVariantIdx] || nextL.variants[0];
-      state.editorCode = '-- ' + nextL.title + ' (Zadanie ' + (nextLV.stepCode || 'R1') + ')\nSELECT ';
+      state.editorCode = '-- ' + nextL.title + ' (' + getStepSwitchLabel(state.activeVariantIdx, nextL.variants.length) + ')\nSELECT ';
       lastExecResult = null;
       lastExpectedResult = null;
       lastFeedback = null;
@@ -3127,13 +3777,13 @@ document.addEventListener('click', async function(e) {
     state.activeVariantIdx = nextIdx;
     uiState.schemaBoxOpen = false;
     uiState.hintStep = 0;
-    var shufV = curTask.variants[state.activeVariantIdx] || curTask.variants[0];
-    state.editorCode = '-- ' + curTask.title + ' (Zadanie ' + (shufV.stepCode || (nextIdx + 1)) + ')\nSELECT ';
+    state.editorCode = '-- ' + curTask.title + ' (' + getStepSwitchLabel(nextIdx, curTask.variants.length) + ')\nSELECT ';
     lastExecResult = null;
     lastExpectedResult = null;
     lastChecklist = null;
-    lastFeedback = { type: 'warn', title: '🎲 Wylosowano odblokowane Zadanie ' + (shufV.stepCode || (nextIdx + 1)) + ' (' + availLen + ' dostępnych)', msg: 'Zmieniliśmy tabelę lub warunki zadania. Napisz nowe zapytanie!' };
+    lastFeedback = { type: 'warn', title: '🎲 Wylosowano odblokowane ' + getStepSwitchLabel(nextIdx, curTask.variants.length), msg: 'Zmieniliśmy tabelę lub warunki zadania. Napisz nowe zapytanie!' };
     saveState();
+    triggerStepFlash();
     render();
   }
   else if (act === 'checkPathTask') {
@@ -3170,18 +3820,17 @@ document.addEventListener('click', async function(e) {
           state.unlockedStage = task.stage + 1;
         }
         if (!wasCoreUnlocked) {
-          unlockBonusMsg = '\n🔓 Brawo! Rozwiązałeś 5 zadań w tej pod-lekcji — odblokowałeś Zadania Zaawansowane (4–6) oraz kolejną pod-lekcję na Mapie Ścieżki!';
-          toast('🔓 Odblokowano zadania 4–6 oraz kolejną pod-lekcję!');
+          unlockBonusMsg = '\n🔓 Brawo! Rozwiązałeś 5 z 8 zadań w tej pod-lekcji — odblokowałeś Zadania 4–6 oraz kolejną pod-lekcję na Mapie Ścieżki!';
+          toast('🔓 Odblokowano kolejną pod-lekcję (5/8 zadań)!');
         }
       }
       if (vIdx + 1 < task.variants.length) {
-        var nextUnlockedStep = task.variants[vIdx + 1];
-        unlockBonusMsg += '\n👉 Odblokowano kolejny krok: Zadanie ' + (nextUnlockedStep.stepCode || (vIdx + 2)) + '. Kliknij zielony przycisk poniżej!';
+        unlockBonusMsg += '\n👉 Odblokowano kolejny krok: ' + getStepSwitchLabel(vIdx + 1, task.variants.length) + '. Kliknij zielony przycisk poniżej!';
       } else {
-        unlockBonusMsg += '\n🏆 Wszystkie 8 zadań w tej pod-lekcji (R1–R2 oraz 1–6) zostały ukończone!';
+        unlockBonusMsg += '\n🏆 Wszystkie 8 zadań w tej pod-lekcji zostały ukończone!';
       }
-      var curLbl = variant.stepCode || (vIdx + 1);
-      lastFeedback = { type: 'ok', title: '✅ Zadanie ' + curLbl + ' zaliczone! (+' + (isWarmStep ? 10 : 15) + ' XP)', msg: cmp.msg + unlockBonusMsg };
+      var curStepLbl = getStepSwitchLabel(vIdx, task.variants.length);
+      lastFeedback = { type: 'ok', title: '✅ ' + curStepLbl + ' zaliczone! (+' + (isWarmStep ? 10 : 15) + ' XP)', msg: cmp.msg + unlockBonusMsg };
       saveState();
       syncProfileToCloud(true);
     } else {
@@ -3348,7 +3997,7 @@ document.addEventListener('click', async function(e) {
         state.completedLemur[lt.id] = true;
         state.xp += 40;
       }
-      lastFeedback = { type: 'ok', title: '🏆 Brawo! Zadanie rekrutacyjne zaliczone (+40 XP)', msg: lCmp.msg };
+      lastFeedback = { type: 'ok', title: '✅ Zadanie zaliczone! (+40 XP)', msg: lCmp.msg };
       saveState();
       syncProfileToCloud(true);
     } else {
@@ -3563,7 +4212,7 @@ if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.
   });
 
   window.addEventListener('load', function() {
-    navigator.serviceWorker.register('./sw.js?v=11', { updateViaCache: 'none' }).then(function(registration) {
+    navigator.serviceWorker.register('./sw.js?v=12', { updateViaCache: 'none' }).then(function(registration) {
       document.addEventListener('visibilitychange', function() {
         if (document.visibilityState === 'visible') {
           registration.update().catch(function() {});
