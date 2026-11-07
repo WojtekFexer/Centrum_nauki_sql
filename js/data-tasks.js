@@ -236,8 +236,8 @@ var PATH_TASKS = [
         "hint": "Użyj AS: length AS duration_min",
         "newFeature": {
           "title": "Słowo kluczowe AS (aliasy)",
-          "desc": "AS pozwala nadać kolumnie własny nagłówek w wyniku zapytania.",
-          "example": "SELECT length AS duration_min FROM film;"
+          "desc": "AS pozwala nadać kolumnie lub obliczeniu własny, czytelny nagłówek w wyniku zapytania.",
+          "example": "SELECT cena * 100 AS grosze FROM produkty;"
         }
       },
       {
@@ -285,8 +285,8 @@ var PATH_TASKS = [
         "hint": "Pomnóż kwotę przez 100: amount * 100 AS amount_cents",
         "newFeature": {
           "title": "Obliczenia arytmetyczne (+, -, *, /)",
-          "desc": "W SELECT możesz wykonywać działania bezpośrednio na kolumnach liczbowych.",
-          "example": "SELECT amount * 100 AS amount_cents FROM payment;"
+          "desc": "W SELECT możesz wykonywać działania bezpośrednio na kolumnach liczbowych i nadać im czytelną nazwę przez AS.",
+          "example": "SELECT cena * 100 AS grosze FROM produkty;"
         }
       },
       {

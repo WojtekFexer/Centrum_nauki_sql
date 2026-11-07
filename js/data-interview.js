@@ -590,7 +590,7 @@ var INTERVIEW_TASKS = [
     gapHint: "Daty w SQL porównujemy w formacie 'YYYY-MM-DD'. Po roku 2021 oznacza hire_date >= '2022-01-01' (lub > '2021-12-31').",
     hint: "Daty w SQL porównujemy w formacie 'YYYY-MM-DD'. Po roku 2021 oznacza hire_date >= '2022-01-01' (lub > '2021-12-31').",
     cols: ['emp_salaries', 'full_name', 'department', 'hire_date', 'salary', 'WHERE', 'ORDER BY'],
-    prompt: "Z tabeli emp_salaries wypisz full_name, department, hire_date oraz salary dla pracowników zatrudnionych od 1 stycznia 2022 roku (hire_date >= '2022-01-01'), których pensja jest wyższa niż 7000. Posortuj po hire_date rosnąco.",
+    prompt: "Z listy pracowników wypisz imię i nazwisko, dział, datę zatrudnienia oraz pensję dla osób zatrudnionych od początku 2022 roku, których wynagrodzenie przekracza 7000. Wynik posortuj chronologicznie rosnąco.",
     sol: "SELECT full_name, department, hire_date, salary FROM emp_salaries WHERE hire_date >= '2022-01-01' AND salary > 7000 ORDER BY hire_date ASC;",
     order: true,
     detectTrap: function(sql) {

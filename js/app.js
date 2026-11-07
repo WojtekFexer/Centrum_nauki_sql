@@ -4,7 +4,7 @@
 /* ==========================================================================
    0. KONFIGURACJA CHMURY SUPABASE (REST API — RANKING I PROFILE TESTERÓW)
    ========================================================================== */
-const APP_VERSION = 'v12';
+const APP_VERSION = 'v12.1';
 const DEFAULT_SUPABASE_URL = 'https://hpfrcykbzuzucglorpkr.supabase.co';
 const DEFAULT_SUPABASE_KEY = 'sb_publishable_5klYjdIKjT35Zl2OtOyGQA_DGxdJCHh';
 
@@ -172,7 +172,39 @@ async function initDatabase() {
       if (statusEl) statusEl.textContent = 'Pobieranie silnika PostgreSQL (PGlite)…';
       var mod = await import('https://cdn.jsdelivr.net/npm/@electric-sql/pglite/dist/index.js');
       var PGlite = mod.PGlite;
-      instance = new PGlite();
+      try {
+        instance = new PGlite();
+        await instance.exec('SELECT 1;');
+      } catch (firstErr) {
+        var errStr = (firstErr && firstErr.message ? firstErr.message : '') + ' ' + String(firstErr);
+        if (/Invalid FS bundle size|ErrnoError|errno/i.test(errStr)) {
+          console.warn('Wykryto uszkodzony cache PGlite WASM/DATA — czyszczę pamięć podręczną i ponawiam inicjalizację…', firstErr);
+          if (instance && typeof instance.close === 'function') {
+            try { await instance.close(); } catch (e) {}
+          }
+          if (typeof window !== 'undefined' && window.caches) {
+            try {
+              var keys = await caches.keys();
+              await Promise.all(keys.map(function(k) { return caches.delete(k); }));
+            } catch (cacheErr) {}
+          }
+          try {
+            var wasmRes = await fetch('https://cdn.jsdelivr.net/npm/@electric-sql/pglite/dist/postgres.wasm', { cache: 'reload' });
+            var dataRes = await fetch('https://cdn.jsdelivr.net/npm/@electric-sql/pglite/dist/postgres.data', { cache: 'reload' });
+            if (wasmRes.ok && dataRes.ok) {
+              var wasmMod = await WebAssembly.compile(await wasmRes.arrayBuffer());
+              var fsBlob = await dataRes.blob();
+              instance = new PGlite({ wasmModule: wasmMod, fsBundle: fsBlob });
+            } else {
+              instance = new PGlite();
+            }
+          } catch (reloadErr) {
+            instance = new PGlite();
+          }
+        } else {
+          throw firstErr;
+        }
+      }
       await instance.exec(PG_DVDRENTAL_DDL);
       if (window.INTERVIEW_SEED_SQL) {
         await instance.exec(window.INTERVIEW_SEED_SQL);
@@ -190,6 +222,13 @@ async function initDatabase() {
       return db;
     } catch (err) {
       console.error('PGlite init error:', err);
+      var outerErrStr = (err && err.message ? err.message : '') + ' ' + String(err);
+      if (/Invalid FS bundle size|ErrnoError|errno/i.test(outerErrStr) && typeof window !== 'undefined' && window.caches) {
+        try {
+          var cKeys = await caches.keys();
+          await Promise.all(cKeys.map(function(k) { return caches.delete(k); }));
+        } catch (ce) {}
+      }
       if (instance && typeof instance.close === 'function') {
         try {
           await instance.close();
@@ -458,7 +497,9 @@ var uiState = {
   onboardingSlideIdx: 0,
   clickedClauses: {},
   selectedClause: null,
-  stepFlashActive: false
+  stepFlashActive: false,
+  syntaxTipOpen: false,
+  editorUndoStack: []
 };
 
 function triggerStepFlash() {
@@ -1023,6 +1064,9 @@ function formatSqlPretty(sql) {
 function insertAtCursor(snippet) {
   var ta = document.getElementById('answer');
   if (!ta) return;
+  if (!Array.isArray(uiState.editorUndoStack)) uiState.editorUndoStack = [];
+  uiState.editorUndoStack.push(ta.value);
+  if (uiState.editorUndoStack.length > 40) uiState.editorUndoStack.shift();
   var start = ta.selectionStart || 0, end = ta.selectionEnd || 0;
   var val = ta.value;
   var pad = (start > 0 && !/[\s(.]/.test(val[start - 1]) && !/^[,);':]/.test(snippet)) ? ' ' : '';
@@ -1304,69 +1348,261 @@ function parseSqlDetails(sol, fallbackTables) {
   };
 }
 
+function extractExprSourceCols(expr) {
+  var e = String(expr || '');
+  var clean = e.replace(/'(?:[^']|'')*'/g, ' ');
+  var ignore = new Set([
+    'SELECT', 'FROM', 'WHERE', 'AS', 'DISTINCT', 'ORDER', 'BY', 'LIMIT', 'OFFSET',
+    'AND', 'OR', 'IN', 'BETWEEN', 'ILIKE', 'LIKE', 'IS', 'NOT', 'NULL', 'JOIN',
+    'INNER', 'LEFT', 'RIGHT', 'FULL', 'CROSS', 'ON', 'GROUP', 'HAVING', 'CASE',
+    'WHEN', 'THEN', 'ELSE', 'END', 'ASC', 'DESC', 'WITH', 'OVER', 'PARTITION',
+    'FILTER', 'EXISTS', 'UNION', 'ALL', 'ROUND', 'COUNT', 'SUM', 'AVG', 'MIN',
+    'MAX', 'COALESCE', 'NULLIF', 'DATE_TRUNC', 'CAST', 'EXTRACT', 'TO_CHAR',
+    'ROW_NUMBER', 'RANK', 'DENSE_RANK', 'LAG', 'LEAD', 'GENERATE_SERIES',
+    'LOWER', 'UPPER', 'TRIM', 'LENGTH', 'INTERVAL', 'NUMERIC', 'INTEGER',
+    'TEXT', 'DATE', 'DAY', 'DAYS', 'MONTH', 'YEAR', 'TRUE', 'FALSE'
+  ]);
+  var cols = [];
+  var re = /\b(?:[a-zA-Z_]\w*\.)?([a-zA-Z_]\w*)\b/g;
+  var m;
+  while ((m = re.exec(clean)) !== null) {
+    var col = m[1];
+    var u = col.toUpperCase();
+    if (!ignore.has(u) && !/^\d/.test(col) && cols.indexOf(col) === -1) {
+      cols.push(col);
+    }
+  }
+  return cols;
+}
+
 function describeSqlExprPl(expr, alias) {
   var e = String(expr || '').trim();
   if (e === '*') return 'wszystkie kolumny tabeli <span class="req-calc-pill">*</span>';
   var u = e.toUpperCase();
+  var srcCols = extractExprSourceCols(e);
+  var srcColsLabel = srcCols.length ? srcCols.join(', ') : 'wierszy';
+
   if (u === 'COUNT(*)') return 'liczba wierszy <span class="req-calc-pill">wyliczenie COUNT(*)</span>';
   if (/^COUNT\s*\(\s*DISTINCT\s+([^)]+)\)/i.test(e)) {
-    var mCd = /^COUNT\s*\(\s*DISTINCT\s+([^)]+)\)/i.exec(e);
-    return 'liczba unikalnych wartości <span class="req-calc-pill">wyliczenie z ' + esc(mCd[1].trim()) + '</span>';
+    return 'liczba unikalnych wartości <span class="req-calc-pill">wyliczenie z: ' + esc(srcColsLabel) + '</span>';
   }
-  if (/^COUNT\s*\(([^)]+)\)\s*FILTER\s*\(\s*WHERE\s+([^)]+)\)/i.test(e)) {
-    var mCf = /^COUNT\s*\(([^)]+)\)\s*FILTER\s*\(\s*WHERE\s+([^)]+)\)/i.exec(e);
-    return 'liczba wierszy spełniających warunek <span class="req-calc-pill">FILTER: ' + esc(mCf[2].trim()) + '</span>';
+  if (/\bCOUNT\b/i.test(e) && /\bFILTER\s*\(\s*WHERE\b/i.test(e)) {
+    return 'liczba wierszy spełniających warunek <span class="req-calc-pill">warunkowe zliczanie FILTER</span>';
   }
   if (/^COUNT\s*\(([^)]+)\)/i.test(e)) {
-    var mC = /^COUNT\s*\(([^)]+)\)/i.exec(e);
-    return 'liczba niepustych wartości <span class="req-calc-pill">wyliczenie z ' + esc(mC[1].trim()) + '</span>';
+    return 'liczba niepustych wartości <span class="req-calc-pill">wyliczenie z: ' + esc(srcColsLabel) + '</span>';
   }
   if (/^ROUND\s*\(\s*AVG\s*\(([^)]+)\)\s*,\s*(\d+)\s*\)/i.test(e)) {
     var mRa = /^ROUND\s*\(\s*AVG\s*\(([^)]+)\)\s*,\s*(\d+)\s*\)/i.exec(e);
-    return 'średnia zaokrąglona do ' + mRa[2] + ' miejsc <span class="req-calc-pill">wyliczenie z ' + esc(mRa[1].trim()) + '</span>';
+    return 'średnia zaokrąglona do ' + mRa[2] + ' miejsc <span class="req-calc-pill">na podstawie: ' + esc(srcColsLabel) + '</span>';
   }
   if (/^ROUND\s*\((.+),\s*(\d+)\s*\)$/i.test(e)) {
     var mR = /^ROUND\s*\((.+),\s*(\d+)\s*\)$/i.exec(e);
-    return 'wartość zaokrąglona do ' + mR[2] + ' miejsc <span class="req-calc-pill">wyliczenie: ' + esc(mR[1].trim()) + '</span>';
+    return 'wartość zaokrąglona do ' + mR[2] + ' miejsc <span class="req-calc-pill">wartość wyliczona na podstawie: ' + esc(srcColsLabel) + '</span>';
   }
   if (/^SUM\s*\(([^)]+)\)/i.test(e)) {
-    var mS = /^SUM\s*\(([^)]+)\)/i.exec(e);
-    return 'suma wartości <span class="req-calc-pill">wyliczenie z ' + esc(mS[1].trim()) + '</span>';
+    return 'suma wartości <span class="req-calc-pill">wyliczenie z: ' + esc(srcColsLabel) + '</span>';
   }
   if (/^AVG\s*\(([^)]+)\)/i.test(e)) {
-    var mA = /^AVG\s*\(([^)]+)\)/i.exec(e);
-    return 'średnia wartość <span class="req-calc-pill">wyliczenie z ' + esc(mA[1].trim()) + '</span>';
+    return 'średnia wartość <span class="req-calc-pill">wyliczenie z: ' + esc(srcColsLabel) + '</span>';
   }
   if (/^MIN\s*\(([^)]+)\)/i.test(e)) {
-    var mMin = /^MIN\s*\(([^)]+)\)/i.exec(e);
-    return 'wartość minimalna <span class="req-calc-pill">wyliczenie z ' + esc(mMin[1].trim()) + '</span>';
+    return 'wartość minimalna <span class="req-calc-pill">wyliczenie z: ' + esc(srcColsLabel) + '</span>';
   }
   if (/^MAX\s*\(([^)]+)\)/i.test(e)) {
-    var mMax = /^MAX\s*\(([^)]+)\)/i.exec(e);
-    return 'wartość maksymalna <span class="req-calc-pill">wyliczenie z ' + esc(mMax[1].trim()) + '</span>';
+    return 'wartość maksymalna <span class="req-calc-pill">wyliczenie z: ' + esc(srcColsLabel) + '</span>';
   }
   if (/\bOVER\s*\(/i.test(e)) {
-    return 'wynik funkcji okna <span class="req-calc-pill">' + esc(e) + '</span>';
+    return 'wynik funkcji okna <span class="req-calc-pill">funkcja okna OVER (...)</span>';
   }
   if (/\bCASE\s+WHEN\b/i.test(e)) {
-    return 'wyrażenie warunkowe <span class="req-calc-pill">CASE WHEN ... END</span>';
+    return 'etykieta warunkowa <span class="req-calc-pill">wyrażenie CASE WHEN</span>';
   }
-  var colRefMatch = /\b([a-zA-Z_]\w*)\b/.exec(e.replace(/\b(ROUND|COALESCE|NULLIF|LOWER|UPPER|TRIM|LENGTH|CAST|DATE_TRUNC|EXTRACT|INTERVAL)\b/gi, ''));
   if (e !== alias) {
-    var colHint = colRefMatch ? ('wyliczenie z ' + colRefMatch[1] + ': ' + e) : ('wyliczenie: ' + e);
+    var colHint = srcCols.length ? ('wartość wyliczona na podstawie: ' + srcCols.join(', ')) : 'wartość wyliczona';
     return 'wartość wyliczona <span class="req-calc-pill">' + esc(colHint) + '</span>';
   }
   return '';
 }
 
 function buildCleanPolecenie(item, details) {
-  var raw = String(item.prompt || item.goal || '').trim();
+  var raw = String((item && (item.goal || item.prompt)) || '').trim();
   raw = raw.replace(/^Rozgrzewka\s+R\d+\s*(\([^)]*\))?\s*:\s*/i, '');
   raw = raw.replace(/^Wyzwanie\s*:\s*/i, '');
   raw = raw.replace(/^Zadanie\s+\d+\s*:\s*/i, '');
   var s = raw.replace(/`([^`]+)`/g, '$1').trim();
-  if (s) return s;
-  return 'Napisz zapytanie SQL realizujące cel zadania.';
+  if (!s) return 'Napisz zapytanie SQL realizujące cel zadania.';
+
+  // 1. Zamiana znanych nawiasów z warunkami SQL na naturalny opis biznesowy po polsku
+  var parenConditionMap = [
+    [/\(\s*hire_date\s*>=\s*'2022-01-01'\s*\)/gi, ''],
+    [/\(\s*tx_status\s*=\s*'approved'\s*\)/gi, 'o statusie zatwierdzonym'],
+    [/\(\s*tx_status\s*=\s*'declined'\s*\)/gi, 'o statusie odrzuconym'],
+    [/\(\s*event_type\s*=\s*'login'\s*\)/gi, 'logowania'],
+    [/\(\s*event_type\s*=\s*'purchase'\s*\)/gi, 'zakupu'],
+    [/\(\s*event_type\s*=\s*'signup'\s*\)/gi, 'rejestracji'],
+    [/\(\s*active\s*=\s*1\s*\)/gi, 'aktywnych'],
+    [/\(\s*active\s*=\s*0\s*\)/gi, 'nieaktywnych'],
+    [/\(\s*return_date\s+IS\s+NULL\s*\)/gi, 'jeszcze niezwróconych'],
+    [/\(\s*return_date\s+IS\s+NOT\s+NULL\s*\)/gi, 'już zwróconych'],
+    [/\(\s*manager_id\s+IS\s+NULL\s*\)/gi, 'bez przypisanego przełożonego'],
+    [/\(\s*manager_id\s+IS\s+NOT\s+NULL\s*\)/gi, 'posiadających przełożonego'],
+    [/\(\s*left_date\s+IS\s+NULL\s*\)/gi, 'nadal pracujących w firmie'],
+    [/\(\s*left_date\s+IS\s+NOT\s+NULL\s*\)/gi, 'którzy odeszli z firmy']
+  ];
+  for (var pi = 0; pi < parenConditionMap.length; pi++) {
+    s = s.replace(parenConditionMap[pi][0], parenConditionMap[pi][1]);
+  }
+
+  // 2. Usunięcie nawiasów z podpowiedziami technicznymi, wzorami lub warunkami SQL (wieloprzebiegowo dla zagnieżdżonych nawiasów)
+  for (var pass = 0; pass < 3; pass++) {
+    s = s.replace(/\s*\(([^()]*)\)/g, function(full, inner) {
+      var t = inner.trim();
+      if (!t) return '';
+      if (/^[a-zA-Z0-9_]+(?:\s*,\s*[a-zA-Z0-9_]+)*$/.test(t) && (ALL_SCHEMA_COLS.has(t.toLowerCase()) || /_/.test(t))) {
+        return '';
+      }
+      if (/[=<>!*+\/]|::|\b(?:SELECT|FROM|WHERE|JOIN|GROUP\s+BY|HAVING|ORDER\s+BY|LIMIT|OFFSET|OVER|PARTITION|ROUND|COUNT|SUM|AVG|MIN|MAX|COALESCE|NULLIF|FILTER|CASE|WHEN|DISTINCT|ILIKE|LIKE|BETWEEN|IS\s+NULL|IS\s+NOT\s+NULL|ASC|DESC|AS|IN|EXTRACT|EPOCH)\b/i.test(t)) {
+        return '';
+      }
+      if (/[a-zA-Z0-9]+_[a-zA-Z0-9]+/.test(t)) {
+        return '';
+      }
+      return full;
+    });
+  }
+  s = s.replace(/\s*=\s*(?:ROUND|SUM|COUNT|AVG|MIN|MAX|COALESCE|CASE|ROW_NUMBER|RANK|DENSE_RANK|LAG|LEAD|EXTRACT|DATE_TRUNC)\b[^.]*/gi, '');
+
+  // 3. Usunięcie fraz z aliasami technicznymi ("jako cost_diff", "pod nazwą cichy_klient", "AS duration_min")
+  s = s.replace(/\s+(?:jako|pod\s+aliasem|pod\s+nazwą|z\s+aliasem|aliasem|o\s+nazwie)\s+[a-zA-Z_]\w*/gi, '');
+  s = s.replace(/\s+\bAS\s+[a-zA-Z_]\w*/g, '');
+
+  // 4. Zamiana nazw tabel na naturalne określenia biznesowe
+  var tablePhraseReplacements = [
+    [/\b[Zz]\s+tabeli\s+emp_salaries\b/g, 'Z listy pracowników'],
+    [/\b[Ww]\s+tabeli\s+emp_salaries\b/g, 'Na liście pracowników'],
+    [/\btabel[ięą]\s+emp_salaries\b/gi, 'listę pracowników'],
+    [/\bemp_salaries\b/g, 'pracowników'],
+    [/\b[Zz]\s+tabeli\s+dept_budgets\b/g, 'Z budżetów działów'],
+    [/\bdept_budgets\b/g, 'budżetów działów'],
+    [/\b[Zz]\s+tabeli\s+saas_users\b/g, 'Z bazy użytkowników SaaS'],
+    [/\bsaas_users\b/g, 'użytkowników SaaS'],
+    [/\b[Zz]\s+tabeli\s+app_transactions\b/g, 'Z historii transakcji'],
+    [/\bapp_transactions\b/g, 'transakcji'],
+    [/\b[Zz]\s+tabeli\s+user_events\b/g, 'Z dziennika zdarzeń użytkowników'],
+    [/\buser_events\b/g, 'zdarzeń użytkowników'],
+    [/\b[Zz]\s+tabeli\s+product_orders\b/g, 'Z rejestru zamówień produktów'],
+    [/\bproduct_orders\b/g, 'zamówień produktów'],
+    [/\b[Zz]\s+tabeli\s+film_category\b/g, 'Z przypisań filmów do kategorii'],
+    [/\bfilm_category\b/g, 'przypisań kategorii filmów'],
+    [/\b[Zz]\s+tabeli\s+film_actor\b/g, 'Z obsady filmowej'],
+    [/\bfilm_actor\b/g, 'obsady filmowej'],
+    [/\b[Zz]\s+tabeli\s+film\b/g, 'Z katalogu filmów'],
+    [/\b[Ww]\s+tabeli\s+film\b/g, 'W katalogu filmów'],
+    [/\b[Zz]\s+tabeli\s+customer\b/g, 'Z bazy klientów'],
+    [/\b[Ww]\s+tabeli\s+customer\b/g, 'W bazie klientów'],
+    [/\b[Zz]\s+tabeli\s+rental\b/g, 'Z historii wypożyczeń'],
+    [/\b[Ww]\s+tabeli\s+rental\b/g, 'W historii wypożyczeń'],
+    [/\b[Zz]\s+tabeli\s+payment\b/g, 'Z rejestru płatności'],
+    [/\b[Ww]\s+tabeli\s+payment\b/g, 'W rejestrze płatności'],
+    [/\b[Zz]\s+tabeli\s+staff\b/g, 'Z listy personelu'],
+    [/\b[Zz]\s+tabeli\s+store\b/g, 'Z listy oddziałów wypożyczalni'],
+    [/\b[Zz]\s+tabeli\s+actor\b/g, 'Z bazy aktorów'],
+    [/\b[Zz]\s+tabeli\s+category\b/g, 'Z listy kategorii filmowych'],
+    [/\bPołącz\s+customer\s+z\s+rental\b/gi, 'Połącz dane klientów z historią wypożyczeń'],
+    [/\bPołącz\s+customer\s+z\s+payment\b/gi, 'Połącz dane klientów z rejestrem płatności'],
+    [/\bPołącz\s+film\s+z\s+film_category\b/gi, 'Połącz katalog filmów z przypisaniami kategorii'],
+    [/\bPołącz\s+film\s+z\s+film_actor\b/gi, 'Połącz katalog filmów z obsadą aktorską'],
+    [/\bPołącz\s+rental\s+z\s+customer\b/gi, 'Połącz historię wypożyczeń z bazą klientów'],
+    [/\bPołącz\s+payment\s+z\s+customer\b/gi, 'Połącz rejestr płatności z bazą klientów'],
+    [/\bPołącz\s+payment\s+z\s+staff\b/gi, 'Połącz rejestr płatności z listą personelu'],
+    [/\bPołącz\s+rental\s+z\s+staff\b/gi, 'Połącz historię wypożyczeń z listą personelu']
+  ];
+  for (var ti = 0; ti < tablePhraseReplacements.length; ti++) {
+    s = s.replace(tablePhraseReplacements[ti][0], tablePhraseReplacements[ti][1]);
+  }
+
+  // 5. Zamiana technicznych nazw kolumn na naturalny język biznesowy (bez duplikowania poprzedzających polskich słów)
+  var colBusinessMap = [
+    [/(?:imię\s+i\s+nazwisko\s+)?\bfull_name\b/gi, 'imię i nazwisko'],
+    [/(?:identyfikator\s+pracownika\s+|ID\s+pracownika\s+)?\bemp_id\b/gi, 'identyfikator pracownika'],
+    [/(?:identyfikator\s+przełożonego\s+|ID\s+przełożonego\s+|ID\s+menedżera\s+)?\bmanager_id\b/gi, 'identyfikator przełożonego'],
+    [/(?:dział\s+|departament\s+)?\bdepartment\b/gi, 'dział'],
+    [/(?:stanowisko\s+)?\bjob_title\b/gi, 'stanowisko'],
+    [/(?:dat[ęa]\s+zatrudnienia\s+)?\bhire_date\b/gi, 'datę zatrudnienia'],
+    [/(?:dat[ęa]\s+odejścia\s+)?\bleft_date\b/gi, 'datę odejścia'],
+    [/(?:pensj[ęa]\s+|wynagrodzenie\s+)?\bsalary\b/gi, 'pensję'],
+    [/(?:ocen[ęa]\s+roczn[ąa]\s+)?\bperf_score\b/gi, 'ocenę roczną'],
+    [/(?:roczny\s+budżet\s+|budżet\s+)?\bannual_budget\b/gi, 'roczny budżet'],
+    [/(?:docelow[ąa]\s+liczb[ęa]\s+etatów\s+|limit\s+etatów\s+)?\bheadcount_target\b/gi, 'docelową liczbę etatów'],
+    [/(?:identyfikator\s+użytkownika\s+|ID\s+użytkownika\s+)?\buser_id\b/gi, 'identyfikator użytkownika'],
+    [/(?:dat[ęa]\s+rejestracji\s+)?\bsignup_date\b/gi, 'datę rejestracji'],
+    [/(?:plan\s+subskrypcji\s+|plan\s+)?\bplan_tier\b/gi, 'plan subskrypcji'],
+    [/(?:opłat[ęa]\s+miesięczn[ąa]\s+|abonament\s+miesięczny\s+)?\bmonthly_fee\b/gi, 'opłatę miesięczną'],
+    [/(?:kraj\s+)?\bcountry\b/gi, 'kraj'],
+    [/(?:kanał\s+pozyskania\s+)?\bacq_channel\b/gi, 'kanał pozyskania'],
+    [/(?:identyfikator\s+transakcji\s+|ID\s+transakcji\s+)?\btx_id\b/gi, 'identyfikator transakcji'],
+    [/(?:identyfikator\s+konta\s+|ID\s+konta\s+)?\baccount_id\b/gi, 'identyfikator konta'],
+    [/(?:kategori[ęa]\s+sprzedawcy\s+)?\bmerchant_category\b/gi, 'kategorię sprzedawcy'],
+    [/(?:status\s+transakcji\s+)?\btx_status\b/gi, 'status transakcji'],
+    [/(?:dat[ęa]\s+transakcji\s+)?\btx_date\b/gi, 'datę transakcji'],
+    [/(?:identyfikator\s+zdarzenia\s+|ID\s+zdarzenia\s+)?\bevent_id\b/gi, 'identyfikator zdarzenia'],
+    [/(?:typ\s+zdarzenia\s+)?\bevent_type\b/gi, 'typ zdarzenia'],
+    [/(?:dat[ęa]\s+zdarzenia\s+)?\bevent_date\b/gi, 'datę zdarzenia'],
+    [/(?:czas\s+sesji\s+)?\bsession_sec\b/gi, 'czas trwania sesji'],
+    [/(?:identyfikator\s+zamówienia\s+|ID\s+zamówienia\s+)?\border_id\b/gi, 'identyfikator zamówienia'],
+    [/(?:nazw[ęa]\s+produktu\s+|produkt\s+)?\bproduct_name\b/gi, 'nazwę produktu'],
+    [/(?:liczb[ęa]\s+sztuk\s+|ilość\s+)?\bqty\b/gi, 'liczbę sztuk'],
+    [/(?:cen[ęa]\s+jednostkow[ąa]\s+)?\bunit_price\b/gi, 'cenę jednostkową'],
+    [/(?:dat[ęa]\s+zamówienia\s+)?\border_date\b/gi, 'datę zamówienia'],
+    [/(?:identyfikator\s+filmu\s+|ID\s+filmu\s+)?\bfilm_id\b/gi, 'identyfikator filmu'],
+    [/(?:tytuł\s+filmu\s+|tytuł\s+)?\btitle\b/gi, 'tytuł filmu'],
+    [/(?:kategori[ęa]\s+wiekow[ąa]\s+|klasyfikacj[ęa]\s+wiekow[ąa]\s+|rating\s+)?\brating\b/gi, 'kategorię wiekową'],
+    [/(?:cen[ęa]\s+wypożyczenia\s+|stawk[ęa]\s+wypożyczenia\s+|cen[ęa]\s+najmu\s+|stawk[ęa]\s+)?\brental_rate\b/gi, 'cenę wypożyczenia'],
+    [/(?:czas\s+trwania\s+|długość\s+filmu\s+|długość\s+)?\blength\b/gi, 'czas trwania filmu'],
+    [/(?:rok\s+produkcji\s+|rok\s+wydania\s+)?\brelease_year\b/gi, 'rok wydania'],
+    [/(?:koszt\s+odtworzenia\s+|koszt\s+wymiany\s+)?\breplacement_cost\b/gi, 'koszt wymiany'],
+    [/(?:okres\s+wypożyczenia\s+|czas\s+najmu\s+)?\brental_duration\b/gi, 'domyślny okres wypożyczenia'],
+    [/(?:identyfikator\s+klienta\s+|ID\s+klienta\s+)?\bcustomer_id\b/gi, 'identyfikator klienta'],
+    [/(?:identyfikator\s+aktora\s+|ID\s+aktora\s+)?\bactor_id\b/gi, 'identyfikator aktora'],
+    [/(?:identyfikator\s+kategorii\s+|ID\s+kategorii\s+)?\bcategory_id\b/gi, 'identyfikator kategorii'],
+    [/(?:identyfikator\s+wypożyczenia\s+|ID\s+wypożyczenia\s+)?\brental_id\b/gi, 'identyfikator wypożyczenia'],
+    [/(?:identyfikator\s+płatności\s+|ID\s+płatności\s+)?\bpayment_id\b/gi, 'identyfikator płatności'],
+    [/(?:identyfikator\s+pracownika\s+|ID\s+pracownika\s+|ID\s+personelu\s+)?\bstaff_id\b/gi, 'identyfikator pracownika'],
+    [/(?:identyfikator\s+sklepu\s+|ID\s+sklepu\s+|ID\s+oddziału\s+|oddział\s+)?\bstore_id\b/gi, 'identyfikator oddziału'],
+    [/(?:imię\s+)?\bfirst_name\b/gi, 'imię'],
+    [/(?:nazwisko\s+)?\blast_name\b/gi, 'nazwisko'],
+    [/(?:adres\s+e-mail\s+|e-mail\s+|email\s+)?\bemail\b/gi, 'adres e-mail'],
+    [/(?:status\s+aktywności\s+)?\bactive\b/gi, 'status aktywności'],
+    [/(?:dat[ęa]\s+utworzenia\s+konta\s+|dat[ęa]\s+rejestracji\s+)?\bcreate_date\b/gi, 'datę rejestracji klienta'],
+    [/(?:dat[ęa]\s+wypożyczenia\s+)?\brental_date\b/gi, 'datę wypożyczenia'],
+    [/(?:dat[ęa]\s+zwrotu\s+)?\breturn_date\b/gi, 'datę zwrotu'],
+    [/(?:kwot[ęa]\s+płatności\s+|kwot[ęa]\s+)?\bamount\b/gi, 'kwotę płatności'],
+    [/(?:dat[ęa]\s+płatności\s+)?\bpayment_date\b/gi, 'datę płatności'],
+    [/(?:miasto\s+)?\bcity\b/gi, 'miasto'],
+    [/(?:nazw[ęa]\s+kategorii\s+|nazw[ęa]\s+)?\bname\b/gi, 'nazwę']
+  ];
+  for (var ci = 0; ci < colBusinessMap.length; ci++) {
+    s = s.replace(colBusinessMap[ci][0], colBusinessMap[ci][1]);
+  }
+
+  // 6. Uporządkowanie zdań o sortowaniu na końcu, aby nie zawierały technicznych nazw ani podkreślników
+  s = s.replace(/Posortuj\s+wynik[i]?\s+(?:malejąco|rosnąco)\s+po\s+[^.]+?\./gi, function(m) {
+    return /malejąco/i.test(m) ? 'Wynik posortuj malejąco.' : 'Wynik posortuj rosnąco.';
+  });
+  s = s.replace(/Posortuj\s+(?:od\s+najwyższej\s+[^.]+|od\s+największej\s+[^.]+|malejąco\s+po\s+[^.]+|po\s+[^.]+\s+malejąco)\./gi, 'Wynik posortuj od najwyższej wartości.');
+  s = s.replace(/Posortuj\s+(?:od\s+najniższej\s+[^.]+|rosnąco\s+po\s+[^.]+|po\s+[^.]+\s+rosnąco)\./gi, 'Wynik posortuj rosnąco.');
+  s = s.replace(/Posortuj\s+po\s+[a-zA-Z_]\w*(?:\s*,\s*[a-zA-Z_]\w*)*\./gi, 'Wynik posortuj zgodnie ze specyfikacją.');
+
+  // 7. Ostateczne oczyszczenie pozostałych identyfikatorów z podkreślnikiem (np. total_spent, q1_rev -> odpowiedniego pola)
+  s = s.replace(/\b[a-zA-Z0-9]+_[a-zA-Z0-9_]+\b/g, 'odpowiedniego pola');
+
+  // Kosmetyka spacji i wielkiej litery na początku
+  s = s.replace(/\s{2,}/g, ' ').replace(/\s+([,.;:?!])/g, '$1').trim();
+  if (s.length > 0) {
+    s = s.charAt(0).toUpperCase() + s.slice(1);
+  }
+  return s;
 }
 
 function buildQuerySkeleton(solSql) {
@@ -1445,16 +1681,20 @@ function buildDataLemurSpec(item, parentTask) {
         var isSimpleRename = /^[a-zA-Z_]\w*(?:\.[a-zA-Z_]\w*)?$/.test(c.expr);
         var sourceDesc = '';
         if (isSimpleRename) {
-          sourceDesc = 'kolumna <code>' + esc(c.expr) + '</code> <span class="req-calc-pill">wyliczenie z ' + esc(c.expr) + '</span>';
+          sourceDesc = 'kolumna <code>' + esc(c.expr) + '</code> <span class="req-calc-pill">wyliczenie z: ' + esc(c.expr) + '</span>';
         } else {
           var descPl = describeSqlExprPl(c.expr, c.name);
-          sourceDesc = descPl || ('wyrażenie <span class="req-calc-pill">wyliczenie: ' + esc(c.expr) + '</span>');
+          var exprCols = extractExprSourceCols(c.expr);
+          sourceDesc = descPl || ('wartość wyliczona <span class="req-calc-pill">wartość wyliczona na podstawie: ' + esc(exprCols.join(', ') || 'kolumn tabeli') + '</span>');
         }
         return '<li><span class="req-col-row">' + sourceDesc + ' <span class="sql-as-badge">AS</span> <code>' + esc(c.name) + '</code></span></li>';
       }).join('') +
       '</ul>';
     if (hasAnyAlias) {
-      colsHtml += '<div class="dl-alias-tip">💡 <strong>Wskazówka:</strong> Pamiętaj o użyciu zapisu <code>' + highlightSQL('kolumna AS nowa_nazwa') + '</code>.</div>';
+      colsHtml += '<div class="mini-syntax-tip-wrap">' +
+        '<button type="button" class="mini-syntax-tip-btn" data-act="toggleSyntaxTip">💡 Pokaż ogólną wskazówkę składni</button>' +
+        '__SYNTAX_TIP_BODY__' +
+      '</div>';
     }
     assumptions.push(colsHtml);
   }
@@ -1530,11 +1770,17 @@ function renderTaskSpecBox(item, parentTask) {
   var polecenieTxt = item.polecenie || item.prompt || '';
   var assumptionsList = Array.isArray(item.assumptions) ? item.assumptions : [];
 
+  var tipBodyHtml = uiState.syntaxTipOpen
+    ? '<div class="dl-alias-tip" style="margin-top:6px">💡 <strong>Ogólna wskazówka składni:</strong> Aby nadać kolumnie lub obliczeniu nową nazwę w wyniku, użyj zapisu <code>' + highlightSQL('SELECT cena * 100 AS grosze FROM produkty;') + '</code>.</div>'
+    : '';
+
   var assumptionsHtml = assumptionsList.length
     ? '<div class="dl-assumptions-box">' +
         '<div class="dl-sec-hdr">📋 Wymagania i założenia:</div>' +
         '<ul class="dl-assumptions-list">' +
-          assumptionsList.map(function(a) { return '<li>' + a + '</li>'; }).join('') +
+          assumptionsList.map(function(a) {
+            return '<li>' + String(a).replace('__SYNTAX_TIP_BODY__', tipBodyHtml) + '</li>';
+          }).join('') +
         '</ul>' +
       '</div>'
     : '';
@@ -1665,24 +1911,60 @@ var ALL_CHEAT_CLAUSES = [
   }
 ];
 
+function buildNeutralTeachExample(nf, solSql) {
+  var title = String((nf && nf.title) || '');
+  var ex = String((nf && nf.example) || '');
+  var combined = title + ' ' + ex + ' ' + String(solSql || '');
+  if (/\bDENSE_RANK\b/i.test(combined)) return 'SELECT nazwa, DENSE_RANK() OVER (ORDER BY punkty DESC) AS miejsce FROM gracze;';
+  if (/\bROW_NUMBER\b/i.test(combined)) return 'SELECT nazwa, ROW_NUMBER() OVER (PARTITION BY kategoria ORDER BY cena DESC) AS nr FROM produkty;';
+  if (/\bLAG\b|\bLEAD\b/i.test(combined)) return 'SELECT dzien, przychod, LAG(przychod) OVER (ORDER BY dzien) AS poprzedni_dzien FROM sprzedaz;';
+  if (/\bOVER\s*\(/i.test(combined)) return 'SELECT dzial, pensja, ROUND(AVG(pensja) OVER (PARTITION BY dzial), 2) AS srednia_dzialu FROM kadry;';
+  if (/\bWITH\b/i.test(combined)) return 'WITH podsumowanie AS (\n  SELECT klient_id, SUM(kwota) AS suma FROM zamowienia GROUP BY klient_id\n)\nSELECT * FROM podsumowanie WHERE suma > 100;';
+  if (/\bFILTER\s*\(\s*WHERE\b/i.test(combined)) return "SELECT COUNT(*) FILTER (WHERE status = 'oplacone') AS oplacone_cnt FROM faktury;";
+  if (/\bCASE\s+WHEN\b/i.test(combined)) return "SELECT cena, CASE WHEN cena >= 50 THEN 'wysoka' ELSE 'standardowa' END AS segment FROM produkty;";
+  if (/\bCOALESCE\b/i.test(combined)) return "SELECT id, COALESCE(telefon, 'brak numeru') AS kontakt FROM klienci;";
+  if (/\bNULLIF\b/i.test(combined)) return 'SELECT przychod / NULLIF(liczba_sztuk, 0) AS srednia_cena FROM raport;';
+  if (/\bLEFT\s+(?:OUTER\s+)?JOIN\b/i.test(combined)) return 'SELECT k.nazwa, z.id AS zamowienie_id FROM klienci k LEFT JOIN zamowienia z ON k.id = z.klient_id;';
+  if (/\bJOIN\b/i.test(combined)) return 'SELECT p.nazwa, k.nazwa_kategorii FROM produkty p JOIN kategorie k ON p.kategoria_id = k.id;';
+  if (/\bHAVING\b/i.test(combined)) return 'SELECT kategoria, COUNT(*) AS liczba FROM produkty GROUP BY kategoria HAVING COUNT(*) > 5;';
+  if (/\bGROUP\s+BY\b/i.test(combined)) return 'SELECT kategoria, COUNT(*) AS liczba FROM produkty GROUP BY kategoria;';
+  if (/\bROUND\b/i.test(combined)) return 'SELECT nazwa, ROUND(cena * 0.85, 2) AS cena_po_rabacie FROM produkty;';
+  if (/\bCOUNT\s*\(\s*DISTINCT\b/i.test(combined)) return 'SELECT COUNT(DISTINCT kategoria) AS unikalne_kategorie FROM produkty;';
+  if (/\bDISTINCT\b/i.test(combined)) return 'SELECT DISTINCT miasto FROM oddzialy;';
+  if (/\bILIKE\b|\bLIKE\b/i.test(combined)) return "SELECT nazwa FROM produkty WHERE nazwa ILIKE 'pro%';";
+  if (/\bBETWEEN\b/i.test(combined)) return 'SELECT nazwa, cena FROM produkty WHERE cena BETWEEN 10 AND 50;';
+  if (/\bIN\s*\(/i.test(combined)) return "SELECT nazwa, kategoria FROM produkty WHERE kategoria IN ('A', 'B');";
+  if (/\bIS\s+(?:NOT\s+)?NULL\b/i.test(combined)) return 'SELECT id, data_wysylki FROM paczki WHERE data_wysylki IS NULL;';
+  if (/\bORDER\s+BY\b/i.test(combined)) return 'SELECT nazwa, cena FROM produkty ORDER BY cena DESC LIMIT 5;';
+  if (/\bWHERE\b/i.test(combined)) return 'SELECT nazwa, cena FROM produkty WHERE cena > 20;';
+  if (/[*+\/-]/.test(combined) || /\bAS\b/i.test(combined)) return 'SELECT cena * 100 AS grosze FROM produkty;';
+  return 'SELECT kolumna1, kolumna2 FROM przykladowa_tabela;';
+}
+
 function renderTeachFirstBox(newFeature, task, variant) {
   var nf = newFeature;
   var sol = String((variant && variant.sol) || '');
-  // Dla AS w 1.1/1.2 dopilnuj prostego i czytelnego wyjaśnienia (nawet jeśli zadanie z AS nie miało obiektu newFeature)
+  // Dla AS w 1.1/1.2 dopilnuj prostego i czytelnego wyjaśnienia na neutralnym przykładzie (bez zdradzania kolumn zadania)
   if (task && (task.id === 'p1_1' || task.id === 'p1_2') && /\bAS\b/i.test(sol)) {
     if (!nf || /\bAS\b/i.test(nf.title)) {
       nf = {
         title: (nf && nf.title) ? nf.title : 'Zmiana nazwy kolumny: AS (alias)',
-        desc: 'Słowo kluczowe AS nadaje kolumnie nową, czytelną nazwę w nagłówku wyniku raportu (np. length AS duration_min zmienia techniczny nagłówek length na czytelne duration_min).',
-        example: (nf && nf.example) ? nf.example : 'SELECT title, length AS duration_min FROM film;'
+        desc: 'Słowo kluczowe AS nadaje kolumnie lub obliczeniu nową, czytelną nazwę w nagłówku wyniku raportu (np. cena * 100 AS grosze).',
+        example: 'SELECT cena * 100 AS grosze FROM produkty;'
       };
     }
   }
   if (!nf) return '';
+  var safeDesc = String(nf.desc || '')
+    .replace(/replacement_cost\s*-\s*rental_rate/gi, 'cena_brutto - rabat')
+    .replace(/rental_rate\s*\*\s*\d+/gi, 'cena * 100')
+    .replace(/amount\s*\*\s*\d+/gi, 'cena * 100')
+    .replace(/length\s+AS\s+duration_min/gi, 'cena * 100 AS grosze');
+  var neutralExample = buildNeutralTeachExample(nf, sol);
   return '<div class="teach-first-box">' +
     '<div class="teach-first-hdr">🆕 Nowy element w tym zadaniu: <strong>' + esc(nf.title) + '</strong></div>' +
-    '<p class="teach-first-desc">' + formatPrompt(nf.desc) + '</p>' +
-    (nf.example ? '<div class="teach-first-code"><code>' + highlightSQL(nf.example) + '</code></div>' : '') +
+    '<p class="teach-first-desc">' + formatPrompt(safeDesc) + '</p>' +
+    (neutralExample ? '<div class="teach-first-code"><code>' + highlightSQL(neutralExample) + '</code></div>' : '') +
   '</div>';
 }
 
@@ -1875,7 +2157,13 @@ function renderQuickBar(task, variant) {
   });
 
   return '<div class="sql-quick-bar-wrap">' +
-    '<div class="quick-bar-label"><span>⚡ <strong>Quick-Bar:</strong> kliknij, by wstawić do zapytania</span></div>' +
+    '<div class="quick-bar-label">' +
+      '<span>⚡ <strong>Quick-Bar:</strong> kliknij, by wstawić do zapytania</span>' +
+      '<div class="quick-bar-actions">' +
+        '<button type="button" class="qb-act-btn" data-act="undoToken" title="Cofnij ostatnio wstawiony klocek lub słowo">⌫ Cofnij</button>' +
+        '<button type="button" class="qb-act-btn qb-clear-btn" data-act="clearEd" title="Wyczyść całe zapytanie">🧹 Wyczyść</button>' +
+      '</div>' +
+    '</div>' +
     '<div class="sql-quick-bar">' +
       buttons.map(function(b) {
         return '<button type="button" class="' + b.cls + '" data-insert-sql="' + esc(b.sql) + '" title="' + esc(b.title) + '">' + esc(b.label) + '</button>';
@@ -2729,7 +3017,7 @@ function renderDiagTab() {
     '<h2 class="task-page-title">' + esc(q.title) + '</h2>' +
     renderTaskSpecBox(q, null) +
     buildTaskSchemaBox(q.tables, q.sol) +
-    renderEditorWidget(null, 'submitDiag') +
+    renderEditorWidget(null, 'submitDiag', q, null) +
     renderExampleOutputBox(q.sol) +
     renderHintStepperBox(q, null) +
     '<div class="acts" style="margin-top:12px;border-top:1px solid var(--line);padding-top:12px;justify-content:space-between">' +
@@ -2817,7 +3105,7 @@ function renderLemurTab() {
       '<h2 class="task-page-title">' + (isSolved ? '✅ ' : '') + esc(task.title) + '</h2>' +
       renderTaskSpecBox(task, null) +
       buildTaskSchemaBox(task.tables, task.sol) +
-      renderEditorWidget(task.cols, 'checkLemurTask') +
+      renderEditorWidget(task.cols, 'checkLemurTask', task, null) +
       renderExampleOutputBox(task.sol) +
       renderHintStepperBox(task, null) +
       '<div class="acts" style="margin-top:12px;border-top:1px solid var(--line);padding-top:10px">' +
@@ -3314,12 +3602,39 @@ document.addEventListener('click', async function(e) {
     uiState.hintStep = ((uiState.hintStep || 0) + 1) % 4;
     render();
   }
+  else if (act === 'toggleSyntaxTip') {
+    uiState.syntaxTipOpen = !uiState.syntaxTipOpen;
+    render();
+  }
+  else if (act === 'undoToken') {
+    var taUndo = document.getElementById('answer');
+    var curCode = taUndo ? taUndo.value : (state.editorCode || '');
+    if (Array.isArray(uiState.editorUndoStack) && uiState.editorUndoStack.length > 0) {
+      state.editorCode = uiState.editorUndoStack.pop();
+    } else if (curCode) {
+      state.editorCode = curCode.replace(/\s*\S+\s*$/, '');
+    }
+    if (taUndo) {
+      taUndo.value = state.editorCode;
+      var endPos = state.editorCode.length;
+      taUndo.focus();
+      taUndo.setSelectionRange(endPos, endPos);
+    }
+    if (lastExecResult && lastExecResult.errorLine) lastExecResult.errorLine = 0;
+    sqlUpdate();
+    saveState();
+  }
   else if (act === 'clearEd') {
+    if (state.editorCode) {
+      if (!Array.isArray(uiState.editorUndoStack)) uiState.editorUndoStack = [];
+      uiState.editorUndoStack.push(state.editorCode);
+    }
     state.editorCode = '';
     lastExecResult = null;
     lastExpectedResult = null;
     lastFeedback = null;
     lastChecklist = null;
+    saveState();
     render();
   }
   else if (act === 'runOnly') {
@@ -4118,7 +4433,7 @@ if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.
   });
 
   window.addEventListener('load', function() {
-    navigator.serviceWorker.register('./sw.js?v=12', { updateViaCache: 'none' }).then(function(registration) {
+    navigator.serviceWorker.register('./sw.js?v=12.1', { updateViaCache: 'none' }).then(function(registration) {
       document.addEventListener('visibilitychange', function() {
         if (document.visibilityState === 'visible') {
           registration.update().catch(function() {});

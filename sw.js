@@ -1,13 +1,13 @@
-const CACHE_VERSION = 'sql-master-v12';
+const CACHE_VERSION = 'sql-master-v12-1';
 var CACHE_NAME = CACHE_VERSION;
 var LOCAL_ASSETS = [
   './',
   './index.html',
-  './css/style.css?v=12',
-  './js/data-dvdrental.js?v=12',
-  './js/data-tasks.js?v=12',
-  './js/data-interview.js?v=12',
-  './js/app.js?v=12',
+  './css/style.css?v=12.1',
+  './js/data-dvdrental.js?v=12.1',
+  './js/data-tasks.js?v=12.1',
+  './js/data-interview.js?v=12.1',
+  './js/app.js?v=12.1',
   './manifest.json',
   './icon.svg'
 ];
@@ -59,15 +59,53 @@ self.addEventListener('fetch', function(event) {
 
   // 1. Cache-First dla ciężkich plików WASM (@electric-sql/pglite) oraz czcionek z CDN
   if (isWasmOrPglite || (!isSameOrigin && isCdnCacheable)) {
+    var isDataFile = /\.data(\?|$)/i.test(url.pathname);
     event.respondWith(
       caches.match(req).then(function(cached) {
-        if (cached) return cached;
-        return fetch(req).then(function(networkRes) {
-          if (networkRes && (networkRes.status === 200 || networkRes.type === 'opaque')) {
-            var clone = networkRes.clone();
-            caches.open(CACHE_VERSION).then(function(cache) {
-              cache.put(req, clone);
+        if (cached) {
+          if (isDataFile) {
+            var cl = parseInt(cached.headers.get('content-length') || '0', 10);
+            if (cl > 0 && cl < 5000000) {
+              caches.open(CACHE_VERSION).then(function(c) { c.delete(req); });
+              return fetch(req, { cache: 'reload' });
+            }
+            return cached.clone().arrayBuffer().then(function(buf) {
+              if (!buf || buf.byteLength < 5000000) {
+                caches.open(CACHE_VERSION).then(function(c) { c.delete(req); });
+                return fetch(req, { cache: 'reload' });
+              }
+              return cached;
+            }).catch(function() {
+              return fetch(req, { cache: 'reload' });
             });
+          }
+          return cached;
+        }
+        return fetch(req, isDataFile ? { cache: 'reload' } : undefined).then(function(networkRes) {
+          if (networkRes && networkRes.ok && networkRes.status === 200) {
+            if (isDataFile) {
+              var clNet = parseInt(networkRes.headers.get('content-length') || '0', 10);
+              if (clNet > 0 && clNet < 5000000) {
+                return networkRes;
+              }
+              var checkClone = networkRes.clone();
+              checkClone.arrayBuffer().then(function(buf) {
+                if (buf && buf.byteLength >= 5000000) {
+                  caches.open(CACHE_VERSION).then(function(cache) {
+                    cache.put(req, new Response(buf, {
+                      status: networkRes.status,
+                      statusText: networkRes.statusText,
+                      headers: networkRes.headers
+                    }));
+                  });
+                }
+              }).catch(function() {});
+            } else {
+              var clone = networkRes.clone();
+              caches.open(CACHE_VERSION).then(function(cache) {
+                cache.put(req, clone);
+              });
+            }
           }
           return networkRes;
         });

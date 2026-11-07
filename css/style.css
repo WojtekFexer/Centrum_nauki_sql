@@ -1683,4 +1683,78 @@ tr.lb-me td { background: var(--done-soft); color: var(--ink); }
   word-break: break-word;
 }
 
+/* v12.1: Przyciski Cofnij i Wyczyść w Quick-Barze oraz zwijana wskazówka składni */
+.quick-bar-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.qb-act-btn {
+  appearance: none;
+  background: rgba(56, 189, 248, 0.12);
+  border: 1px solid rgba(56, 189, 248, 0.4);
+  color: #e2e8f0;
+  font-family: var(--sans, sans-serif);
+  font-size: 11.5px;
+  font-weight: 700;
+  padding: 3px 9px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+.qb-act-btn:hover {
+  background: rgba(56, 189, 248, 0.22);
+  border-color: #38bdf8;
+}
+.qb-act-btn:active {
+  transform: scale(0.97);
+}
+.qb-act-btn.qb-clear-btn {
+  background: rgba(244, 63, 94, 0.12);
+  border-color: rgba(244, 63, 94, 0.4);
+  color: #fda4af;
+}
+.qb-act-btn.qb-clear-btn:hover {
+  background: rgba(244, 63, 94, 0.22);
+  border-color: #f43f5e;
+}
+:root[data-theme="light"] .qb-act-btn {
+  color: #0f172a;
+  background: rgba(2, 132, 199, 0.1);
+  border-color: rgba(2, 132, 199, 0.35);
+}
+:root[data-theme="light"] .qb-act-btn.qb-clear-btn {
+  color: #be123c;
+  background: rgba(244, 63, 94, 0.1);
+  border-color: rgba(244, 63, 94, 0.35);
+}
+
+.mini-syntax-tip-wrap {
+  margin-top: 6px;
+}
+.mini-syntax-tip-btn {
+  appearance: none;
+  background: rgba(250, 204, 21, 0.12);
+  border: 1px dashed rgba(250, 204, 21, 0.5);
+  color: #fde047;
+  font-family: var(--sans, sans-serif);
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.mini-syntax-tip-btn:hover {
+  background: rgba(250, 204, 21, 0.2);
+  border-color: #facc15;
+}
+:root[data-theme="light"] .mini-syntax-tip-btn {
+  color: #854d0e;
+  background: #fef9c3;
+  border-color: #ca8a04;
+}
+
+
 
