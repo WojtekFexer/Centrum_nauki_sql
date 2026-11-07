@@ -377,7 +377,7 @@ function defaultState() {
     activeTaskId: 'p1_1',
     activeVariantIdx: 0,
     activeLemurId: 'iv_1',
-    editorCode: "SELECT title, rental_rate\nFROM film\nWHERE rating = 'PG-13'\n  AND rental_rate = 4.99\nORDER BY title;",
+    editorCode: '',
     diagIdx: 0,
     diagScore: 0,
     diagSkipped: [],
@@ -469,7 +469,7 @@ function triggerStepFlash() {
     document.querySelectorAll('.task-step-flash').forEach(function(el) {
       el.classList.remove('task-step-flash');
     });
-  }, 620);
+  }, 1800);
 }
 
 /* --- PROGRESJA SOLOLEARN: SEKWENCYJNE BLOKADY KROK PO KROKU (R1→R2→1→2→3→4→5→6) --- */
@@ -890,14 +890,6 @@ function detectSqlTableAliases(sqlText) {
     }
   }
 
-  var reDotPrefix = /\b([A-Za-z_]\w*)\.(?=[A-Za-z_*])/g;
-  while ((m = reDotPrefix.exec(clean)) !== null) {
-    var pref = m[1].toUpperCase();
-    if (!DBEAVER_KW_SET.has(pref) && !DBEAVER_FN_SET.has(pref)) {
-      aliases.add(m[1].toLowerCase());
-    }
-  }
-
   return aliases;
 }
 
@@ -942,6 +934,7 @@ function highlightSQL(sqlText) {
   return out;
 }
 window.highlightSQL = highlightSQL;
+window.detectSqlTableAliases = detectSqlTableAliases;
 
 function unescapeHtmlEntities(str) {
   return String(str == null ? '' : str)
@@ -1033,8 +1026,10 @@ function insertAtCursor(snippet) {
   var start = ta.selectionStart || 0, end = ta.selectionEnd || 0;
   var val = ta.value;
   var pad = (start > 0 && !/[\s(.]/.test(val[start - 1]) && !/^[,);':]/.test(snippet)) ? ' ' : '';
-  ta.value = val.slice(0, start) + pad + snippet + val.slice(end);
-  var pos = start + pad.length + snippet.length;
+  var trailingSpace = (!/[,\s(;]/.test(snippet.slice(-1))) ? ' ' : '';
+  var toInsert = pad + snippet + trailingSpace;
+  ta.value = val.slice(0, start) + toInsert + val.slice(end);
+  var pos = start + toInsert.length;
   ta.focus();
   ta.setSelectionRange(pos, pos);
   state.editorCode = ta.value;
@@ -1365,147 +1360,62 @@ function describeSqlExprPl(expr, alias) {
 }
 
 function buildCleanPolecenie(item, details) {
-  var raw = String(item.goal || item.prompt || '').trim();
+  var raw = String(item.prompt || item.goal || '').trim();
   raw = raw.replace(/^Rozgrzewka\s+R\d+\s*(\([^)]*\))?\s*:\s*/i, '');
   raw = raw.replace(/^Wyzwanie\s*:\s*/i, '');
   raw = raw.replace(/^Zadanie\s+\d+\s*:\s*/i, '');
+  var s = raw.replace(/`([^`]+)`/g, '$1').trim();
+  if (s) return s;
+  return 'Napisz zapytanie SQL realizujące cel zadania.';
+}
 
-  // 1. Zdejmij backticki wokół słów
-  var s = raw.replace(/`([^`]+)`/g, '$1');
+function buildQuerySkeleton(solSql) {
+  if (!solSql) return 'SELECT ___ FROM ___;';
+  var s = formatSqlPretty(solSql);
+  s = s.replace(/'(?:[^']|'')*'/g, "'___'");
+  s = s.replace(/\b\d+(?:\.\d+)?\b/g, '___');
+  s = s.replace(/\bAS\s+[a-zA-Z_]\w*/gi, 'AS ___');
 
-  // 2. Zamień konstrukcje z nazwami tabel na naturalne polskie określenia biznesowe
-  var tablePhraseReplacements = [
-    [/\b[Zz]\s+tabeli\s+product_orders\b/gi, 'Ze zbioru zamówień produktów'],
-    [/\b[Ww]\s+tabeli\s+product_orders\b/gi, 'W zbiorze zamówień produktów'],
-    [/\b[Zz]\s+tabeli\s+app_transactions\b/gi, 'Z rejestru transakcji w aplikacji'],
-    [/\b[Ww]\s+tabeli\s+app_transactions\b/gi, 'W rejestrze transakcji w aplikacji'],
-    [/\b[Zz]\s+tabeli\s+saas_users\b/gi, 'Z bazy użytkowników platformy'],
-    [/\b[Ww]\s+tabeli\s+saas_users\b/gi, 'W bazie użytkowników platformy'],
-    [/\b[Zz]\s+tabeli\s+user_events\b/gi, 'Z dziennika zdarzeń użytkowników'],
-    [/\b[Ww]\s+tabeli\s+user_events\b/gi, 'W dzienniku zdarzeń użytkowników'],
-    [/\b[Zz]\s+tabeli\s+emp_salaries\b/gi, 'Z listy wynagrodzeń pracowników'],
-    [/\b[Ww]\s+tabeli\s+emp_salaries\b/gi, 'Na liście wynagrodzeń pracowników'],
-    [/\b[Zz]\s+tabeli\s+dept_budgets\b/gi, 'Z zestawienia budżetów działów'],
-    [/\b[Ww]\s+tabeli\s+dept_budgets\b/gi, 'W zestawieniu budżetów działów'],
-    [/\b[Zz]\s+tabeli\s+film_category\b/gi, 'Z przypisań filmów do kategorii'],
-    [/\b[Ww]\s+tabeli\s+film_category\b/gi, 'W przypisaniach filmów do kategorii'],
-    [/\b[Zz]\s+tabeli\s+film_actor\b/gi, 'Z tabeli obsady filmów'],
-    [/\b[Ww]\s+tabeli\s+film_actor\b/gi, 'W tabeli obsady filmów'],
-    [/\b[Zz]\s+tabeli\s+film\b/gi, 'Z katalogu filmów'],
-    [/\b[Ww]\s+tabeli\s+film\b/gi, 'W katalogu filmów'],
-    [/\b[Zz]\s+tabeli\s+customer\b/gi, 'Z bazy klientów'],
-    [/\b[Ww]\s+tabeli\s+customer\b/gi, 'W bazie klientów'],
-    [/\b[Zz]\s+tabeli\s+rental\b/gi, 'Z historii wypożyczeń'],
-    [/\b[Ww]\s+tabeli\s+rental\b/gi, 'W historii wypożyczeń'],
-    [/\b[Zz]\s+tabeli\s+payment\b/gi, 'Z rejestru płatności'],
-    [/\b[Ww]\s+tabeli\s+payment\b/gi, 'W rejestrze płatności'],
-    [/\b[Zz]\s+tabeli\s+actor\b/gi, 'Z listy aktorów'],
-    [/\b[Ww]\s+tabeli\s+actor\b/gi, 'Na liście aktorów'],
-    [/\b[Zz]\s+tabeli\s+category\b/gi, 'Ze słownika kategorii'],
-    [/\b[Ww]\s+tabeli\s+category\b/gi, 'W słowniku kategorii'],
-    [/\b[Zz]\s+tabeli\s+staff\b/gi, 'Z listy pracowników'],
-    [/\b[Ww]\s+tabeli\s+staff\b/gi, 'Wśród pracowników'],
-    [/\b[Zz]\s+tabeli\s+store\b/gi, 'Z listy oddziałów sklepów'],
-    [/\b[Ww]\s+tabeli\s+store\b/gi, 'W oddziałach sklepów'],
-    [/\bproduct_orders\b/gi, 'zamówień produktów'],
-    [/\bapp_transactions\b/gi, 'transakcji w aplikacji'],
-    [/\bsaas_users\b/gi, 'użytkowników platformy'],
-    [/\buser_events\b/gi, 'zdarzeń użytkowników'],
-    [/\bemp_salaries\b/gi, 'wynagrodzeń pracowników'],
-    [/\bdept_budgets\b/gi, 'budżetów działów'],
-    [/\bfilm_category\b/gi, 'przypisań filmów do kategorii'],
-    [/\bfilm_actor\b/gi, 'obsady filmów']
-  ];
-  for (var tIdx = 0; tIdx < tablePhraseReplacements.length; tIdx++) {
-    s = s.replace(tablePhraseReplacements[tIdx][0], tablePhraseReplacements[tIdx][1]);
+  var reservedWords = new Set([
+    'SELECT', 'FROM', 'WHERE', 'JOIN', 'INNER', 'LEFT', 'RIGHT', 'FULL', 'CROSS', 'ON',
+    'GROUP', 'BY', 'HAVING', 'ORDER', 'LIMIT', 'OFFSET', 'AS', 'AND', 'OR', 'NOT', 'IN',
+    'BETWEEN', 'LIKE', 'ILIKE', 'IS', 'NULL', 'DISTINCT', 'CASE', 'WHEN', 'THEN', 'ELSE',
+    'END', 'ASC', 'DESC', 'WITH', 'OVER', 'PARTITION', 'FILTER', 'EXISTS', 'UNION', 'ALL',
+    'ROUND', 'COUNT', 'SUM', 'AVG', 'MIN', 'MAX', 'COALESCE', 'NULLIF', 'DATE_TRUNC', 'CAST',
+    'EXTRACT', 'TO_CHAR', 'ROW_NUMBER', 'RANK', 'DENSE_RANK', 'LAG', 'LEAD', 'GENERATE_SERIES',
+    'LOWER', 'UPPER', 'TRIM', 'LENGTH', 'INTERVAL'
+  ]);
+
+  var lines = s.split('\n');
+  var outLines = [];
+  var inSelect = false;
+  for (var li = 0; li < lines.length; li++) {
+    var line = lines[li];
+    if (/^\s*SELECT\b/i.test(line)) inSelect = true;
+    if (/^\s*(FROM|WHERE|GROUP\s+BY|HAVING|ORDER\s+BY|LIMIT)\b/i.test(line)) inSelect = false;
+
+    if (inSelect) {
+      line = line.replace(/([a-zA-Z_]\w*(?:\.[a-zA-Z_]\w*)?)/g, function(token) {
+        var u = token.toUpperCase();
+        if (reservedWords.has(u)) return token;
+        return '___';
+      });
+      line = line.replace(/___\s*\(___\)/g, '___');
+      line = line.replace(/___\s*\.\s*___/g, '___');
+    } else if (/^\s*(?:WHERE|AND|OR)\b/i.test(line)) {
+      line = line.replace(/([a-zA-Z_]\w*(?:\.[a-zA-Z_]\w*)?)/g, function(token) {
+        var u = token.toUpperCase();
+        if (reservedWords.has(u)) return token;
+        return '___';
+      });
+    } else if (/^\s*(?:GROUP\s+BY|ORDER\s+BY)\b/i.test(line)) {
+      line = line.replace(/(GROUP\s+BY|ORDER\s+BY)\s+.*$/i, function(_, kw) {
+        return kw + ' ___';
+      });
+    }
+    outLines.push(line);
   }
-
-  // 3. Bezpieczne usuwanie nawiasów zawierających wzory SQL (nie naruszające polskiego tekstu!)
-  s = s.replace(/\s*\([^)]*\b(SELECT|FROM|WHERE|GROUP|HAVING|ORDER|LIMIT|JOIN|COUNT|SUM|AVG|MIN|MAX|ROUND|COALESCE|NULLIF|OVER|PARTITION|ROW_NUMBER|RANK|DENSE_RANK|LAG|LEAD|FILTER|DISTINCT|BETWEEN|ILIKE|LIKE|ASC|DESC|NULL|AS|INTERVAL|DATE_TRUNC|generate_series)\b[^)]*\)/gi, '');
-  s = s.replace(/\s*\([^)]*[=><!*\/+%:]+[^)]*\)/g, '');
-
-  // 4. Zamiana technicznych nazw kolumn na naturalne polskie pojęcia
-  var colToPolish = [
-    [/\b(?:\w+\.)?rental_rate\b/g, 'cenę wypożyczenia'],
-    [/\b(?:\w+\.)?replacement_cost\b/g, 'koszt odtworzenia'],
-    [/\b(?:\w+\.)?release_year\b/g, 'rok wydania'],
-    [/\b(?:\w+\.)?rental_duration\b/g, 'czas wypożyczenia'],
-    [/\b(?:\w+\.)?rating\b/g, 'kategorię wiekową'],
-    [/\b(?:\w+\.)?length\b/g, 'czas trwania'],
-    [/\b(?:\w+\.)?title\b/g, 'tytuł filmu'],
-    [/\b(?:\w+\.)?film_id\b/g, 'identyfikator filmu'],
-    [/\b(?:\w+\.)?customer_id\b/g, 'identyfikator klienta'],
-    [/\b(?:\w+\.)?first_name\b/g, 'imię'],
-    [/\b(?:\w+\.)?last_name\b/g, 'nazwisko'],
-    [/\b(?:\w+\.)?create_date\b/g, 'datę rejestracji'],
-    [/\b(?:\w+\.)?rental_id\b/g, 'identyfikator wypożyczenia'],
-    [/\b(?:\w+\.)?rental_date\b/g, 'datę wypożyczenia'],
-    [/\b(?:\w+\.)?return_date\b/g, 'datę zwrotu'],
-    [/\b(?:\w+\.)?payment_id\b/g, 'identyfikator płatności'],
-    [/\b(?:\w+\.)?payment_date\b/g, 'datę płatności'],
-    [/\b(?:\w+\.)?amount\b/g, 'kwotę płatności'],
-    [/\b(?:\w+\.)?staff_id\b/g, 'identyfikator pracownika'],
-    [/\b(?:\w+\.)?store_id\b/g, 'identyfikator sklepu'],
-    [/\b(?:\w+\.)?actor_id\b/g, 'identyfikator aktora'],
-    [/\b(?:\w+\.)?category_id\b/g, 'identyfikator kategorii'],
-    [/\b(?:\w+\.)?active\s*=\s*1\b/gi, 'aktywnych klientów'],
-    [/\b(?:\w+\.)?active\s*=\s*0\b/gi, 'nieaktywnych klientów'],
-    [/\b(?:\w+\.)?active\b/g, 'status aktywności'],
-    [/\b(?:\w+\.)?emp_id\b/g, 'identyfikator pracownika'],
-    [/\b(?:\w+\.)?emp_name\b/g, 'imię i nazwisko pracownika'],
-    [/\b(?:\w+\.)?dept_id\b/g, 'identyfikator działu'],
-    [/\b(?:\w+\.)?dept_name\b/g, 'nazwę działu'],
-    [/\b(?:\w+\.)?salary\b/g, 'wynagrodzenie'],
-    [/\b(?:\w+\.)?hire_date\b/g, 'datę zatrudnienia'],
-    [/\b(?:\w+\.)?manager_id\b/g, 'identyfikator przełożonego'],
-    [/\b(?:\w+\.)?user_id\b/g, 'identyfikator użytkownika'],
-    [/\b(?:\w+\.)?signup_date\b/g, 'datę rejestracji'],
-    [/\b(?:\w+\.)?plan_type\b/g, 'plan subskrypcji'],
-    [/\b(?:\w+\.)?monthly_fee\b/g, 'opłatę miesięczną'],
-    [/\b(?:\w+\.)?event_id\b/g, 'identyfikator zdarzenia'],
-    [/\b(?:\w+\.)?event_type\b/g, 'typ zdarzenia'],
-    [/\b(?:\w+\.)?event_date\b/g, 'datę zdarzenia'],
-    [/\b(?:\w+\.)?tx_id\b/g, 'identyfikator transakcji'],
-    [/\b(?:\w+\.)?tx_date\b/g, 'datę transakcji'],
-    [/\b(?:\w+\.)?status\b/g, 'status'],
-    [/\b(?:\w+\.)?order_id\b/g, 'identyfikator zamówienia'],
-    [/\b(?:\w+\.)?order_date\b/g, 'datę zamówienia'],
-    [/\b(?:\w+\.)?product_name\b/g, 'nazwę produktu'],
-    [/\b(?:\w+\.)?quantity\b/g, 'liczbę sztuk'],
-    [/\b(?:\w+\.)?unit_price\b/g, 'cenę jednostkową'],
-    [/\b(?:\w+\.)?annual_budget\b/g, 'roczny budżet']
-  ];
-  for (var cIdx = 0; cIdx < colToPolish.length; cIdx++) {
-    s = s.replace(colToPolish[cIdx][0], colToPolish[cIdx][1]);
-  }
-
-  // 5. Czysta obsługa fraz sortowania i klauzul technicznych
-  s = s.replace(/\s+\bAS\s+[a-zA-Z_]\w*/gi, '');
-  s = s.replace(/\s+jako\s+[a-zA-Z_]\w*/gi, '');
-  s = s.replace(/\bSELECT\s+DISTINCT\b/gi, 'unikalne wartości');
-  s = s.replace(/\bDISTINCT\b/gi, 'unikalne wartości');
-  s = s.replace(/\bORDER\s+BY\b/gi, 'posortowane po');
-  s = s.replace(/\bGROUP\s+BY\b/gi, 'pogrupowane po');
-  s = s.replace(/\bLIMIT\s+(\d+)/gi, 'ograniczając wynik do $1 wierszy');
-  s = s.replace(/\bASC\b/g, 'rosnąco');
-  s = s.replace(/\bDESC\b/g, 'malejąco');
-
-  // Bezpieczne usuwanie technicznych aliasów tylko gdy są wolnostojące (bez niszczenia polskich słów!)
-  s = s.replace(/\s+,\s*/g, ', ');
-  s = s.replace(/\s+\b(gross_rev|net_rev|units|arpu|tx_cnt|film_cnt|total_paid|avg_rate|min_len|max_len)\b/gi, '');
-
-  // 6. Usuwanie wiszących polskich przyimków przed znakami interpunkcyjnymi lub na końcu zdania
-  s = s.replace(/\s+\b(po|w|z|ze|do|od|na|dla|o|oraz|i)\s*(?=[.,;?!]|$)/gi, '');
-  s = s.replace(/'([^']+)'/g, '$1');
-  s = s.replace(/\s+([,.;?!])/g, '$1');
-  s = s.replace(/,\s*,+/g, ', ');
-  s = s.replace(/,\s*\./g, '.');
-  s = s.replace(/\(\s*\)/g, '');
-  s = s.replace(/\s{2,}/g, ' ').trim();
-  s = s.replace(/[,;:]\s*$/, '.');
-  if (s && !/[.!?]$/.test(s)) s += '.';
-  if (s.length > 1) s = s.charAt(0).toUpperCase() + s.slice(1);
-  return s;
+  return outLines.join('\n');
 }
 
 function buildDataLemurSpec(item, parentTask) {
@@ -1565,55 +1475,47 @@ function buildDataLemurSpec(item, parentTask) {
     assumptions.push('Kolejność wierszy w wyniku nie ma znaczenia.');
   }
 
-  var step1 = 'Zidentyfikuj tabele źródłowe (' + (details.tables.map(function(t){return '`' + t + '`';}).join(', ') || 'wskazane w zadaniu') + ') ';
-  if (details.hasLeftJoin) {
-    step1 += 'i połącz je złączeniem `LEFT JOIN`, aby nie zgubić rekordów z lewej tabeli nieposiadających dopasowania.';
-  } else if (details.hasJoin) {
-    step1 += 'i połącz je po wspólnym kluczu za pomocą `JOIN ... ON`.';
-  } else if (details.hasCte) {
-    step1 += 'i rozbij problem na czytelny krok pomocniczy w klauzuli `WITH nazwa_cte AS (...)`.';
-  } else {
-    step1 += 'i zastanów się, które wiersze należy odfiltrować przed dalszymi obliczeniami.';
-  }
-
   var usedClauses = [];
-  if (details.hasCte) usedClauses.push('`WITH ... AS (...)`');
-  usedClauses.push(details.hasDistinct ? '`SELECT DISTINCT`' : '`SELECT`');
-  usedClauses.push('`FROM`');
-  if (details.hasJoin) usedClauses.push(details.hasLeftJoin ? '`LEFT JOIN ... ON`' : '`JOIN ... ON`');
-  if (details.hasWhere) usedClauses.push('`WHERE`');
-  if (details.hasGroupBy) usedClauses.push('`GROUP BY`');
-  if (details.hasHaving) usedClauses.push('`HAVING`');
-  if (details.hasWindow) usedClauses.push('funkcji okna `OVER (...)`');
-  if (details.orderBy) usedClauses.push('`ORDER BY`');
-  if (details.limit) usedClauses.push('`LIMIT`');
+  if (details.hasCte) usedClauses.push('WITH ... AS (...)');
+  usedClauses.push(details.hasDistinct ? 'SELECT DISTINCT' : 'SELECT');
+  usedClauses.push('FROM');
+  if (details.hasJoin) usedClauses.push(details.hasLeftJoin ? 'LEFT JOIN ... ON' : 'JOIN ... ON');
+  if (details.hasWhere) usedClauses.push('WHERE');
+  if (details.hasGroupBy) usedClauses.push('GROUP BY');
+  if (details.hasHaving) usedClauses.push('HAVING');
+  if (details.hasWindow) usedClauses.push('OVER (...)');
+  if (details.orderBy) usedClauses.push('ORDER BY');
+  if (details.limit) usedClauses.push('LIMIT');
 
-  var step2 = 'Użyj konstrukcji: ' + usedClauses.join(' → ') + '. ' + (item.hint || '');
+  // Krok 1: Kierunek bez kodu
+  var tblListStr = details.tables.length ? details.tables.map(function(t) { return '<code>' + t + '</code>'; }).join(', ') : 'wskazana w zadaniu';
+  var step1Html = '<p style="margin:0 0 6px"><strong>🧭 Tabela źródłowa:</strong> ' + tblListStr + '</p>' +
+    '<p style="margin:0 0 6px"><strong>📌 Potrzebne klauzule:</strong> ' + usedClauses.map(function(c){ return '<code>' + c + '</code>'; }).join(' → ') + '</p>' +
+    '<p class="small muted" style="margin:0">Zacznij od wskazania tabeli w <code>FROM</code>, a następnie wypisz wymagane kolumny w <code>SELECT</code>.</p>';
 
-  var step3 = item.gapHint || '';
-  if (!step3) {
-    if (details.hasHaving) {
-      step3 = 'Pułapka kolejności SQL: w `WHERE` filtrujemy pojedyncze wiersze przed grupowaniem, a warunki na funkcjach agregujących (`COUNT`, `SUM`, `AVG`) umieszczamy wyłącznie w `HAVING`!';
-    } else if (details.hasLeftJoin) {
-      step3 = 'Pułapka LEFT JOIN: nie umieszczaj warunków dla prawej tabeli w `WHERE` (chyba że sprawdzasz `IS NULL`), bo zamienisz `LEFT JOIN` w zwykły `INNER JOIN`!';
-    } else if (details.hasWindow) {
-      step3 = 'Pułapka funkcji okna: funkcji `ROW_NUMBER()`, `RANK()`, `LAG()` nie można użyć bezpośrednio w `WHERE` — oblicz je w CTE (`WITH`) i przefiltruj w zapytaniu głównym.';
-    } else if (/\bIS\s+(?:NOT\s+)?NULL\b/i.test(sol)) {
-      step3 = 'Pułapka NULL: w SQL nigdy nie piszemy `= NULL` ani `<> NULL`. Do sprawdzania brakujących wartości używaj wyłącznie `IS NULL` oraz `IS NOT NULL`.';
-    } else if (/\bOR\b/i.test(sol) && /\bAND\b/i.test(sol)) {
-      step3 = 'Pułapka priorytetu operatorów: `AND` wiąże silniej niż `OR`! Zawsze otaczaj część z `OR` nawiasami `(...)`.';
-    } else {
-      step3 = 'Upewnij się, że nazwy i kolejność kolumn w `SELECT` (wraz z aliasami `AS`) dokładnie zgadzają się z sekcją „Wymagania i założenia”.';
-    }
-  }
+  // Krok 2: Szkielet z lukami
+  var skeletonSql = buildQuerySkeleton(sol);
+  var step2Html = '<div class="theory-code" style="margin:4px 0 6px;font-size:13px"><code>' + highlightSQL(skeletonSql) + '</code></div>' +
+    '<p class="small muted" style="margin:0">🧩 Uzupełnij luki <code>___</code> odpowiednimi kolumnami i warunkami w edytorze powyżej.</p>';
+
+  // Krok 3: Wzorcowy kod z wyjaśnieniem
+  var explanation = item.gapHint || (item.newFeature ? item.newFeature.desc : 'Wzorcowe zapytanie realizuje wszystkie wymagania specyfikacji.');
+  var step3Html = '<div class="theory-code" style="margin:4px 0 6px;font-size:13px"><code>' + highlightSQL(formatSqlPretty(sol)) + '</code></div>' +
+    '<p class="small" style="margin:4px 0 0;line-height:1.5"><strong>💡 Dlaczego tak:</strong> ' + esc(explanation) + '</p>';
 
   return {
     polecenie: polecenie,
     assumptions: assumptions,
-    hints: [step1, step2, step3]
+    hints: [step1Html, step2Html, step3Html]
   };
 }
 window.buildDataLemurSpec = buildDataLemurSpec;
+window.buildCleanPolecenie = buildCleanPolecenie;
+window.buildQuerySkeleton = buildQuerySkeleton;
+window.getHintButtonLabel = getHintButtonLabel;
+window.renderOnboardingModal = renderOnboardingModal;
+window.state = state;
+window.uiState = uiState;
 
 // Renderuje zunifikowaną specyfikację zadania w standardzie DataLemur (📌 Polecenie + 📋 Wymagania i założenia)
 function renderTaskSpecBox(item, parentTask) {
@@ -1648,23 +1550,26 @@ function renderTaskSpecBox(item, parentTask) {
 
 function renderHintStepperBox(item, parentTask) {
   if (!item || !uiState.hintStep || uiState.hintStep < 1) return '';
-  if (!item.hints && typeof window.buildDataLemurSpec === 'function') {
-    var spec = window.buildDataLemurSpec(item, parentTask || null);
+  if (!item.hints || !item._v12SpecDone) {
+    var spec = buildDataLemurSpec(item, parentTask || null);
+    item.polecenie = spec.polecenie;
+    item.assumptions = spec.assumptions;
     item.hints = spec.hints;
+    item._v12SpecDone = true;
   }
   var hints = Array.isArray(item.hints) ? item.hints : [item.hint || 'Sprawdź wymagane kolumny i warunki filtrowania.'];
   var maxStep = Math.min(hints.length, uiState.hintStep);
   var stepTitles = [
-    'Krok 1/3 · Wskazówka koncepcyjna (jak podejść do problemu)',
-    'Krok 2/3 · Wskazówka techniczna (klauzule i funkcje PostgreSQL)',
-    'Krok 3/3 · 🛡️ Jaka tu jest pułapka?'
+    'Krok 1/3 · 🧭 Kierunek (jak podejść do problemu)',
+    'Krok 2/3 · 🧩 Szkielet z lukami (do uzupełnienia)',
+    'Krok 3/3 · 💡 Wzorcowy kod z wyjaśnieniem'
   ];
 
   var cardsHtml = '';
   for (var i = 0; i < maxStep; i++) {
     cardsHtml += '<div class="hint-step-item' + (i === 2 ? ' trap-step' : '') + '">' +
       '<div class="hint-step-hdr">' + esc(stepTitles[i] || ('Krok ' + (i + 1))) + '</div>' +
-      '<div class="hint-step-body">' + formatPrompt(hints[i]) + '</div>' +
+      '<div class="hint-step-body">' + hints[i] + '</div>' +
     '</div>';
   }
 
@@ -1673,9 +1578,9 @@ function renderHintStepperBox(item, parentTask) {
 
 function getHintButtonLabel() {
   var st = uiState.hintStep || 0;
-  if (st === 0) return '💡 Podpowiedź (Krok 1/3)';
-  if (st === 1) return '💡 Podpowiedź (Krok 2/3 — Składnia)';
-  if (st === 2) return '🛡️ Podpowiedź (Krok 3/3 — Pułapka!)';
+  if (st === 0) return '💡 Podpowiedź 1 (Kierunek)';
+  if (st === 1) return '💡 Podpowiedź 2 (Szkielet z lukami)';
+  if (st === 2) return '💡 Podpowiedź 3 (Wzorcowy kod)';
   return '💡 Ukryj podpowiedzi (3/3)';
 }
 
@@ -1987,7 +1892,7 @@ function renderEditorWidget(extraCols, actionType, variant, task) {
       '<div id="sqlgut" aria-hidden="true"><span class="ln">1</span></div>' +
       '<div class="edwrap">' +
         '<pre id="sqlhl" aria-hidden="true"></pre>' +
-        '<textarea id="answer" wrap="off" spellcheck="false" autocomplete="off" autocorrect="off" autocapitalize="off" placeholder="Wpisz zapytanie SQL...">' + esc(state.editorCode) + '</textarea>' +
+        '<textarea id="answer" wrap="off" spellcheck="false" autocomplete="off" autocorrect="off" autocapitalize="off" placeholder="Wpisz zapytanie SQL (np. SELECT ... FROM ...) lub dotknij klocka powyżej">' + esc(state.editorCode || '') + '</textarea>' +
       '</div>' +
     '</div>' +
     '<div class="acts">' +
@@ -2631,14 +2536,15 @@ function renderPathTab() {
 
     var solvedInLesson = countTotalLessonSolved(task.id);
     var unlockGoal = 5;
+    var unlockedCount = Math.min(unlockGoal, solvedInLesson);
     var isNextLessonUnlocked = solvedInLesson >= unlockGoal || isLessonCoreCompleted(task.id);
     var unlockDotsHtml = '';
     for (var di = 0; di < unlockGoal; di++) {
-      unlockDotsHtml += '<i class="udot' + (di < solvedInLesson ? ' on' : '') + '"></i>';
+      unlockDotsHtml += '<i class="udot' + (di < unlockedCount ? ' on' : '') + '"></i>';
     }
     var unlockPillHtml = isNextLessonUnlocked
-      ? '<span class="unlock-progress-pill unlocked">🌟 Kolejna lekcja odblokowana! (' + solvedInLesson + '/' + totalSteps + ')</span>'
-      : '<span class="unlock-progress-pill">🔓 Odblokowanie: <strong>' + Math.min(solvedInLesson, unlockGoal) + '/5</strong> <span class="unlock-dots">' + unlockDotsHtml + '</span></span>';
+      ? '<span class="unlock-progress-pill unlocked">🌟 Kolejna lekcja odblokowana! (5/5) <span class="unlock-dots">' + unlockDotsHtml + '</span></span>'
+      : '<span class="unlock-progress-pill">🔓 Odblokowanie kolejnej lekcji: <strong>' + unlockedCount + '/5</strong> <span class="unlock-dots">' + unlockDotsHtml + '</span></span>';
 
     var hasPrev = vIdx > 0;
     var hasNext = (vIdx + 1 < totalSteps) && isStepUnlocked(task, vIdx + 1);
@@ -2687,7 +2593,7 @@ function renderPathTab() {
         dropdownHtml +
       '</div>' +
       '<div class="task-now-solving-banner' + flashCls + '">' +
-        '➡️ Teraz rozwiązujesz: <strong>' + esc(stepSwitchLbl) + '</strong> <span class="muted">(' + esc(shortTaskTitle) + ')</span>' +
+        '➡️ Teraz rozwiązujesz: <strong>' + esc(stepSwitchLbl) + '</strong>' +
       '</div>' +
       '<h2 class="task-page-title">' + esc(task.title) + '</h2>' +
       renderTaskSpecBox(variant, task) +
@@ -3037,24 +2943,24 @@ function renderOnboardingModal() {
       badge: 'Karta 2/4 · Budowa tabeli',
       title: '📊 Jak wygląda tabela w bazie danych?',
       body:
-        '<p class="small" style="font-size:13px;line-height:1.55">Każda tabela ma swoją nazwę (np. <code>film</code>) i składa się z pionowych <strong>kolumn</strong> oraz poziomych <strong>wierszy</strong>:</p>' +
-        '<div class="tblwrap" style="margin:8px 0">' +
-          '<table>' +
-            '<thead><tr>' +
-              '<th>film_id <span class="muted">(Kolumna)</span></th>' +
-              '<th>title <span class="muted">(Kolumna)</span></th>' +
-              '<th>rental_rate <span class="muted">(Kolumna)</span></th>' +
+        '<p class="small" style="font-size:13px;line-height:1.55">Każda tabela ma nazwę (np. <code>film</code>) i składa się z pionowych <strong>kolumn</strong> oraz poziomych <strong>wierszy</strong>:</p>' +
+        '<div style="overflow-x:auto; max-width:100%; margin:8px 0; border:1px solid var(--line); border-radius:8px;">' +
+          '<table style="width:100%; font-size:11.5px; border-collapse:collapse;">' +
+            '<thead><tr style="background:var(--surface);">' +
+              '<th style="padding:6px 8px; text-align:left; border-bottom:1px solid var(--line);">film_id</th>' +
+              '<th style="padding:6px 8px; text-align:left; border-bottom:1px solid var(--line);">title</th>' +
+              '<th style="padding:6px 8px; text-align:left; border-bottom:1px solid var(--line);">rental_rate</th>' +
             '</tr></thead>' +
             '<tbody>' +
-              '<tr><td>1</td><td>Academy Dinosaur</td><td>0.99</td></tr>' +
-              '<tr><td>2</td><td>Ace Goldfinger</td><td>4.99</td></tr>' +
-              '<tr><td>3</td><td>Adaptation Holes</td><td>2.99</td></tr>' +
+              '<tr><td style="padding:5px 8px; border-bottom:1px solid rgba(255,255,255,0.06);">1</td><td style="padding:5px 8px; border-bottom:1px solid rgba(255,255,255,0.06);">Academy Dinosaur</td><td style="padding:5px 8px; border-bottom:1px solid rgba(255,255,255,0.06);">0.99</td></tr>' +
+              '<tr><td style="padding:5px 8px; border-bottom:1px solid rgba(255,255,255,0.06);">2</td><td style="padding:5px 8px; border-bottom:1px solid rgba(255,255,255,0.06);">Ace Goldfinger</td><td style="padding:5px 8px; border-bottom:1px solid rgba(255,255,255,0.06);">4.99</td></tr>' +
+              '<tr><td style="padding:5px 8px;">3</td><td style="padding:5px 8px;">Adaptation Holes</td><td style="padding:5px 8px;">2.99</td></tr>' +
             '</tbody>' +
           '</table>' +
         '</div>' +
         '<ul class="tut-list" style="margin-top:6px">' +
-          '<li><strong>Kolumna (pionowo):</strong> jedna konkretna cecha, np. <code>title</code> (tytuł) lub <code>rental_rate</code> (cena wypożyczenia).</li>' +
-          '<li><strong>Wiersz (poziomo):</strong> jeden kompletny obiekt, np. pełne dane filmu <em>Academy Dinosaur</em>.</li>' +
+          '<li><strong>Kolumna (pionowo):</strong> cecha obiektu, np. <code>title</code> (tytuł) lub <code>rental_rate</code> (cena).</li>' +
+          '<li><strong>Wiersz (poziomo):</strong> jeden obiekt, np. pełne dane filmu <em>Academy Dinosaur</em>.</li>' +
         '</ul>'
     },
     {
@@ -3389,7 +3295,7 @@ document.addEventListener('click', async function(e) {
     uiState.hintStep = 0;
     uiState.schemaBoxOpen = false;
     if (currentTab === 'diag' && state.diagIdx < DIAG_QUESTIONS.length) {
-      state.editorCode = '-- Zadanie diagnostyczne #' + (state.diagIdx + 1) + '\nSELECT ';
+      state.editorCode = '';
     } else if (currentTab === 'profile') {
       fetchLeaderboard();
     }
@@ -3480,7 +3386,7 @@ document.addEventListener('click', async function(e) {
     // Przy pierwszym wejściu w lekcję otwórz slajdy teorii SoloLearn (1-4)
     state.pathMode = (state.tutorialsDone && state.tutorialsDone[targetId]) ? 'solve' : 'tutorial';
     if (t) {
-      state.editorCode = '-- ' + t.title + ' (' + getStepSwitchLabel(state.activeVariantIdx, t.variants.length) + ')\nSELECT ';
+      state.editorCode = '';
     }
     lastExecResult = null;
     lastExpectedResult = null;
@@ -3505,7 +3411,7 @@ document.addEventListener('click', async function(e) {
     uiState.quizSelected = null;
     uiState.quizPassed = !!(state.tutorialsDone && state.tutorialsDone[nextTask.id]);
     state.pathMode = (state.tutorialsDone && state.tutorialsDone[nextTask.id]) ? 'solve' : 'tutorial';
-    state.editorCode = '-- ' + nextTask.title + ' (' + getStepSwitchLabel(state.activeVariantIdx, nextTask.variants.length) + ')\nSELECT ';
+    state.editorCode = '';
     lastExecResult = null;
     lastExpectedResult = null;
     lastFeedback = null;
@@ -3594,8 +3500,8 @@ document.addEventListener('click', async function(e) {
     if (!isStepUnlocked(fTask, state.activeVariantIdx)) {
       state.activeVariantIdx = getFirstUnsolvedStepIdx(fTask);
     }
-    if (!state.editorCode || state.editorCode.indexOf('SELECT') === -1) {
-      state.editorCode = '-- ' + fTask.title + ' (' + getStepSwitchLabel(state.activeVariantIdx, fTask.variants.length) + ')\nSELECT ';
+    if (!state.editorCode) {
+      state.editorCode = '';
     }
     saveState();
     render();
@@ -3628,7 +3534,7 @@ document.addEventListener('click', async function(e) {
     uiState.taskDropdownOpen = false;
     uiState.schemaBoxOpen = false;
     uiState.hintStep = 0;
-    state.editorCode = '-- ' + tVar.title + ' (' + getStepSwitchLabel(reqIdx, tVar.variants.length) + ')\nSELECT ';
+    state.editorCode = '';
     lastExecResult = null;
     lastExpectedResult = null;
     lastFeedback = null;
@@ -3649,7 +3555,7 @@ document.addEventListener('click', async function(e) {
       uiState.schemaBoxOpen = false;
       uiState.hintStep = 0;
       var curTPrev = PATH_TASKS.find(function(x) { return x.id === state.activeTaskId; }) || PATH_TASKS[0];
-      state.editorCode = '-- ' + curTPrev.title + ' (' + getStepSwitchLabel(state.activeVariantIdx, curTPrev.variants.length) + ')\nSELECT ';
+      state.editorCode = '';
       lastExecResult = null;
       lastExpectedResult = null;
       lastFeedback = null;
@@ -3672,7 +3578,7 @@ document.addEventListener('click', async function(e) {
       uiState.taskDropdownOpen = false;
       uiState.schemaBoxOpen = false;
       uiState.hintStep = 0;
-      state.editorCode = '-- ' + curTNext.title + ' (' + getStepSwitchLabel(nextIdx, curTNext.variants.length) + ')\nSELECT ';
+      state.editorCode = '';
       lastExecResult = null;
       lastExpectedResult = null;
       lastFeedback = null;
@@ -3697,7 +3603,7 @@ document.addEventListener('click', async function(e) {
     uiState.taskDropdownOpen = false;
     uiState.schemaBoxOpen = false;
     uiState.hintStep = 0;
-    state.editorCode = '-- ' + curTJump.title + ' (' + getStepSwitchLabel(reqIdxJump, curTJump.variants.length) + ')\nSELECT ';
+    state.editorCode = '';
     lastExecResult = null;
     lastExpectedResult = null;
     lastFeedback = null;
@@ -3715,7 +3621,7 @@ document.addEventListener('click', async function(e) {
       uiState.taskDropdownOpen = false;
       uiState.schemaBoxOpen = false;
       uiState.hintStep = 0;
-      state.editorCode = '-- ' + curTaskStep.title + ' (' + getStepSwitchLabel(nextStepIdx, curTaskStep.variants.length) + ')\nSELECT ';
+      state.editorCode = '';
       lastExecResult = null;
       lastExpectedResult = null;
       lastFeedback = null;
@@ -3741,7 +3647,7 @@ document.addEventListener('click', async function(e) {
       uiState.quizSelected = null;
       uiState.quizPassed = !!(state.tutorialsDone && state.tutorialsDone[nextL.id]);
       state.pathMode = (state.tutorialsDone && state.tutorialsDone[nextL.id]) ? 'solve' : 'tutorial';
-      state.editorCode = '-- ' + nextL.title + ' (' + getStepSwitchLabel(state.activeVariantIdx, nextL.variants.length) + ')\nSELECT ';
+      state.editorCode = '';
       lastExecResult = null;
       lastExpectedResult = null;
       lastFeedback = null;
@@ -3777,7 +3683,7 @@ document.addEventListener('click', async function(e) {
     state.activeVariantIdx = nextIdx;
     uiState.schemaBoxOpen = false;
     uiState.hintStep = 0;
-    state.editorCode = '-- ' + curTask.title + ' (' + getStepSwitchLabel(nextIdx, curTask.variants.length) + ')\nSELECT ';
+    state.editorCode = '';
     lastExecResult = null;
     lastExpectedResult = null;
     lastChecklist = null;
@@ -3878,7 +3784,7 @@ document.addEventListener('click', async function(e) {
       lastFeedback = null;
       lastChecklist = null;
       if (state.diagIdx < DIAG_QUESTIONS.length) {
-        state.editorCode = '-- Zadanie diagnostyczne #' + (state.diagIdx + 1) + '\nSELECT ';
+        state.editorCode = '';
       }
       saveState();
       syncProfileToCloud(true);
@@ -3905,7 +3811,7 @@ document.addEventListener('click', async function(e) {
     lastFeedback = null;
     lastChecklist = null;
     if (state.diagIdx < DIAG_QUESTIONS.length) {
-      state.editorCode = '-- Zadanie diagnostyczne #' + (state.diagIdx + 1) + '\nSELECT ';
+      state.editorCode = '';
     }
     saveState();
     render();
@@ -3932,7 +3838,7 @@ document.addEventListener('click', async function(e) {
     state.diagSkipped = [];
     uiState.schemaBoxOpen = false;
     uiState.hintStep = 0;
-    state.editorCode = '-- Zadanie diagnostyczne #1\nSELECT ';
+    state.editorCode = '';
     lastExecResult = null;
     lastExpectedResult = null;
     lastFeedback = null;
@@ -3961,7 +3867,7 @@ document.addEventListener('click', async function(e) {
     uiState.schemaBoxOpen = false;
     uiState.hintStep = 0;
     var ltOpen = LEMUR_TASKS.find(function(x) { return x.id === state.activeLemurId; });
-    state.editorCode = '-- ' + (ltOpen ? ltOpen.title : 'Zadanie rekrutacyjne') + '\nSELECT ';
+    state.editorCode = '';
     lastExecResult = null;
     lastExpectedResult = null;
     lastFeedback = null;

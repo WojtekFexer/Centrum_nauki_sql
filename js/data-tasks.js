@@ -53,8 +53,7 @@ var PATH_TASKS = [
       "email",
       "staff_id",
       "store_id",
-      "city",
-      "country"
+      "city"
     ],
     "theory": "<ul><li><strong><code>SELECT</code>:</strong> służy do wyciągania kolumn z bazy danych.</li><li><strong><code>FROM</code>:</strong> wskazuje tabelę, z której pobieramy dane.</li><li><strong>Kilka kolumn:</strong> oddzielaj nazwy kolumn przecinkami (np. <code>title, rental_rate</code>).</li><li><strong>Gwiazdka <code>*</code>:</strong> pobiera wszystkie kolumny tabeli na raz.</li></ul><div class=\"theory-code\"><code>SELECT title, rental_rate\nFROM film;</code></div>",
     "variants": [
@@ -150,14 +149,14 @@ var PATH_TASKS = [
         "keySuffix": "3",
         "isWarmup": false,
         "tier": "adv",
-        "goal": "Pobierz z listy personelu identyfikatory pracowników, imiona, nazwiska oraz adresy e-mail.",
-        "prompt": "Pobierz z listy personelu identyfikatory pracowników, imiona, nazwiska oraz adresy e-mail.",
-        "sol": "SELECT staff_id, first_name, last_name, email FROM staff;",
+        "goal": "Pobierz z listy personelu identyfikatory pracowników, imiona, nazwiska oraz identyfikatory sklepów.",
+        "prompt": "Pobierz z listy personelu identyfikatory pracowników, imiona, nazwiska oraz identyfikatory przypisanych sklepów (staff_id, first_name, last_name, store_id).",
+        "sol": "SELECT staff_id, first_name, last_name, store_id FROM staff;",
         "order": false,
         "tables": [
           "staff"
         ],
-        "hint": "Pobierz 4 kolumny z tabeli staff",
+        "hint": "Wybierz 4 kolumny z tabeli staff: SELECT staff_id, first_name, last_name, store_id FROM staff;",
         "newFeature": null
       },
       {
@@ -165,14 +164,14 @@ var PATH_TASKS = [
         "keySuffix": "4",
         "isWarmup": false,
         "tier": "adv",
-        "goal": "Pobierz z rejestru oddziałów identyfikatory sklepów, miasta oraz kraje.",
-        "prompt": "Pobierz z rejestru oddziałów identyfikatory sklepów, miasta oraz kraje.",
-        "sol": "SELECT store_id, city, country FROM store;",
+        "goal": "Pobierz z rejestru oddziałów identyfikatory sklepów oraz miasta.",
+        "prompt": "Pobierz z rejestru oddziałów identyfikatory sklepów oraz miasta, w których się znajdują (store_id, city).",
+        "sol": "SELECT store_id, city FROM store;",
         "order": false,
         "tables": [
           "store"
         ],
-        "hint": "Wybierz store_id, city, country z tabeli store",
+        "hint": "Wybierz store_id oraz city z tabeli store: SELECT store_id, city FROM store;",
         "newFeature": null
       },
       {
@@ -261,14 +260,14 @@ var PATH_TASKS = [
         "keySuffix": "0",
         "isWarmup": false,
         "tier": "basic",
-        "goal": "Pobierz z tabeli sklepów store_id, miasto pod aliasem miasto oraz kolumnę country.",
-        "prompt": "Pobierz z tabeli sklepów store_id, miasto pod aliasem miasto oraz kolumnę country.",
-        "sol": "SELECT store_id, city AS miasto, country FROM store;",
+        "goal": "Pobierz z rejestru oddziałów store_id oraz miasto pod aliasem miasto.",
+        "prompt": "Pobierz z rejestru oddziałów identyfikator sklepu store_id oraz miasto pod czytelnym aliasem miasto (city AS miasto).",
+        "sol": "SELECT store_id, city AS miasto FROM store;",
         "order": false,
         "tables": [
           "store"
         ],
-        "hint": "Wpisz: store_id, city AS miasto, country",
+        "hint": "Wpisz: SELECT store_id, city AS miasto FROM store;",
         "newFeature": null
       },
       {
@@ -276,8 +275,8 @@ var PATH_TASKS = [
         "keySuffix": "1",
         "isWarmup": false,
         "tier": "basic",
-        "goal": "Pobierz z rejestru wpłat identyfikator płatności, kwotę oryginalną oraz kwotę przeliczoną na centy (amount pomnożone przez 100) pod aliasem amount_cents.",
-        "prompt": "Pobierz z rejestru wpłat identyfikator płatności, kwotę oryginalną oraz kwotę przeliczoną na centy (amount pomnożone przez 100) pod aliasem amount_cents.",
+        "goal": "Kwoty w kolumnie amount są wyrażone w euro (np. 4.99). Pobierz identyfikator płatności payment_id, kwotę oryginalną amount oraz kwotę przeliczoną na centy (amount * 100) pod aliasem amount_cents.",
+        "prompt": "Kwoty w kolumnie amount są wyrażone w euro (np. 4.99). Pobierz identyfikator płatności payment_id, kwotę oryginalną amount oraz kwotę przeliczoną na centy (amount * 100) pod aliasem amount_cents.",
         "sol": "SELECT payment_id, amount, amount * 100 AS amount_cents FROM payment;",
         "order": false,
         "tables": [
@@ -340,8 +339,8 @@ var PATH_TASKS = [
         "keySuffix": "5",
         "isWarmup": false,
         "tier": "adv",
-        "goal": "Pobierz customer_id, payment_date, kwotę amount oraz kwotę przeliczoną na złotówki (amount * 4) jako amount_pln.",
-        "prompt": "Pobierz customer_id, payment_date, kwotę amount oraz kwotę przeliczoną na złotówki (amount * 4) jako amount_pln.",
+        "goal": "Pobierz identyfikator klienta customer_id, datę płatności payment_date, kwotę amount oraz kwotę przeliczoną na złotówki (amount * 4) pod aliasem amount_pln.",
+        "prompt": "Pobierz identyfikator klienta customer_id, datę płatności payment_date, kwotę amount oraz kwotę przeliczoną na złotówki (amount * 4) pod aliasem amount_pln.",
         "sol": "SELECT customer_id, payment_date, amount, amount * 4 AS amount_pln FROM payment;",
         "order": false,
         "tables": [
@@ -370,7 +369,7 @@ var PATH_TASKS = [
       "store_id",
       "release_year",
       "active",
-      "country"
+      "city"
     ],
     "theory": "<ul><li><strong><code>DISTINCT</code>:</strong> eliminuje zduplikowane wiersze i zwraca wyłącznie unikalne wartości.</li><li><strong>Miejsce w zapytaniu:</strong> słowo <code>DISTINCT</code> stawia się bezpośrednio po <code>SELECT</code>.</li></ul><div class=\"theory-code\"><code>SELECT DISTINCT rating\nFROM film;</code></div>",
     "variants": [
@@ -488,14 +487,14 @@ var PATH_TASKS = [
         "keySuffix": "5",
         "isWarmup": false,
         "tier": "adv",
-        "goal": "Pobierz ze słownika placówek unikalne kraje (country), w których działają nasze sklepy.",
-        "prompt": "Pobierz ze słownika placówek unikalne kraje (country), w których działają nasze sklepy.",
-        "sol": "SELECT DISTINCT country FROM store;",
+        "goal": "Pobierz ze słownika placówek unikalne miasta (city), w których działają nasze sklepy.",
+        "prompt": "Pobierz ze słownika placówek unikalne miasta (city), w których działają nasze sklepy.",
+        "sol": "SELECT DISTINCT city FROM store;",
         "order": false,
         "tables": [
           "store"
         ],
-        "hint": "SELECT DISTINCT country FROM store;",
+        "hint": "SELECT DISTINCT city FROM store;",
         "newFeature": null
       }
     ]
@@ -2376,14 +2375,14 @@ var PATH_TASKS = [
         "keySuffix": "1",
         "isWarmup": false,
         "tier": "basic",
-        "goal": "W CTE monthly_rev pogrupuj płatności po DATE_TRUNC('month', payment_date)::date jako m i podlicz sumę wpłat jako rev. W zapytaniu głównym wybierz m oraz rev z monthly_rev, sortując rosnąco po m.",
-        "prompt": "W CTE monthly_rev pogrupuj płatności po DATE_TRUNC('month', payment_date)::date jako m i podlicz sumę wpłat jako rev. W zapytaniu głównym wybierz m oraz rev z monthly_rev, sortując rosnąco po m.",
-        "sol": "WITH monthly_rev AS (SELECT DATE_TRUNC('month', payment_date)::date AS m, SUM(amount) AS rev FROM payment GROUP BY 1) SELECT m, rev FROM monthly_rev ORDER BY m ASC;",
+        "goal": "W CTE monthly_rev pogrupuj płatności po DATE_TRUNC('month', payment_date::timestamp)::date jako m i podlicz sumę wpłat jako rev. W zapytaniu głównym wybierz m oraz rev z monthly_rev, sortując rosnąco po m.",
+        "prompt": "W CTE monthly_rev pogrupuj płatności po DATE_TRUNC('month', payment_date::timestamp)::date jako m i podlicz sumę wpłat jako rev. W zapytaniu głównym wybierz m oraz rev z monthly_rev, sortując rosnąco po m.",
+        "sol": "WITH monthly_rev AS (SELECT DATE_TRUNC('month', payment_date::timestamp)::date AS m, SUM(amount) AS rev FROM payment GROUP BY 1) SELECT m, rev FROM monthly_rev ORDER BY m ASC;",
         "order": true,
         "tables": [
           "payment"
         ],
-        "hint": "WITH monthly_rev AS (SELECT DATE_TRUNC('month', payment_date)::date AS m, SUM(amount) AS rev FROM payment GROUP BY 1) SELECT m, rev FROM monthly_rev ORDER BY m ASC;",
+        "hint": "WITH monthly_rev AS (SELECT DATE_TRUNC('month', payment_date::timestamp)::date AS m, SUM(amount) AS rev FROM payment GROUP BY 1) SELECT m, rev FROM monthly_rev ORDER BY m ASC;",
         "newFeature": null
       },
       {
@@ -2616,9 +2615,9 @@ var PATH_TASKS = [
         "keySuffix": "5",
         "isWarmup": false,
         "tier": "adv",
-        "goal": "W CTE m pogrupuj miesięczny przychód payment po DATE_TRUNC('month', payment_date)::date jako miesiac i SUM(amount) jako rev. W zapytaniu głównym zwróć miesiac, rev, poprzedni przychód jako prev_rev (użyj LAG) oraz zmianę procentową mom_pct = ROUND((rev - LAG(rev) OVER (ORDER BY miesiac)) * 100.0 / LAG(rev) OVER (ORDER BY miesiac), 2).",
-        "prompt": "W CTE m pogrupuj miesięczny przychód payment po DATE_TRUNC('month', payment_date)::date jako miesiac i SUM(amount) jako rev. W zapytaniu głównym zwróć miesiac, rev, poprzedni przychód jako prev_rev (użyj LAG) oraz zmianę procentową mom_pct = ROUND((rev - LAG(rev) OVER (ORDER BY miesiac)) * 100.0 / LAG(rev) OVER (ORDER BY miesiac), 2).",
-        "sol": "WITH m AS (SELECT DATE_TRUNC('month', payment_date)::date AS miesiac, SUM(amount) AS rev FROM payment GROUP BY 1) SELECT miesiac, rev, LAG(rev) OVER (ORDER BY miesiac) AS prev_rev, ROUND((rev - LAG(rev) OVER (ORDER BY miesiac)) * 100.0 / LAG(rev) OVER (ORDER BY miesiac), 2) AS mom_pct FROM m;",
+        "goal": "W CTE m pogrupuj miesięczny przychód payment po DATE_TRUNC('month', payment_date::timestamp)::date jako miesiac i SUM(amount) jako rev. W zapytaniu głównym zwróć miesiac, rev, poprzedni przychód jako prev_rev (użyj LAG) oraz zmianę procentową mom_pct = ROUND((rev - LAG(rev) OVER (ORDER BY miesiac)) * 100.0 / LAG(rev) OVER (ORDER BY miesiac), 2).",
+        "prompt": "W CTE m pogrupuj miesięczny przychód payment po DATE_TRUNC('month', payment_date::timestamp)::date jako miesiac i SUM(amount) jako rev. W zapytaniu głównym zwróć miesiac, rev, poprzedni przychód jako prev_rev (użyj LAG) oraz zmianę procentową mom_pct = ROUND((rev - LAG(rev) OVER (ORDER BY miesiac)) * 100.0 / LAG(rev) OVER (ORDER BY miesiac), 2).",
+        "sol": "WITH m AS (SELECT DATE_TRUNC('month', payment_date::timestamp)::date AS miesiac, SUM(amount) AS rev FROM payment GROUP BY 1) SELECT miesiac, rev, LAG(rev) OVER (ORDER BY miesiac) AS prev_rev, ROUND((rev - LAG(rev) OVER (ORDER BY miesiac)) * 100.0 / LAG(rev) OVER (ORDER BY miesiac), 2) AS mom_pct FROM m;",
         "order": false,
         "tables": [
           "payment"

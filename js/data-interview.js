@@ -316,7 +316,7 @@ var INTERVIEW_TASKS = [
     gapHint: 'Po złączeniu użytkownika z jego transakcjami jeden użytkownik występuje w wielu wierszach. Aby policzyć osoby, a nie transakcje, użyj COUNT(DISTINCT user_id).',
     hint: 'Po złączeniu użytkownika z jego transakcjami jeden użytkownik występuje w wielu wierszach. Aby policzyć osoby, a nie transakcje, użyj COUNT(DISTINCT user_id).',
     cols: ['saas_users', 'app_transactions', 'user_id', 'country', 'COUNT(DISTINCT', 'JOIN'],
-    prompt: "Połącz `saas_users` z `app_transactions` (`INNER JOIN` po `user_id`). Dla każdego kraju (`country`) policz liczbę UNIKALNYCH użytkowników, którzy mają zatwierdzoną transakcję (`tx_status = 'approved'`) jako `paying_users`, oraz sumę ich zatwierdzonych kwot jako `total_amount`. Posortuj malejąco po `total_amount`.",
+    prompt: "Połącz tabelę użytkowników saas_users z tabelą transakcji app_transactions (INNER JOIN po user_id). Dla każdego kraju (country) policz liczbę unikalnych użytkowników posiadających zatwierdzoną transakcję (tx_status = 'approved') jako paying_users oraz łączną sumę ich zatwierdzonych kwot jako total_amount. Wynik posortuj malejąco według łącznej kwoty total_amount.",
     sol: "SELECT u.country, COUNT(DISTINCT u.user_id) AS paying_users, SUM(t.amount) AS total_amount FROM saas_users u JOIN app_transactions t ON t.user_id = u.user_id WHERE t.tx_status = 'approved' GROUP BY u.country ORDER BY total_amount DESC;",
     order: true,
     detectTrap: function(sql) {
@@ -590,7 +590,7 @@ var INTERVIEW_TASKS = [
     gapHint: "Daty w SQL porównujemy w formacie 'YYYY-MM-DD'. Po roku 2021 oznacza hire_date >= '2022-01-01' (lub > '2021-12-31').",
     hint: "Daty w SQL porównujemy w formacie 'YYYY-MM-DD'. Po roku 2021 oznacza hire_date >= '2022-01-01' (lub > '2021-12-31').",
     cols: ['emp_salaries', 'full_name', 'department', 'hire_date', 'salary', 'WHERE', 'ORDER BY'],
-    prompt: "Z tabeli `emp_salaries` wypisz `full_name`, `department`, `hire_date` oraz `salary` dla pracowników zatrudnionych od 1 stycznia 2022 roku (`hire_date >= '2022-01-01'`), których pensja jest ostro większa niż `7000`. Posortuj po `hire_date` rosnąco.",
+    prompt: "Z tabeli emp_salaries wypisz full_name, department, hire_date oraz salary dla pracowników zatrudnionych od 1 stycznia 2022 roku (hire_date >= '2022-01-01'), których pensja jest wyższa niż 7000. Posortuj po hire_date rosnąco.",
     sol: "SELECT full_name, department, hire_date, salary FROM emp_salaries WHERE hire_date >= '2022-01-01' AND salary > 7000 ORDER BY hire_date ASC;",
     order: true,
     detectTrap: function(sql) {
@@ -915,7 +915,7 @@ var INTERVIEW_TASKS = [
     gapHint: "Średnią działu policz w CTE przez ROUND(AVG(salary) OVER (PARTITION BY department), 2) AS dept_avg, a w zewnętrznym SELECT zostaw salary > dept_avg.",
     hint: "Średnią działu policz w CTE przez ROUND(AVG(salary) OVER (PARTITION BY department), 2) AS dept_avg, a w zewnętrznym SELECT zostaw salary > dept_avg.",
     cols: ['emp_salaries', 'WITH', 'AVG(salary) OVER (PARTITION BY department)', 'ROUND(', 'salary'],
-    prompt: "Znajdź pracowników z `emp_salaries`, których pensja (`salary`) jest ostro wyższa niż średnia pensja w ich własnym dziale (`department`). Zwróć `full_name`, `department`, `salary` oraz średnią działu zaokrągloną do 2 miejsc `dept_avg`. Posortuj po `department` rosnąco i `salary` malejąco.",
+    prompt: "Znajdź pracowników z emp_salaries, których pensja (salary) jest wyższa niż średnia pensja w ich własnym dziale (department). Zwróć full_name, department, salary oraz średnią działu zaokrągloną do 2 miejsc dept_avg. Posortuj po department rosnąco i salary malejąco.",
     sol: "WITH d AS (SELECT full_name, department, salary, ROUND(AVG(salary) OVER (PARTITION BY department), 2) AS dept_avg FROM emp_salaries) SELECT full_name, department, salary, dept_avg FROM d WHERE salary > dept_avg ORDER BY department ASC, salary DESC;",
     order: true,
     detectTrap: function(sql) {

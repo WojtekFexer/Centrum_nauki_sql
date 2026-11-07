@@ -1021,12 +1021,15 @@ details.example-output-fold[open] summary::after { content: "▲"; }
 .modal-backdrop {
   position: fixed; inset: 0; background: rgba(7, 11, 20, 0.78);
   backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
-  display: grid; place-items: center; padding: 16px; z-index: 45;
+  display: grid; place-items: center; padding: 12px; z-index: 45;
+  box-sizing: border-box;
+  overflow-y: auto;
 }
 .modal-card {
   width: 100%; max-width: 430px; background: var(--surface);
   border: 1px solid var(--line); border-radius: 18px; padding: 18px;
   box-shadow: 0 18px 40px rgba(0, 0, 0, 0.45);
+  box-sizing: border-box;
 }
 tr.lb-me td { background: var(--done-soft); color: var(--ink); }
 
@@ -1626,8 +1629,11 @@ tr.lb-me td { background: var(--done-soft); color: var(--ink); }
   font-weight: 700;
 }
 .onboarding-modal-card {
-  max-width: 480px;
-  padding: 18px;
+  width: 100%;
+  max-width: min(480px, calc(100vw - 24px));
+  box-sizing: border-box;
+  overflow-x: hidden;
+  padding: 16px;
   touch-action: pan-y;
 }
 .onboarding-dots {
@@ -1636,7 +1642,8 @@ tr.lb-me td { background: var(--done-soft); color: var(--ink); }
   gap: 8px;
   margin: 10px 0 14px;
 }
-.ob-dot {
+.ob-dot,
+.onboarding-dot {
   width: 28px;
   height: 7px;
   border-radius: 99px;
@@ -1646,11 +1653,13 @@ tr.lb-me td { background: var(--done-soft); color: var(--ink); }
   cursor: pointer;
   transition: all 0.2s ease;
 }
-.ob-dot.active {
+.ob-dot.active,
+.onboarding-dot.active {
   width: 42px;
   background: #38bdf8;
 }
-.ob-dot.done {
+.ob-dot.done,
+.onboarding-dot.done {
   background: var(--done);
 }
 .onboarding-slide-body {
@@ -1659,6 +1668,9 @@ tr.lb-me td { background: var(--done-soft); color: var(--ink); }
   border-radius: 14px;
   padding: 14px;
   min-height: 250px;
+  box-sizing: border-box;
+  overflow-wrap: break-word;
+  word-break: break-word;
 }
 .pwa-box {
   margin-top: 10px;
@@ -1667,6 +1679,8 @@ tr.lb-me td { background: var(--done-soft); color: var(--ink); }
   background: var(--code-bg);
   border: 1px solid rgba(56, 189, 248, 0.35);
   font-size: 12.5px;
+  overflow-wrap: break-word;
+  word-break: break-word;
 }
 
 
