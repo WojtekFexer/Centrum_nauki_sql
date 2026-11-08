@@ -4,7 +4,7 @@
 /* ==========================================================================
    0. KONFIGURACJA CHMURY SUPABASE (REST API — RANKING I PROFILE TESTERÓW)
    ========================================================================== */
-const APP_VERSION = 'v13.2';
+const APP_VERSION = 'v14.0';
 const DEFAULT_SUPABASE_URL = 'https://hpfrcykbzuzucglorpkr.supabase.co';
 const DEFAULT_SUPABASE_KEY = 'sb_publishable_5klYjdIKjT35Zl2OtOyGQA_DGxdJCHh';
 
@@ -568,23 +568,60 @@ function triggerStepFlash() {
   }, 500);
 }
 
-/* --- PROGRESJA SOLOLEARN: SEKWENCYJNE BLOKADY KROK PO KROKU (R1→R2→1→2→3→4→5→6) --- */
+/* --- PROGRESJA SOLOLEARN: ADAPTIVE LESSON ENGINE (DYNAMICZNA LICZBA DZIAŁÓW, POD-LEKCJI I ZADAŃ) --- */
+function getNodeObj(nodeOrId) {
+  if (!nodeOrId) return null;
+  if (typeof nodeOrId === 'object') return nodeOrId;
+  return (window.PATH_TASKS || []).find(function(t) { return t.id === nodeOrId; }) || null;
+}
+
+function getNodeTotalTasks(nodeOrId) {
+  var node = getNodeObj(nodeOrId);
+  return (node && Array.isArray(node.variants)) ? node.variants.length : 8;
+}
+
+function getNodeWarmupCount(nodeOrId) {
+  var node = getNodeObj(nodeOrId);
+  var total = getNodeTotalTasks(node || nodeOrId);
+  if (node && Array.isArray(node.variants) && node.variants.length > 0) {
+    var explicit = node.variants.filter(function(v) {
+      return v && (v.isWarmup === true || String(v.id || v.title || '').indexOf('R') === 0);
+    }).length;
+    if (explicit > 0) return explicit;
+  }
+  return total <= 5 ? 1 : 2;
+}
+
+function getNodeUnlockThreshold(nodeOrId) {
+  var node = getNodeObj(nodeOrId);
+  if (node && node.unlockAt) return Number(node.unlockAt);
+  var total = getNodeTotalTasks(node || nodeOrId);
+  if (total === 8) return 5;
+  if (total === 5) return 3;
+  return Math.max(2, Math.ceil(total * 0.65));
+}
+
+window.getNodeTotalTasks = getNodeTotalTasks;
+window.getNodeWarmupCount = getNodeWarmupCount;
+window.getNodeUnlockThreshold = getNodeUnlockThreshold;
+
 function getVariantKey(taskOrId, vIdx) {
   var taskId = typeof taskOrId === 'string' ? taskOrId : (taskOrId && taskOrId.id);
-  var task = typeof taskOrId === 'object' && taskOrId
-    ? taskOrId
-    : (window.PATH_TASKS || []).find(function(t) { return t.id === taskId; });
+  var task = getNodeObj(taskOrId);
   if (task && task.variants && task.variants[vIdx] && task.variants[vIdx].keySuffix !== undefined) {
     return task.id + ':' + task.variants[vIdx].keySuffix;
   }
-  if (vIdx === 0) return taskId + ':r1';
-  if (vIdx === 1) return taskId + ':r2';
-  return taskId + ':' + (vIdx - 2);
+  var warmupCount = getNodeWarmupCount(task || taskId);
+  if (vIdx < warmupCount) return taskId + ':r' + (vIdx + 1);
+  return taskId + ':' + (vIdx - warmupCount);
 }
 
 function isStepSolved(taskOrId, vIdx) {
   var cv = (state && state.completedVariants) ? state.completedVariants : {};
-  return !!cv[getVariantKey(taskOrId, vIdx)];
+  var taskId = typeof taskOrId === 'string' ? taskOrId : (taskOrId && taskOrId.id);
+  if (cv[getVariantKey(taskOrId, vIdx)]) return true;
+  if (taskId && cv[taskId + '__v' + vIdx]) return true;
+  return false;
 }
 
 function isStepUnlocked(taskOrId, vIdx) {
@@ -594,44 +631,62 @@ function isStepUnlocked(taskOrId, vIdx) {
   return isStepSolved(taskOrId, vIdx - 1);
 }
 
-function countWarmupSolved(taskId) {
+function countWarmupSolved(taskOrId) {
+  var node = getNodeObj(taskOrId);
+  var wCnt = getNodeWarmupCount(node || taskOrId);
   var c = 0;
-  var cv = (state && state.completedVariants) ? state.completedVariants : {};
-  if (cv[taskId + ':r1']) c++;
-  if (cv[taskId + ':r2']) c++;
-  return c;
-}
-
-function countBasicSolved(taskId) {
-  var c = 0;
-  var cv = (state && state.completedVariants) ? state.completedVariants : {};
-  for (var i = 0; i < 3; i++) {
-    if (cv[taskId + ':' + i]) c++;
+  for (var i = 0; i < wCnt; i++) {
+    if (isStepSolved(node || taskOrId, i)) c++;
   }
   return c;
 }
 
-function countAdvSolved(taskId) {
+function countBasicSolved(taskOrId) {
+  var node = getNodeObj(taskOrId);
+  var total = getNodeTotalTasks(node || taskOrId);
+  var wCnt = getNodeWarmupCount(node || taskOrId);
+  var threshold = getNodeUnlockThreshold(node || taskOrId);
+  var basicEnd = Math.min(total, Math.max(wCnt, threshold));
   var c = 0;
-  var cv = (state && state.completedVariants) ? state.completedVariants : {};
-  for (var i = 3; i < 10; i++) {
-    if (cv[taskId + ':' + i]) c++;
+  for (var i = wCnt; i < basicEnd; i++) {
+    if (isStepSolved(node || taskOrId, i)) c++;
   }
   return c;
 }
 
-function countTotalLessonSolved(taskId) {
-  return countWarmupSolved(taskId) + countBasicSolved(taskId) + countAdvSolved(taskId);
+function countAdvSolved(taskOrId) {
+  var node = getNodeObj(taskOrId);
+  var total = getNodeTotalTasks(node || taskOrId);
+  var wCnt = getNodeWarmupCount(node || taskOrId);
+  var threshold = getNodeUnlockThreshold(node || taskOrId);
+  var basicEnd = Math.min(total, Math.max(wCnt, threshold));
+  var c = 0;
+  for (var i = basicEnd; i < total; i++) {
+    if (isStepSolved(node || taskOrId, i)) c++;
+  }
+  return c;
 }
 
-function isLessonCoreCompleted(taskId) {
-  if (state && state.completedTasks && state.completedTasks[taskId]) return true;
-  return countTotalLessonSolved(taskId) >= 5;
+function countTotalLessonSolved(taskOrId) {
+  var node = getNodeObj(taskOrId);
+  var total = getNodeTotalTasks(node || taskOrId);
+  var c = 0;
+  for (var i = 0; i < total; i++) {
+    if (isStepSolved(node || taskOrId, i)) c++;
+  }
+  return c;
 }
 
-function isAdvancedUnlocked(taskId) {
+function isLessonCoreCompleted(taskOrId) {
+  var node = getNodeObj(taskOrId);
+  var taskId = typeof taskOrId === 'string' ? taskOrId : (node && node.id);
+  if (state && state.completedTasks && taskId && state.completedTasks[taskId]) return true;
+  return countTotalLessonSolved(node || taskOrId) >= getNodeUnlockThreshold(node || taskOrId);
+}
+
+function isAdvancedUnlocked(taskOrId) {
   if (state && state.testerUnlockAll) return true;
-  return isLessonCoreCompleted(taskId);
+  return isLessonCoreCompleted(taskOrId);
 }
 
 function getFirstUnsolvedStepIdx(task) {
@@ -645,11 +700,11 @@ function getFirstUnsolvedStepIdx(task) {
 function isLessonUnlocked(taskId) {
   if (state && state.testerUnlockAll) return true;
   var idx = PATH_TASKS.findIndex(function(t) { return t.id === taskId; });
-  if (idx <= 0) return true; // Lekcja 1.1 zawsze odblokowana na starcie
+  if (idx <= 0) return true; // Pierwsza lekcja zawsze odblokowana na starcie
   var task = PATH_TASKS[idx];
   var prevTask = PATH_TASKS[idx - 1];
-  // Odblokowana, gdy poprzednia lekcja ma zaliczone co najmniej 5 zadań
-  if (isLessonCoreCompleted(prevTask.id)) return true;
+  // Odblokowana, gdy poprzednia lekcja osiągnęła swój próg odblokowania (doneCount >= getNodeUnlockThreshold(prevNode))
+  if (countTotalLessonSolved(prevTask) >= getNodeUnlockThreshold(prevTask) || isLessonCoreCompleted(prevTask.id)) return true;
   // Lub została odblokowana przez moduł Diagnozy (state.unlockedStage)
   if (state && state.diagDone && (state.unlockedStage || 1) > 1) {
     if (task.stage < state.unlockedStage) return true;
@@ -3060,7 +3115,8 @@ function renderEditorWidget(extraCols, actionType, variant, task) {
   if (task && Array.isArray(task.variants) && variant) {
     curVIdx = task.variants.indexOf(variant);
     if (curVIdx === -1) curVIdx = state.activeVariantIdx % task.variants.length;
-    isWarmupStep = (curVIdx === 0 || curVIdx === 1 || variant.tier === 'warmup');
+    var warmupCnt = getNodeWarmupCount(task);
+    isWarmupStep = (curVIdx < warmupCnt || variant.tier === 'warmup' || variant.isWarmup === true);
   }
   var barHtml = '';
   if (isWarmupStep && task && variant) {
@@ -3105,22 +3161,44 @@ function renderSingleTable(resObj, maxRows) {
     '</tbody></table></div>';
   }
 
-// Nowa numeracja zadań w Ścieżce: 🔥 Rozgrzewka 1 z 2 / 🎯 Zadanie 1 z 6 + kompaktowy wariant na pasek nawigacji
-function getStepSwitchLabel(vIdx, totalSteps) {
-  var mainCnt = Math.max(1, (totalSteps || 8) - 2);
-  if (vIdx < 2) {
-    return '🔥 Rozgrzewka ' + (vIdx + 1) + ' z 2';
+// Dynamiczna numeracja zadań w Ścieżce: 🔥 Rozgrz. X/warmupCount lub 🎯 Zad. Y/(total - warmupCount)
+function resolveWarmupAndTotal(nodeOrTotal) {
+  if (nodeOrTotal && typeof nodeOrTotal === 'object') {
+    return {
+      total: getNodeTotalTasks(nodeOrTotal),
+      warmupCount: getNodeWarmupCount(nodeOrTotal)
+    };
   }
-  return '🎯 Zadanie ' + (vIdx - 1) + ' z ' + mainCnt;
+  var activeNode = (window.PATH_TASKS || []).find(function(t) { return t.id === (state && state.activeTaskId); });
+  if (activeNode && (!nodeOrTotal || getNodeTotalTasks(activeNode) === Number(nodeOrTotal))) {
+    return {
+      total: getNodeTotalTasks(activeNode),
+      warmupCount: getNodeWarmupCount(activeNode)
+    };
+  }
+  var tot = Number(nodeOrTotal) || 8;
+  return {
+    total: tot,
+    warmupCount: tot <= 5 ? 1 : 2
+  };
 }
 
-function getCompactStepLabel(vIdx, totalSteps) {
-  var mainCnt = Math.max(1, (totalSteps || 8) - 2);
-  if (vIdx < 2) {
-    return '🔥 Rozgrz. ' + (vIdx + 1) + '/2';
+function getStepSwitchLabel(vIdx, nodeOrTotal) {
+  var info = resolveWarmupAndTotal(nodeOrTotal);
+  var warmupCount = info.warmupCount;
+  var mainCnt = Math.max(1, info.total - warmupCount);
+  if (vIdx < warmupCount) {
+    return '🔥 Rozgrz. ' + (vIdx + 1) + '/' + warmupCount;
   }
-  return '🎯 Zad. ' + (vIdx - 1) + '/' + mainCnt;
+  return '🎯 Zad. ' + (vIdx - warmupCount + 1) + '/' + mainCnt;
 }
+
+function getCompactStepLabel(vIdx, nodeOrTotal) {
+  return getStepSwitchLabel(vIdx, nodeOrTotal);
+}
+
+window.getStepSwitchLabel = getStepSwitchLabel;
+window.getCompactStepLabel = getCompactStepLabel;
 
 function getVariantShortDesc(task, variant, vIdx) {
   if (!variant) return 'Zadanie SQL';
@@ -3173,7 +3251,8 @@ function getVariantShortDesc(task, variant, vIdx) {
 }
 
 function getVariantShortTitle(task, variant, vIdx) {
-  var prefix = vIdx < 2 ? ('🔥 R' + (vIdx + 1) + ': ') : ('🎯 Zad. ' + (vIdx - 1) + ': ');
+  var warmupCnt = getNodeWarmupCount(task);
+  var prefix = vIdx < warmupCnt ? ('🔥 R' + (vIdx + 1) + ': ') : ('🎯 Zad. ' + (vIdx - warmupCnt + 1) + ': ');
   return prefix + getVariantShortDesc(task, variant, vIdx);
 }
 
@@ -3183,9 +3262,9 @@ function renderResultBox() {
     var nextBtnHtml = '';
     if (lastFeedback.type === 'ok' && currentTab === 'path' && state.pathMode === 'solve') {
       var curT = PATH_TASKS.find(function(t) { return t.id === state.activeTaskId; }) || PATH_TASKS[0];
-      var curVIdx = state.activeVariantIdx % curT.variants.length;
-      if (curVIdx + 1 < curT.variants.length) {
-        var nextSwitchLbl = getStepSwitchLabel(curVIdx + 1, curT.variants.length);
+      var curVIdx = state.activeVariantIdx % getNodeTotalTasks(curT);
+      if (curVIdx + 1 < getNodeTotalTasks(curT)) {
+        var nextSwitchLbl = getStepSwitchLabel(curVIdx + 1, curT);
         nextBtnHtml = '<div style="margin-top:10px">' +
           '<button type="button" class="btn success next-step-cta" data-act="nextTaskStep">🚀 Następne zadanie (' + esc(nextSwitchLbl) + ') →</button>' +
         '</div>';
@@ -3708,7 +3787,7 @@ function renderTutorialView(task) {
   '</div>';
 }
 
-// ZAKŁADKA 1: ŚCIEŻKA (128 ZADAŃ: 32 ROZGRZEWKI R1–R2 + 96 ZADAŃ 1–6 + SLAJDY SOLOLEARN + SEKWENCYJNE BLOKADY)
+// ZAKŁADKA 1: ŚCIEŻKA (DYNAMICZNA ARCHITEKTURA ZADAŃ + SLAJDY SOLOLEARN + SEKWENCYJNE BLOKADY)
 function renderPathTab() {
   var activeTask = PATH_TASKS.find(function(t) { return t.id === state.activeTaskId; }) || PATH_TASKS[0];
 
@@ -3718,23 +3797,23 @@ function renderPathTab() {
 
   if (state.pathMode === 'solve') {
     var task = activeTask;
-    var vIdx = state.activeVariantIdx % task.variants.length;
+    var totalSteps = getNodeTotalTasks(task);
+    var vIdx = state.activeVariantIdx % totalSteps;
     if (!isStepUnlocked(task, vIdx)) {
       vIdx = getFirstUnsolvedStepIdx(task);
       state.activeVariantIdx = vIdx;
     }
     var variant = task.variants[vIdx];
-    var totalSteps = task.variants.length;
-    var compactSwitchLbl = getCompactStepLabel(vIdx, totalSteps);
+    var compactSwitchLbl = getCompactStepLabel(vIdx, task);
 
     var solvedInLesson = countTotalLessonSolved(task.id);
-    var unlockGoal = 5;
+    var unlockGoal = getNodeUnlockThreshold(task);
     var unlockedCount = Math.min(unlockGoal, solvedInLesson);
     var isNextLessonUnlocked = solvedInLesson >= unlockGoal || isLessonCoreCompleted(task.id);
     var unlockPct = Math.round((unlockedCount / unlockGoal) * 100);
     var unlockBadgeHtml = isNextLessonUnlocked
-      ? '<span class="unlock-progress-pill compact-unlock-badge unlocked" title="Kolejna lekcja odblokowana (5/5)">🌟 5/5</span>'
-      : '<span class="unlock-progress-pill compact-unlock-badge" title="Rozwiąż 5 zadań, aby odblokować kolejną lekcję">🔓 ' + unlockedCount + '/5</span>';
+      ? '<span class="unlock-progress-pill compact-unlock-badge unlocked" title="Kolejna lekcja odblokowana (' + unlockGoal + '/' + unlockGoal + ')">🌟 ' + unlockGoal + '/' + unlockGoal + '</span>'
+      : '<span class="unlock-progress-pill compact-unlock-badge" title="Rozwiąż ' + unlockGoal + ' zadań, aby odblokować kolejną lekcję">🔓 ' + unlockedCount + '/' + unlockGoal + '</span>';
 
     var hasPrev = vIdx > 0;
     var hasNext = (vIdx + 1 < totalSteps) && isStepUnlocked(task, vIdx + 1);
@@ -3790,7 +3869,7 @@ function renderPathTab() {
     '</div>';
   }
 
-  var totalVariants = PATH_TASKS.reduce(function(acc, t) { return acc + t.variants.length; }, 0);
+  var totalVariants = PATH_TASKS.reduce(function(acc, t) { return acc + getNodeTotalTasks(t); }, 0);
   var doneVariants = PATH_TASKS.reduce(function(acc, t) { return acc + countTotalLessonSolved(t.id); }, 0);
   var doneLessons = PATH_TASKS.filter(function(t) { return isLessonCoreCompleted(t.id) || !!state.completedTasks[t.id]; }).length;
 
@@ -3799,7 +3878,7 @@ function renderPathTab() {
                      PATH_TASKS.find(function(t) { return isLessonUnlocked(t.id) && !isLessonCoreCompleted(t.id); }) ||
                      PATH_TASKS[0];
   var continueTaskSolved = countTotalLessonSolved(continueTask.id);
-  var continueTaskTotal = continueTask.variants.length;
+  var continueTaskTotal = getNodeTotalTasks(continueTask);
 
   var h = '';
   if (!hasNick) {
@@ -3835,11 +3914,9 @@ function renderPathTab() {
       '<div style="min-width:200px;flex:1 1 200px;word-break:normal;overflow-wrap:break-word"><h2 style="margin:0">Mapa Ścieżki SQL (Progresja Krok po Kroku)</h2>' +
       '<p class="small muted" style="margin:2px 0 0">Zaliczone działy: <strong>' + doneLessons + '/' + PATH_TASKS.length + '</strong> · Rozwiązane zadania: <strong>' + doneVariants + '/' + totalVariants + '</strong>' +
       (state.testerUnlockAll ? ' · <span class="chip mid">🔓 Tryb testerski aktywny</span>' : '') + '</p></div>' +
-      '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">' +
-        '<button type="button" class="btn sm onboarding-open-btn" data-act="openOnboarding">🎓 Samouczek SQL (4 karty)</button>' +
-      '</div>' +
+      (state.diagDone ? '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center"><button type="button" class="btn sm onboarding-open-btn" data-act="openOnboarding" title="Samouczek SQL">?</button></div>' : '') +
     '</div>' +
-    '<div class="bar"><i style="width:' + Math.round((doneLessons / PATH_TASKS.length) * 100) + '%"></i></div>' +
+    '<div class="bar"><i style="width:' + Math.round((doneLessons / Math.max(1, PATH_TASKS.length)) * 100) + '%"></i></div>' +
   '</div>';
 
   STAGES.forEach(function(st) {
@@ -3856,12 +3933,10 @@ function renderPathTab() {
       '<div class="node-list">';
 
     tasksInStage.forEach(function(t) {
-      var warmupSolved = countWarmupSolved(t.id);
-      var basicSolved = countBasicSolved(t.id);
-      var advSolved = countAdvSolved(t.id);
-      var vSolved = warmupSolved + basicSolved + advSolved;
+      var vSolved = countTotalLessonSolved(t.id);
+      var totalNodeTasks = getNodeTotalTasks(t);
+      var nodeThreshold = getNodeUnlockThreshold(t);
       var lessonOpen = isLessonUnlocked(t.id);
-      var tutDone = !!(state.tutorialsDone && state.tutorialsDone[t.id]);
       var isMastered = isLessonCoreCompleted(t.id);
       var isCurrent = (t.id === continueTask.id && lessonOpen);
 
@@ -3869,40 +3944,30 @@ function renderPathTab() {
       var subNum = numMatch ? numMatch[1] : '';
       var cleanLessonTitle = numMatch ? numMatch[2] : t.title;
 
-      var progCls = vSolved >= 5 ? ' done' : '';
+      var progCls = vSolved >= nodeThreshold ? ' done' : '';
       var statePill = !lessonOpen
         ? '<span class="node-state-pill locked">🔒 Zablokowana</span>'
         : (isMastered
-            ? '<span class="node-state-pill done">✅ Ukończona</span>'
+            ? '<span class="node-state-pill done">✓ Ukończona</span>'
             : (isCurrent
                 ? '<span class="node-state-pill current">🎯 Tu jesteś</span>'
                 : '<span class="node-state-pill open">🔓 Dostępna</span>'));
 
-      var sampleShortTitles = [0, 2, 4].map(function(i) {
-        return t.variants[i] ? getVariantShortTitle(t, t.variants[i], i) : '';
-      }).filter(Boolean).join(' · ');
-
-      var nodeCls = 'node-item' + (!lessonOpen ? ' locked' : '') + (isCurrent ? ' current-node' : '') + (isMastered ? ' mastered' : '');
+      var nodePct = totalNodeTasks > 0 ? Math.min(100, Math.round((vSolved / totalNodeTasks) * 100)) : 0;
+      var nodeCls = 'node-item path-node-clean' + (!lessonOpen ? ' locked' : '') + (isCurrent ? ' current-node' : '') + (isMastered ? ' mastered' : '');
 
       h += '<button type="button" class="' + nodeCls + '" data-act="openPathTask" data-id="' + t.id + '">' +
-        '<div style="width:100%;min-width:0">' +
-          '<div class="node-hdr-row">' +
-            '<div class="node-title-wrap">' +
-              (subNum ? '<span class="node-num-badge">' + (!lessonOpen ? '🔒 ' : isMastered ? '✅ ' : '') + esc(subNum) + '</span>' : '') +
-              '<span class="node-title-txt">' + esc(cleanLessonTitle) + '</span>' +
-            '</div>' +
-            '<div style="display:flex;align-items:center;gap:6px">' +
-              statePill +
-              '<span class="node-prog-badge' + progCls + '">' + vSolved + '/' + t.variants.length + '</span>' +
-            '</div>' +
+        '<div class="node-clean-row1">' +
+          (subNum ? '<span class="node-num-badge">' + (!lessonOpen ? '🔒 ' : isMastered ? '✓ ' : '') + esc(subNum) + '</span>' : '<span class="node-num-badge">' + (!lessonOpen ? '🔒' : isMastered ? '✓' : '📖') + '</span>') +
+          '<div class="node-clean-badges">' +
+            statePill +
+            '<span class="node-prog-badge' + progCls + '">' + vSolved + '/' + totalNodeTasks + '</span>' +
           '</div>' +
-          '<div class="node-meta">' +
-            '<span>📖 Slajdy: <strong>' + (tutDone ? '✓ 4/4' : '0/4') + '</strong></span>' +
-            '<span>· 🔥 Rozgrzewka: <strong>' + warmupSolved + '/2</strong></span>' +
-            '<span>· 🎯 Zadania: <strong>' + (basicSolved + advSolved) + '/6</strong></span>' +
-          '</div>' +
-          (sampleShortTitles ? '<div class="small muted" style="margin-top:4px;font-size:11px;overflow-wrap:break-word">' + esc(sampleShortTitles) + '</div>' : '') +
         '</div>' +
+        '<div class="node-clean-row2">' +
+          '<span class="node-title-txt">' + esc(cleanLessonTitle) + '</span>' +
+        '</div>' +
+        '<div class="node-clean-bar"><i style="width:' + nodePct + '%"></i></div>' +
       '</button>';
     });
     h += '</div></div>';
@@ -4345,7 +4410,7 @@ function renderTopbarModal() {
     title = '⚡ Twój Postęp i Doświadczenie (XP)';
     var xp = state.xp || 0;
     var pathDone = Object.keys(state.completedVariants || {}).length;
-    var pathTotal = window.PATH_TASKS ? window.PATH_TASKS.reduce(function(acc, t) { return acc + (t.variants || []).length; }, 0) : 128;
+    var pathTotal = (window.PATH_TASKS || PATH_TASKS || []).reduce(function(acc, t) { return acc + getNodeTotalTasks(t); }, 0);
     var diagDone = Array.isArray(state.diagSkipped) ? state.diagSkipped.length : (state.diagIdx || 0);
     var diagTotal = window.DIAG_QUESTIONS ? window.DIAG_QUESTIONS.length : 10;
     var lemurDone = Object.keys(state.completedLemur || {}).length;
@@ -4435,7 +4500,7 @@ function renderTopbarModal() {
 
 // ZAKŁADKA 5: KONTO, RANKING SOLOLEARN, SUPABASE & AI
 function renderProfileTab() {
-  var totalPathVars = PATH_TASKS.reduce(function(acc, t) { return acc + t.variants.length; }, 0);
+  var totalPathVars = PATH_TASKS.reduce(function(acc, t) { return acc + getNodeTotalTasks(t); }, 0);
   var lemurList = window.INTERVIEW_TASKS || window.LEMUR_TASKS || [];
   var totalAllTasks = totalPathVars + DIAG_QUESTIONS.length + lemurList.length;
   var curNick = (state.userProfile && state.userProfile.nick) ? state.userProfile.nick : (state.nickname || 'Gość (niezalogowany)');
@@ -4541,10 +4606,20 @@ function updateHeader() {
   var xpEl = document.getElementById('xpPill');
   var stEl = document.getElementById('streakPill');
   var bdg = document.getElementById('gapBdg');
+  var pathTabLbl = document.getElementById('pathTabLabel');
   if (xpEl) xpEl.textContent = '⚡ ' + state.xp + ' XP';
   if (stEl) stEl.textContent = '🔥 ' + state.streak + 'd';
   var openGaps = state.gaps.filter(function(g) { return g.lvl <= 1; }).length;
   if (bdg) bdg.innerHTML = openGaps ? '<span class="bdg-cnt">' + openGaps + '</span>' : '';
+  var totalAllPathTasks = (window.PATH_TASKS || PATH_TASKS || []).reduce(function(acc, t) { return acc + getNodeTotalTasks(t); }, 0);
+  if (pathTabLbl) {
+    pathTabLbl.textContent = 'Ścieżka (' + totalAllPathTasks + ')';
+  } else {
+    var pathTabBtn = document.querySelector('.tab[data-tab="path"]');
+    if (pathTabBtn) {
+      pathTabBtn.innerHTML = '<span class="ico">🗺️</span><span id="pathTabLabel">Ścieżka (' + totalAllPathTasks + ')</span>';
+    }
+  }
 }
 
 function render() {
@@ -4733,6 +4808,8 @@ document.addEventListener('click', async function(e) {
     }
     render();
     window.scrollTo(0, 0);
+    if (document.documentElement) document.documentElement.scrollTop = 0;
+    if (document.body) document.body.scrollTop = 0;
   }
   else if (act === 'setCtxTab') {
     uiState.taskCtxTab = el.dataset.ctx || 'task';
@@ -4951,7 +5028,10 @@ document.addEventListener('click', async function(e) {
   else if (act === 'openPathTask') {
     var targetId = el.dataset.id;
     if (!isLessonUnlocked(targetId)) {
-      toast('🔒 Zablokowane! Ukończ najpierw co najmniej 5 zadań (🔥 Rozgrzewka 1–2 oraz 🎯 Zadanie 1–3) w poprzedniej pod-lekcji.');
+      var targetIdx = PATH_TASKS.findIndex(function(x) { return x.id === targetId; });
+      var prevNode = targetIdx > 0 ? PATH_TASKS[targetIdx - 1] : null;
+      var reqCount = prevNode ? getNodeUnlockThreshold(prevNode) : 5;
+      toast('🔒 Zablokowane! Ukończ najpierw co najmniej ' + reqCount + ' zadań w poprzedniej pod-lekcji.');
       return;
     }
     state.activeTaskId = targetId;
@@ -5097,6 +5177,8 @@ document.addEventListener('click', async function(e) {
     saveState();
     render();
     window.scrollTo(0, 0);
+    if (document.documentElement) document.documentElement.scrollTop = 0;
+    if (document.body) document.body.scrollTop = 0;
   }
   else if (act === 'pickVariant') {
     var reqIdx = Number(el.dataset.idx) || 0;
@@ -5240,8 +5322,9 @@ document.addEventListener('click', async function(e) {
   }
   else if (act === 'shuffleVariant') {
     var curTask = PATH_TASKS.find(function(x) { return x.id === state.activeTaskId; }) || PATH_TASKS[0];
+    var totalCurTasks = getNodeTotalTasks(curTask);
     var unlockedIndices = [];
-    for (var ui = 0; ui < curTask.variants.length; ui++) {
+    for (var ui = 0; ui < totalCurTasks; ui++) {
       if (isStepUnlocked(curTask, ui)) unlockedIndices.push(ui);
     }
     var availLen = unlockedIndices.length || 1;
@@ -5256,14 +5339,17 @@ document.addEventListener('click', async function(e) {
     lastExecResult = null;
     lastExpectedResult = null;
     lastChecklist = null;
-    lastFeedback = { type: 'warn', title: '🎲 Wylosowano odblokowane ' + getStepSwitchLabel(nextIdx, curTask.variants.length), msg: 'Zmieniliśmy tabelę lub warunki zadania. Napisz nowe zapytanie!' };
+    lastFeedback = { type: 'warn', title: '🎲 Wylosowano odblokowane ' + getStepSwitchLabel(nextIdx, curTask), msg: 'Zmieniliśmy tabelę lub warunki zadania. Napisz nowe zapytanie!' };
     saveState();
     triggerStepFlash();
     render();
   }
   else if (act === 'checkPathTask') {
     var task = PATH_TASKS.find(function(t) { return t.id === state.activeTaskId; }) || PATH_TASKS[0];
-    var vIdx = state.activeVariantIdx % task.variants.length;
+    var totalTaskVars = getNodeTotalTasks(task);
+    var warmupTaskCnt = getNodeWarmupCount(task);
+    var unlockThresh = getNodeUnlockThreshold(task);
+    var vIdx = state.activeVariantIdx % totalTaskVars;
     var variant = task.variants[vIdx];
     lastExecResult = await runQuery(state.editorCode);
     var expRes = await runQuery(variant.sol);
@@ -5276,7 +5362,7 @@ document.addEventListener('click', async function(e) {
       lastExpectedResult = null;
       var wasCoreUnlocked = isLessonCoreCompleted(task.id);
       var vKey = getVariantKey(task, vIdx);
-      var isWarmStep = variant.tier === 'warmup' || vIdx < 2;
+      var isWarmStep = variant.isWarmup === true || variant.tier === 'warmup' || vIdx < warmupTaskCnt;
       if (!state.completedVariants[vKey]) {
         state.completedVariants[vKey] = true;
         state.xp += isWarmStep ? 10 : 15;
@@ -5291,20 +5377,21 @@ document.addEventListener('click', async function(e) {
         // Sprawdź czy cały etap ma ukończone lekcje podstawowe, by podbić unlockedStage
         var stageLessons = PATH_TASKS.filter(function(pt) { return pt.stage === task.stage; });
         var allStageBasicDone = stageLessons.every(function(pt) { return isLessonCoreCompleted(pt.id); });
-        if (allStageBasicDone && task.stage >= state.unlockedStage && state.unlockedStage < 5) {
+        var maxStageNum = (window.STAGES && window.STAGES.length) ? window.STAGES.length : STAGES.length;
+        if (allStageBasicDone && task.stage >= state.unlockedStage && state.unlockedStage < maxStageNum) {
           state.unlockedStage = task.stage + 1;
         }
         if (!wasCoreUnlocked) {
-          unlockBonusMsg = '\n🔓 Brawo! Rozwiązałeś 5 z 8 zadań w tej pod-lekcji — odblokowałeś Zadania 4–6 oraz kolejną pod-lekcję na Mapie Ścieżki!';
-          toast('🔓 Odblokowano kolejną pod-lekcję (5/8 zadań)!');
+          unlockBonusMsg = '\n🔓 Brawo! Rozwiązałeś ' + unlockThresh + ' z ' + totalTaskVars + ' zadań w tej pod-lekcji — odblokowałeś kolejną pod-lekcję na Mapie Ścieżki!';
+          toast('🔓 Odblokowano kolejną pod-lekcję (' + unlockThresh + '/' + totalTaskVars + ' zadań)!');
         }
       }
-      if (vIdx + 1 < task.variants.length) {
-        unlockBonusMsg += '\n👉 Odblokowano kolejny krok: ' + getStepSwitchLabel(vIdx + 1, task.variants.length) + '. Kliknij zielony przycisk poniżej!';
+      if (vIdx + 1 < totalTaskVars) {
+        unlockBonusMsg += '\n👉 Odblokowano kolejny krok: ' + getStepSwitchLabel(vIdx + 1, task) + '. Kliknij zielony przycisk poniżej!';
       } else {
-        unlockBonusMsg += '\n🏆 Wszystkie 8 zadań w tej pod-lekcji zostały ukończone!';
+        unlockBonusMsg += '\n🏆 Wszystkie ' + totalTaskVars + ' zadań w tej pod-lekcji zostały ukończone!';
       }
-      var curStepLbl = getStepSwitchLabel(vIdx, task.variants.length);
+      var curStepLbl = getStepSwitchLabel(vIdx, task);
       lastFeedback = { type: 'ok', title: '✅ ' + curStepLbl + ' zaliczone! (+' + (isWarmStep ? 10 : 15) + ' XP)', msg: cmp.msg + unlockBonusMsg };
       saveState();
       syncProfileToCloud(true);
@@ -5685,7 +5772,13 @@ document.addEventListener('click', async function(e) {
   }
 });
 
+if ('scrollRestoration' in history) {
+  try { history.scrollRestoration = 'manual'; } catch (e) {}
+}
 render();
+window.scrollTo(0, 0);
+if (document.documentElement) document.documentElement.scrollTop = 0;
+if (document.body) document.body.scrollTop = 0;
 initDatabase();
 fetchLeaderboard();
 
