@@ -4,7 +4,7 @@
 /* ==========================================================================
    0. KONFIGURACJA CHMURY SUPABASE (REST API — RANKING I PROFILE TESTERÓW)
    ========================================================================== */
-const APP_VERSION = 'v13';
+const APP_VERSION = 'v13.1';
 const DEFAULT_SUPABASE_URL = 'https://hpfrcykbzuzucglorpkr.supabase.co';
 const DEFAULT_SUPABASE_KEY = 'sb_publishable_5klYjdIKjT35Zl2OtOyGQA_DGxdJCHh';
 
@@ -317,6 +317,17 @@ function compareResults(userRes, expRes, checkOrder) {
       msg: 'Liczba kolumn się nie zgadza: zwróciłeś ' + uCols.length + ' (' + uCols.join(', ') + '), a oczekiwano ' + eCols.length + ' (' + eCols.join(', ') + ').'
     };
   }
+  for (var cIdx = 0; cIdx < eCols.length; cIdx++) {
+    var uColName = String(uCols[cIdx] || '').trim();
+    var eColName = String(eCols[cIdx] || '').trim();
+    if (uColName.toLowerCase() !== eColName.toLowerCase()) {
+      return {
+        ok: false,
+        reason: 'col_name',
+        msg: 'Nazwa kolumny #' + (cIdx + 1) + ' się nie zgadza: w Twoim wyniku to `' + uColName + '`, a oczekiwano `' + eColName + '`. Sprawdź, czy nie brakuje wymaganego aliasu `AS ' + eColName + '`.'
+      };
+    }
+  }
   if (uRows.length !== eRows.length) {
     return {
       ok: false, reason: 'rows',
@@ -460,6 +471,8 @@ try {
     if (!state.completedLemur) state.completedLemur = {};
     if (!state.completedTasks) state.completedTasks = {};
     if (!state.tutorialsDone) state.tutorialsDone = {};
+    if (!Array.isArray(state.gaps)) state.gaps = defaultState().gaps;
+    if (!Array.isArray(state.diagSkipped)) state.diagSkipped = [];
     // Kompatybilność wsteczna: jeśli z poprzednich sesji zaliczono już zadanie podstawowe 1 (klucz ':0'),
     // automatycznie oznacz rozgrzewkę R1-R2 jako zaliczoną, aby nie blokować dotychczasowego postępu.
     (window.PATH_TASKS || []).forEach(function(pt) {
@@ -471,7 +484,16 @@ try {
   }
 } catch (e) {}
 
+var _debouncedSaveTimer = null;
+function debouncedSaveState(delayMs) {
+  clearTimeout(_debouncedSaveTimer);
+  _debouncedSaveTimer = setTimeout(function() {
+    saveState();
+  }, delayMs || 200);
+}
+
 function saveState() {
+  clearTimeout(_debouncedSaveTimer);
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) {}
   updateHeader();
 }
@@ -516,8 +538,10 @@ var uiState = {
   warmupUsedBlocks: [],
   activeAliasPopover: null,
   tableSamplesOpen: {},
+  tableColsOpen: {},
   onboardingTableSelection: null,
-  teachFirstOpen: false
+  teachFirstOpen: false,
+  topbarModal: null
 };
 
 function resetTaskContextUi() {
@@ -529,6 +553,7 @@ function resetTaskContextUi() {
   uiState.hintStep = 0;
   uiState.activeAliasPopover = null;
   uiState.tableSamplesOpen = {};
+  uiState.tableColsOpen = {};
   uiState.teachFirstOpen = false;
 }
 
@@ -675,7 +700,9 @@ function getTotalSolvedCount() {
 function getLocalProfilesMap() {
   try {
     var raw = localStorage.getItem(LOCAL_PROFILES_KEY);
-    return raw ? JSON.parse(raw) : {};
+    if (!raw) return {};
+    var parsed = JSON.parse(raw);
+    return (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) ? parsed : {};
   } catch (e) {
     return {};
   }
@@ -719,6 +746,19 @@ function mergeRemoteStateIntoCurrent(remoteState) {
   state.completedTasks = Object.assign({}, remoteState.completedTasks || {}, state.completedTasks || {});
   state.completedVariants = Object.assign({}, remoteState.completedVariants || {}, state.completedVariants || {});
   state.completedLemur = Object.assign({}, remoteState.completedLemur || {}, state.completedLemur || {});
+  if (Array.isArray(remoteState.gaps)) {
+    if (!Array.isArray(state.gaps)) state.gaps = [];
+    remoteState.gaps.forEach(function(rg) {
+      if (!rg || !rg.id) return;
+      var localG = state.gaps.find(function(g) { return g.id === rg.id; });
+      if (localG) {
+        localG.lvl = Math.max(localG.lvl || 0, Number(rg.lvl) || 0);
+        localG.hits = Math.max(localG.hits || 0, Number(rg.hits) || 0);
+      } else {
+        state.gaps.push(Object.assign({}, rg));
+      }
+    });
+  }
 }
 
 async function syncProfileToCloud(silent) {
@@ -1240,6 +1280,32 @@ function getTaskSchemaColCount(tableNames, solSql) {
   return metas.reduce(function(acc, m) { return acc + (m.cols ? m.cols.length : 0); }, 0);
 }
 
+function filterSampleToMeta(sample, metaCols) {
+  if (!sample || !sample.columns || !sample.values || !Array.isArray(metaCols)) return sample;
+  var allowedColNames = metaCols.map(function(c) {
+    return (typeof c === 'string' ? c : c.name).toLowerCase();
+  });
+  var indices = [];
+  var newCols = [];
+  sample.columns.forEach(function(col, idx) {
+    var cLower = String(col).toLowerCase();
+    if (allowedColNames.indexOf(cLower) > -1) {
+      indices.push(idx);
+      newCols.push(col);
+    }
+  });
+  if (indices.length === 0 || indices.length === sample.columns.length) {
+    return sample;
+  }
+  var newValues = sample.values.map(function(row) {
+    return indices.map(function(i) { return row[i]; });
+  });
+  return {
+    columns: newCols,
+    values: newValues
+  };
+}
+
 function renderTaskTablesInline(tableNames, solSql) {
   var activeTables = resolveTaskTables(tableNames, solSql);
   if (!activeTables.length) return '<p class="small muted" style="margin:6px 0">Brak przypisanych tabel źródłowych.</p>';
@@ -1261,13 +1327,17 @@ function renderTaskTablesInline(tableNames, solSql) {
     ? '<div class="join-keys-banner">🔗 Klucz łączenia tabel w tym zadaniu: <strong>' + sharedKeys.map(esc).join(', ') + '</strong></div>'
     : '';
 
+  var isMulti = metas.length >= 2;
+
   return '<div class="inline-schema-wrap">' +
     joinBanner +
     metas.map(function(m) {
+      var isColsOpen = isMulti ? !!(uiState.tableColsOpen && uiState.tableColsOpen[m.table]) : true;
       var isSampleOpen = !!(uiState.tableSamplesOpen && uiState.tableSamplesOpen[m.table]);
       var sampleHtml = '';
-      if (isSampleOpen) {
-        var sample = tableSamples[m.table] || interviewSamples[m.table];
+      if (isSampleOpen && isColsOpen) {
+        var rawSample = tableSamples[m.table] || interviewSamples[m.table];
+        var sample = filterSampleToMeta(rawSample, m.cols);
         if (sample && sample.columns && sample.columns.length) {
           var rowCnt = (sample.values || []).length;
           sampleHtml = '<div class="example-input-box" style="margin-top:8px">' +
@@ -1285,22 +1355,35 @@ function renderTaskTablesInline(tableNames, solSql) {
         '</button>' +
       '</div>';
 
+      var colsListHtml = '<div style="display:flex;flex-wrap:wrap;align-items:center;gap:5px;margin-top:6px">' +
+        m.cols.map(function(c) {
+          var colName = typeof c === 'string' ? c : c.name;
+          var colType = typeof c === 'string' ? (DVDRENTAL_COL_TYPES[c] || 'text') : (c.type || 'text');
+          var isKey = typeof c === 'string' ? /_id$/i.test(c) : !!c.isKey;
+          var cls = 'helper-col-btn' + (isKey ? ' col-key-chip' : '');
+          var ttl = (isKey ? 'Klucz złączenia (JOIN ON) · ' : 'Kolumna · ') + 'Typ: ' + colType;
+          var lbl = (isKey ? '🔗 ' : '') + esc(colName) + ' <span class="col-type-badge">' + esc(colType) + '</span>';
+          return '<button type="button" class="' + cls + '" data-act="ins" data-val="' + esc(colName) + '" data-insert-sql="' + esc(colName) + '" title="' + esc(ttl) + '">' + lbl + '</button>';
+        }).join('') +
+      '</div>';
+
+      if (isMulti) {
+        var hdrBtnLbl = isColsOpen ? '🔼 Zwiń kolumny ▴' : '🔽 Rozwiń kolumny ▾';
+        return '<div class="iv-tbl-card multi-table-accordion-card">' +
+          '<button type="button" class="tbl-accordion-hdr" data-act="toggleTableCols" data-table="' + esc(m.table) + '">' +
+            '<span class="tbl-acc-title">🗄️ <b>' + esc(m.table) + '</b>' + (m.desc ? ' — ' + esc(m.desc) : '') + ' <span class="tbl-col-cnt">(' + m.cols.length + ' kol.)</span></span>' +
+            '<span class="tbl-acc-arrow">' + hdrBtnLbl + '</span>' +
+          '</button>' +
+          (isColsOpen ? ('<div class="tbl-accordion-body">' + colsListHtml + toggleBtnHtml + sampleHtml + '</div>') : '') +
+        '</div>';
+      }
+
       return '<div class="iv-tbl-card">' +
         '<div style="display:flex;flex-wrap:wrap;align-items:center;gap:5px">' +
           '<button type="button" class="helper-tbl-btn" data-act="ins" data-val="' + esc(m.table) + '" data-insert-sql="' + esc(m.table) + '" title="Wstaw nazwę tabeli ' + esc(m.table) + '">📦 ' + esc(m.table) + '</button>' +
           (m.desc ? '<span class="small muted" style="font-size:11.5px">· ' + esc(m.desc) + '</span>' : '') +
         '</div>' +
-        '<div style="display:flex;flex-wrap:wrap;align-items:center;gap:5px;margin-top:6px">' +
-          m.cols.map(function(c) {
-            var colName = typeof c === 'string' ? c : c.name;
-            var colType = typeof c === 'string' ? (DVDRENTAL_COL_TYPES[c] || 'text') : (c.type || 'text');
-            var isKey = typeof c === 'string' ? /_id$/i.test(c) : !!c.isKey;
-            var cls = 'helper-col-btn' + (isKey ? ' col-key-chip' : '');
-            var ttl = (isKey ? 'Klucz złączenia (JOIN ON) · ' : 'Kolumna · ') + 'Typ: ' + colType;
-            var lbl = (isKey ? '🔗 ' : '') + esc(colName) + ' <span class="col-type-badge">' + esc(colType) + '</span>';
-            return '<button type="button" class="' + cls + '" data-act="ins" data-val="' + esc(colName) + '" data-insert-sql="' + esc(colName) + '" title="' + esc(ttl) + '">' + lbl + '</button>';
-          }).join('') +
-        '</div>' +
+        colsListHtml +
         toggleBtnHtml +
         sampleHtml +
       '</div>';
@@ -1566,9 +1649,9 @@ function buildCleanPolecenie(item, details) {
   var s = raw.replace(/`([^`]+)`/g, '$1').trim();
   if (!s) return 'Napisz zapytanie SQL realizujące cel zadania.';
 
-  // 1. Zamiana znanych nawiasów z warunkami SQL na naturalny opis biznesowy po polsku
+  // 1. Zamiana znanych i ogólnych warunków SQL w nawiasach i tekście na naturalny opis biznesowy po polsku
   var parenConditionMap = [
-    [/\(\s*hire_date\s*>=\s*'2022-01-01'\s*\)/gi, ''],
+    [/\(\s*hire_date\s*>=\s*'2022-01-01'\s*\)/gi, '(zatrudnionych od 2022 roku)'],
     [/\(\s*tx_status\s*=\s*'approved'\s*\)/gi, 'o statusie zatwierdzonym'],
     [/\(\s*tx_status\s*=\s*'declined'\s*\)/gi, 'o statusie odrzuconym'],
     [/\(\s*event_type\s*=\s*'login'\s*\)/gi, 'logowania'],
@@ -1581,11 +1664,34 @@ function buildCleanPolecenie(item, details) {
     [/\(\s*manager_id\s+IS\s+NULL\s*\)/gi, 'bez przypisanego przełożonego'],
     [/\(\s*manager_id\s+IS\s+NOT\s+NULL\s*\)/gi, 'posiadających przełożonego'],
     [/\(\s*left_date\s+IS\s+NULL\s*\)/gi, 'nadal pracujących w firmie'],
-    [/\(\s*left_date\s+IS\s+NOT\s+NULL\s*\)/gi, 'którzy odeszli z firmy']
+    [/\(\s*left_date\s+IS\s+NOT\s+NULL\s*\)/gi, 'którzy odeszli z firmy'],
+    [/\(\s*customer_id\s*=\s*(\d+)\s*\)/gi, '(dla klienta o ID $1)'],
+    [/\bcustomer_id\s*=\s*(\d+)\b/gi, 'klienta o ID $1'],
+    [/\(\s*length\s*>=\s*(\d+)\s*\)/gi, '(o długości co najmniej $1 min)'],
+    [/\(\s*length\s*<=\s*(\d+)\s*\)/gi, '(o długości do $1 min)'],
+    [/\(\s*length\s*>\s*(\d+)\s*\)/gi, '(o długości powyżej $1 min)'],
+    [/\(\s*length\s*<\s*(\d+)\s*\)/gi, '(o długości poniżej $1 min)'],
+    [/\(\s*rental_rate\s*>=\s*([0-9.]+)\s*\)/gi, '(o stawce co najmniej $1)'],
+    [/\(\s*rental_rate\s*<=\s*([0-9.]+)\s*\)/gi, '(o stawce do $1)'],
+    [/\(\s*rating\s*=\s*'([^']+)'\s*\)/gi, '(dla kategorii wiekowej $1)'],
+    [/\(\s*COUNT\s*\(\s*\*\s*\)\s*\)/gi, '(liczba wierszy)'],
+    [/\(\s*\*\s*100(?:\.0)?\s*\)/gi, '(w procentach)']
   ];
   for (var pi = 0; pi < parenConditionMap.length; pi++) {
     s = s.replace(parenConditionMap[pi][0], parenConditionMap[pi][1]);
   }
+
+  // Ogólne tłumaczenie warunków w nawiasach: (col OP val) -> (opis wartości)
+  s = s.replace(/\(\s*([a-zA-Z_]\w*)\s*(>=|<=|>|<|=|!=|<>)\s*('[^']*'|[0-9.]+|\w+)\s*\)/gi, function(_, col, op, val) {
+    var cleanVal = val.replace(/^'|'$/g, '');
+    if (op === '>=') return '(co najmniej ' + cleanVal + ')';
+    if (op === '<=') return '(maksymalnie ' + cleanVal + ')';
+    if (op === '>') return '(powyżej ' + cleanVal + ')';
+    if (op === '<') return '(poniżej ' + cleanVal + ')';
+    if (op === '=' || op === '==') return '(dla wartości ' + cleanVal + ')';
+    if (op === '!=' || op === '<>') return '(dla wartości innej niż ' + cleanVal + ')';
+    return '(' + cleanVal + ')';
+  });
 
   // 2. Usunięcie nawiasów z podpowiedziami technicznymi, wzorami lub warunkami SQL (wieloprzebiegowo dla zagnieżdżonych nawiasów)
   for (var pass = 0; pass < 3; pass++) {
@@ -1595,7 +1701,7 @@ function buildCleanPolecenie(item, details) {
       if (/^[a-zA-Z0-9_]+(?:\s*,\s*[a-zA-Z0-9_]+)*$/.test(t) && (ALL_SCHEMA_COLS.has(t.toLowerCase()) || /_/.test(t))) {
         return '';
       }
-      if (/[=<>!*+\/]|::|\b(?:SELECT|FROM|WHERE|JOIN|GROUP\s+BY|HAVING|ORDER\s+BY|LIMIT|OFFSET|OVER|PARTITION|ROUND|COUNT|SUM|AVG|MIN|MAX|COALESCE|NULLIF|FILTER|CASE|WHEN|DISTINCT|ILIKE|LIKE|BETWEEN|IS\s+NULL|IS\s+NOT\s+NULL|ASC|DESC|AS|IN|EXTRACT|EPOCH)\b/i.test(t)) {
+      if (/[=<>!*+\/]|::|\b(?:SELECT|FROM|WHERE|JOIN|GROUP\s+BY|HAVING|ORDER\s+BY|LIMIT|OFFSET|OVER|PARTITION|FILTER|CASE|WHEN|DISTINCT|ILIKE|LIKE|BETWEEN|IS\s+NULL|IS\s+NOT\s+NULL|ASC|DESC|AS|IN)\b|\b(?:COUNT|SUM|AVG|MIN|MAX|ROUND|COALESCE|NULLIF|EXTRACT|EPOCH|LAG|LEAD)\s*\(/i.test(t)) {
         return '';
       }
       if (/[a-zA-Z0-9]+_[a-zA-Z0-9]+/.test(t)) {
@@ -1604,7 +1710,7 @@ function buildCleanPolecenie(item, details) {
       return full;
     });
   }
-  s = s.replace(/\s*=\s*(?:ROUND|SUM|COUNT|AVG|MIN|MAX|COALESCE|CASE|ROW_NUMBER|RANK|DENSE_RANK|LAG|LEAD|EXTRACT|DATE_TRUNC)\b[^.]*/gi, '');
+  s = s.replace(/\s*=\s*(?:ROUND|SUM|COUNT|AVG|MIN|MAX|COALESCE|CASE|ROW_NUMBER|RANK|DENSE_RANK|LAG|LEAD|EXTRACT|DATE_TRUNC)\b[^\n;,]*/gi, '');
 
   // 3. Usunięcie fraz z aliasami technicznymi ("jako cost_diff", "pod nazwą cichy_klient", "AS duration_min")
   s = s.replace(/\s+(?:jako|pod\s+aliasem|pod\s+nazwą|z\s+aliasem|aliasem|o\s+nazwie)\s+[a-zA-Z_]\w*/gi, '');
@@ -1795,6 +1901,57 @@ function buildCalcPillText(expr) {
   return '🧮 wyliczenie';
 }
 
+function extractFilterCols(solSql, tables) {
+  if (!solSql) return [];
+  var candidateCols = new Set();
+  var allMetas = typeof ALL_SCHEMA_META !== 'undefined' ? ALL_SCHEMA_META : (window.ALL_SCHEMA_META || []);
+  var metas = allMetas.filter(function(m) {
+    return (tables || []).indexOf(m.table) > -1;
+  });
+  metas.forEach(function(m) {
+    if (m && m.cols) {
+      m.cols.forEach(function(c) {
+        var cName = typeof c === 'string' ? c : c.name;
+        candidateCols.add(cName.toLowerCase());
+      });
+    }
+  });
+  if (candidateCols.size === 0) {
+    var allCols = typeof ALL_SCHEMA_COLS !== 'undefined' ? ALL_SCHEMA_COLS : (window.ALL_SCHEMA_COLS || null);
+    if (allCols) {
+      allCols.forEach(function(col) {
+        candidateCols.add(col.toLowerCase());
+      });
+    }
+  }
+
+  var filterTexts = [];
+  var filterRegex = /FILTER\s*\(\s*WHERE\s+([^)]+)\)/gi;
+  var fMatch;
+  while ((fMatch = filterRegex.exec(solSql)) !== null) {
+    filterTexts.push(fMatch[1]);
+  }
+  var whereMatch = solSql.match(/\bWHERE\s+([\s\S]*?)(?:\b(?:GROUP\s+BY|HAVING|ORDER\s+BY|LIMIT|WINDOW)\b|;|$)/i);
+  if (whereMatch) {
+    filterTexts.push(whereMatch[1]);
+  }
+  var havingMatch = solSql.match(/\bHAVING\s+([\s\S]*?)(?:\b(?:ORDER\s+BY|LIMIT|WINDOW)\b|;|$)/i);
+  if (havingMatch) {
+    filterTexts.push(havingMatch[1]);
+  }
+
+  if (filterTexts.length === 0) return [];
+  var combined = filterTexts.join(' ');
+  var foundCols = [];
+  candidateCols.forEach(function(col) {
+    var re = new RegExp('(?:\\b[a-zA-Z0-9_]+\\.)?\\b' + col + '\\b', 'i');
+    if (re.test(combined)) {
+      foundCols.push(col);
+    }
+  });
+  return foundCols;
+}
+
 function buildDataLemurSpec(item, parentTask) {
   var sol = item.sol || '';
   var fallbackTbls = item.tables || (parentTask && parentTask.tables) || [];
@@ -1807,6 +1964,11 @@ function buildDataLemurSpec(item, parentTask) {
   var sortChipHtml = details.orderBy
     ? '<span class="req-meta-chip">↕️ Sortowanie: <b>ORDER BY ' + esc(details.orderBy) + '</b></span>'
     : '<span class="req-meta-chip">↕️ Kolejność dowolna</span>';
+
+  var filterCols = extractFilterCols(sol, details.tables);
+  var filterChipHtml = filterCols.length > 0
+    ? '<span class="req-meta-chip">🔍 Filtrowanie: <b>' + filterCols.map(esc).join(', ') + '</b></span>'
+    : '';
 
   var extraChips = '';
   if (details.limit) {
@@ -1821,6 +1983,7 @@ function buildDataLemurSpec(item, parentTask) {
 
   var metaStripHtml = '<div class="req-meta-strip">' +
     '<span class="req-meta-chip">🗄️ Tabela: <b>' + tblLabel + '</b></span> ' +
+    filterChipHtml +
     sortChipHtml +
     extraChips +
   '</div>';
@@ -1829,9 +1992,13 @@ function buildDataLemurSpec(item, parentTask) {
   var hasAnyAlias = false;
   if (details.cols.length > 0) {
     hasAnyAlias = details.cols.some(function(c) { return c.hasAlias; });
+    var guideCaptionHtml = hasAnyAlias
+      ? '<span class="alias-guide-caption">👆 Dotknij złotej kolumny z ikonką ℹ️, aby sprawdzić z czego ją wyliczyć.</span>'
+      : '<span class="req-cols-caption">(👆 Dotknij kolumnę, aby wstawić ją do edytora)</span>';
+
     colsPipelineHtml = '<div class="req-cols-hdr">' +
         '<span class="req-cols-title">📋 Wymagane kolumny wyniku:</span>' +
-        '<span class="req-cols-caption">(👆 Dotknij kolumnę, aby wstawić ją do edytora)</span>' +
+        guideCaptionHtml +
       '</div>' +
       '<div class="req-cols-pipeline">' +
       details.cols.map(function(c, idx) {
@@ -1849,30 +2016,48 @@ function buildDataLemurSpec(item, parentTask) {
         }
         var exprCols = extractExprSourceCols(c.expr);
         var exprColsStr = exprCols.length ? exprCols.join(', ') : '';
-        return '<button type="button" class="req-col-pill req-col-pill-alias" data-act="toggleAliasPopover" data-alias="' + esc(c.name) + '" data-expr-cols="' + esc(exprColsStr) + '" title="Kliknij, aby zobaczyć szczegóły wyliczenia i wstawić AS ' + esc(c.name) + '">' +
-          '<span class="req-col-idx">' + num + '</span>' +
-          '<code>' + esc(c.name) + '</code>' +
-          '<span class="sql-as-badge">AS</span>' +
-          '<span class="alias-info-icon">ℹ️</span>' +
+        var exprHint = '';
+        var exprUpper = String(c.expr || '').toUpperCase();
+        if (/COUNT\s*\(\s*\*\s*\)/.test(exprUpper)) {
+          exprColsStr = 'zliczanie wszystkich wierszy (COUNT)';
+          exprHint = 'Użyj funkcji COUNT(*) i nadaj jej alias AS ' + c.name + '.';
+        } else if (/OVER\s*\(/.test(exprUpper)) {
+          exprHint = 'Użyj funkcji analitycznej z klauzulą OVER(...) i nadaj wynikowi alias AS ' + c.name + '.';
+        } else if (/CASE\s+WHEN/.test(exprUpper)) {
+          exprHint = 'Zastosuj warunek CASE WHEN ... THEN ... ELSE ... END i nadaj mu alias AS ' + c.name + '.';
+        } else if (/[*+\/-]/.test(c.expr)) {
+          exprHint = 'Wykonaj obliczenie na kolumnach źródłowych i nadaj wynikowi alias AS ' + c.name + '.';
+        } else if (/\b(?:ROUND|SUM|AVG|MIN|MAX|COALESCE|NULLIF|DATE_TRUNC)\b/.test(exprUpper)) {
+          exprHint = 'Zastosuj odpowiednią funkcję SQL i nadaj wynikowi alias AS ' + c.name + '.';
+        } else {
+          exprHint = 'Nadaj tej kolumnie alias AS ' + c.name + ' w zapytaniu SELECT.';
+        }
+
+        return '<button type="button" class="req-col-pill req-col-pill-alias" data-alias-target="' + esc(c.name) + '" data-alias-source="' + esc(exprColsStr) + '" data-alias-hint="' + esc(exprHint) + '">' +
+          '<span class="req-col-idx">' + num + '</span> ✨ <code>' + esc(c.name) + '</code> <span class="alias-info-icon">ℹ️</span>' +
         '</button>';
       }).join('') +
       '</div>';
 
     if (uiState.activeAliasPopover) {
       var ap = uiState.activeAliasPopover;
-      var apColsNote = ap.cols ? (' Wylicz ją na podstawie kolumn: <strong>' + esc(ap.cols) + '</strong>.') : '';
+      var apSourceNote = ap.source ? ('<div style="margin-bottom:6px">📌 <strong>Źródło / operacja:</strong> ' + esc(ap.source) + '</div>') : '';
+      var apHintNote = ap.hint ? ('<div style="margin-bottom:6px">' + esc(ap.hint) + '</div>') : '';
       colsPipelineHtml += '<div class="alias-calc-popover">' +
         '<div class="alias-calc-popover-hdr">' +
           '<span>🧮 <strong>Kolumna docelowa:</strong> <code>' + esc(ap.alias) + '</code></span>' +
           '<button type="button" class="alias-popover-close" data-act="closeAliasPopover" aria-label="Zamknij">✕</button>' +
         '</div>' +
-        '<p class="alias-calc-popover-txt">' +
-          'W wyniku użyj zapisu z aliasem: <code class="sql-kw-as">AS ' + esc(ap.alias) + '</code>.' + apColsNote +
-        '</p>' +
+        '<div class="alias-calc-popover-txt">' +
+          apSourceNote +
+          apHintNote +
+          '<div class="small muted">W wyniku użyj zapisu z aliasem: <code class="sql-kw-as">AS ' + esc(ap.alias) + '</code></div>' +
+        '</div>' +
         '<div class="alias-popover-acts">' +
-          '<button type="button" class="btn sm primary alias-popover-insert-btn" onclick="insertAtCursor(\'AS ' + esc(ap.alias) + '\');">' +
+          '<button type="button" class="btn sm primary alias-popover-insert-btn" data-act="insertAlias" data-alias="' + esc(ap.alias) + '">' +
             '➕ Wstaw "AS ' + esc(ap.alias) + '" do edytora' +
           '</button>' +
+          '<button type="button" class="btn sm" data-act="closeAliasPopover">✕ Zamknij</button>' +
         '</div>' +
       '</div>';
     }
@@ -1929,6 +2114,12 @@ window.buildCleanPolecenie = buildCleanPolecenie;
 window.buildQuerySkeleton = buildQuerySkeleton;
 window.getHintButtonLabel = getHintButtonLabel;
 window.renderOnboardingModal = renderOnboardingModal;
+window.compareResults = compareResults;
+window.extractFilterCols = extractFilterCols;
+window.filterSampleToMeta = filterSampleToMeta;
+window.renderTeachFirstBox = renderTeachFirstBox;
+window.renderTopbarModal = renderTopbarModal;
+window.getLocalProfilesMap = getLocalProfilesMap;
 window.state = state;
 window.uiState = uiState;
 window.APP_VERSION = APP_VERSION;
@@ -2135,6 +2326,91 @@ function buildNeutralTeachExample(nf, solSql, task) {
   return 'SELECT kolumna1, kolumna2 FROM przykladowa_tabela;';
 }
 
+function getConstructOutcomeSentence(nf, solSql) {
+  var title = String((nf && nf.title) || '').toLowerCase();
+  var desc = String((nf && nf.desc) || '').toLowerCase();
+  var sol = String(solSql || '').toUpperCase();
+  var combined = title + ' ' + desc;
+
+  // 1. Sprawdzamy najpierw bezpośrednio po tytule i opisie nowego elementu
+  if (/where|filtr/.test(combined)) {
+    return 'W końcowej tabeli z wynikiem pojawią się tylko te wiersze, które spełniają zadany warunek logiczny.';
+  }
+  if (/having/.test(combined)) {
+    return 'Końcowa tabela z wynikiem odrzuci całe zagregowane grupy, które nie spełniają zadanego progu.';
+  }
+  if (/left\s+join/.test(combined)) {
+    return 'W końcowej tabeli pojawią się wszystkie wiersze z lewej tabeli, uzupełnione danymi z prawej tabeli (lub wartościami NULL w przypadku braku dopasowania).';
+  }
+  if (/join|złączen/.test(combined)) {
+    return 'W końcowej tabeli pojawią się wyłącznie te wiersze, które mają pasujące dopasowanie w obu łączonych tabelach.';
+  }
+  if (/group\s+by|grupowan/.test(combined)) {
+    return 'W końcowej tabeli wiersze zostaną zwinięte do jednego wiersza dla każdej unikalnej grupy wartości.';
+  }
+  if (/alias|\bas\b/.test(combined)) {
+    return 'W końcowej tabeli wynikowej kolumna lub wyliczenie otrzyma dokładnie taki nagłówek, jaki podasz po słowie AS.';
+  }
+  if (/obliczen|arytmetyk|\b[\+\-\*\/]\b/.test(combined)) {
+    return 'W końcowej tabeli z wynikiem pojawi się nowa kolumna z wartością wyliczoną wiersz po wierszu.';
+  }
+  if (/distinct|unikaln/.test(combined)) {
+    return 'W końcowej tabeli z wynikiem znikną powtarzające się, zduplikowane wiersze.';
+  }
+  if (/order\s+by|sortowan/.test(combined)) {
+    return 'Końcowa tabela z wynikiem zostanie ułożona w określonym porządku (rosnąco lub malejąco).';
+  }
+  if (/limit|ogranicz/.test(combined)) {
+    return 'Końcowa tabela z wynikiem zostanie ograniczona do dokładnie określonej liczby pierwszych wierszy.';
+  }
+  if (/and|or|koniunkcj|alternatyw/.test(combined)) {
+    return 'W końcowej tabeli pojawią się tylko rekordy spełniające połączone warunki logiczne.';
+  }
+  if (/in|between|like|ilike/.test(combined)) {
+    return 'W końcowej tabeli z wynikiem znajdą się tylko rekordy pasujące do zadanego zakresu lub wzorca tekstu.';
+  }
+  if (/case\s+when|warunk/.test(combined)) {
+    return 'W końcowej tabeli wynikowej wartości w tej kolumnie zostaną dynamicznie przypisane na podstawie sprawdzonych reguł.';
+  }
+  if (/coalesce|nullif/.test(combined)) {
+    return 'W końcowej tabeli puste wartości (NULL) zostaną zastąpione wybraną wartością domyślną.';
+  }
+  if (/with|cte/.test(combined)) {
+    return 'Tymczasowa tabela pomocnicza uprości obliczenia i posłuży jako czytelne źródło dla głównego zapytania.';
+  }
+  if (/over|partition|okn|lag|lead|rank|row_number/.test(combined)) {
+    return 'W końcowej tabeli każdy wiersz zachowa swoją tożsamość, zyskując dodatkową kolumnę z obliczeniem analitycznym.';
+  }
+  if (/count|sum|avg|min|max|agregacj/.test(combined)) {
+    return 'W końcowej tabeli wiersze zostaną zagregowane do pojedynczej wartości podsumowującej.';
+  }
+  if (/gwiazdk|\b\*\b/.test(combined)) {
+    return 'W końcowej tabeli z wynikiem zobaczysz wszystkie kolumny tabeli źródłowej.';
+  }
+
+  // 2. Fallback po sol
+  if (/WHERE/.test(sol)) return 'W końcowej tabeli z wynikiem pojawią się tylko te wiersze, które spełniają zadany warunek logiczny.';
+  if (/HAVING/.test(sol)) return 'Końcowa tabela z wynikiem odrzuci całe zagregowane grupy, które nie spełniają zadanego progu.';
+  if (/LEFT\s+JOIN/.test(sol)) return 'W końcowej tabeli pojawią się wszystkie wiersze z lewej tabeli, uzupełnione danymi z prawej tabeli (lub wartościami NULL w przypadku braku dopasowania).';
+  if (/JOIN/.test(sol)) return 'W końcowej tabeli pojawią się wyłącznie te wiersze, które mają pasujące dopasowanie w obu łączonych tabelach.';
+  if (/GROUP\s+BY/.test(sol)) return 'W końcowej tabeli wiersze zostaną zwinięte do jednego wiersza dla każdej unikalnej grupy wartości.';
+  if (/\bAS\b/.test(sol)) return 'W końcowej tabeli wynikowej kolumna lub wyliczenie otrzyma dokładnie taki nagłówek, jaki podasz po słowie AS.';
+  if (/DISTINCT/.test(sol)) return 'W końcowej tabeli z wynikiem znikną powtarzające się, zduplikowane wiersze.';
+  if (/ORDER\s+BY/.test(sol)) return 'Końcowa tabela z wynikiem zostanie ułożona w określonym porządku (rosnąco lub malejąco).';
+  if (/LIMIT/.test(sol)) return 'Końcowa tabela z wynikiem zostanie ograniczona do dokładnie określonej liczby pierwszych wierszy.';
+  if (/SELECT\s+\*/.test(sol)) return 'W końcowej tabeli z wynikiem zobaczysz wszystkie kolumny tabeli źródłowej.';
+  return 'W końcowej tabeli z wynikiem zobaczysz efekt działania zastosowanej klauzuli SQL.';
+}
+
+function wrapKeywordsInBackticks(text) {
+  if (!text) return '';
+  var parts = String(text).split(/(`[^`]+`)/g);
+  return parts.map(function(part) {
+    if (part.charAt(0) === '`') return part;
+    return part.replace(/\b(SELECT\s+\*|SELECT|FROM|WHERE|INNER\s+JOIN|LEFT\s+JOIN|JOIN|ON|GROUP\s+BY|HAVING|ORDER\s+BY|LIMIT|AS|DISTINCT|COUNT\(\*\)|COUNT|SUM|AVG|MIN|MAX|COALESCE|NULLIF|CASE\s+WHEN|CASE|WHEN|THEN|ELSE|END|AND|OR|IN|BETWEEN|ILIKE|LIKE|IS\s+NULL|IS\s+NOT\s+NULL|WITH|OVER|PARTITION\s+BY|LAG|LEAD|ROW_NUMBER|DENSE_RANK)\b/g, '`$1`');
+  }).join('');
+}
+
 function renderTeachFirstBox(newFeature, task, variant) {
   var nf = newFeature;
   var sol = String((variant && variant.sol) || '');
@@ -2163,13 +2439,20 @@ function renderTeachFirstBox(newFeature, task, variant) {
     .replace(/rental_rate\s*\*\s*\d+/gi, 'cena * 100')
     .replace(/amount\s*\*\s*\d+/gi, 'cena * 100')
     .replace(/length\s+AS\s+duration_min/gi, 'cena * 100 AS grosze');
+
+  var outcomeSentence = getConstructOutcomeSentence(nf, sol);
+  if (outcomeSentence && safeDesc.indexOf(outcomeSentence) === -1) {
+    safeDesc += ' ' + outcomeSentence;
+  }
+  var backtickedDesc = wrapKeywordsInBackticks(safeDesc);
+
   var neutralExample = buildNeutralTeachExample(nf, sol, task);
   var isOpen = !!uiState.teachFirstOpen;
   var moreLbl = isOpen ? '(zwiń przykład ▴)' : '(rozwiń przykład ▾)';
   return '<details class="teach-first-box teach-first-pill"' + (isOpen ? ' open' : '') + '>' +
     '<summary class="teach-first-hdr">🆕 Nowy element: <strong>' + esc(nf.title) + '</strong> <span class="teach-first-more">' + moreLbl + '</span></summary>' +
     '<div class="teach-first-body">' +
-      '<p class="teach-first-desc">' + formatPrompt(safeDesc) + '</p>' +
+      '<p class="teach-first-desc">' + formatPrompt(backtickedDesc) + '</p>' +
       (neutralExample ? '<div class="teach-first-code"><code>' + highlightSQL(neutralExample) + '</code></div>' : '') +
     '</div>' +
   '</details>';
@@ -3379,12 +3662,11 @@ function renderPathTab() {
 
   h += '<div class="card">' +
     '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">' +
-      '<div style="min-width:0;flex:1"><h2 style="margin:0">Mapa Ścieżki SQL (Progresja Krok po Kroku)</h2>' +
+      '<div style="min-width:200px;flex:1 1 200px;word-break:normal;overflow-wrap:break-word"><h2 style="margin:0">Mapa Ścieżki SQL (Progresja Krok po Kroku)</h2>' +
       '<p class="small muted" style="margin:2px 0 0">Zaliczone działy: <strong>' + doneLessons + '/' + PATH_TASKS.length + '</strong> · Rozwiązane zadania: <strong>' + doneVariants + '/' + totalVariants + '</strong>' +
       (state.testerUnlockAll ? ' · <span class="chip mid">🔓 Tryb testerski aktywny</span>' : '') + '</p></div>' +
-      '<div style="display:flex;gap:6px;flex-wrap:wrap">' +
+      '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">' +
         '<button type="button" class="btn sm onboarding-open-btn" data-act="openOnboarding">🎓 Samouczek SQL (4 karty)</button>' +
-        '<button type="button" class="btn primary sm" data-act="continuePath">▶ Kontynuuj naukę</button>' +
       '</div>' +
     '</div>' +
     '<div class="bar"><i style="width:' + Math.round((doneLessons / PATH_TASKS.length) * 100) + '%"></i></div>' +
@@ -3834,6 +4116,128 @@ function renderAuthModal() {
   '</div>';
 }
 
+function renderTopbarModal() {
+  if (!uiState.topbarModal) return '';
+  var modalType = uiState.topbarModal;
+  var title = '';
+  var bodyHtml = '';
+
+  if (modalType === 'dbStatus') {
+    title = '🐘 PostgreSQL 16 WebAssembly (PGlite)';
+    var isDbReady = !!window._pgliteInstance;
+    var statusBadge = isDbReady ? '<span class="chip ok">🟢 Silnik aktywny (Online / Offline)</span>' : '<span class="chip mid">🟡 Inicjalizacja silnika...</span>';
+    var tblCount = window.SCHEMA_META ? Object.keys(window.SCHEMA_META).length : 15;
+    bodyHtml = '<div style="display:flex;flex-direction:column;gap:12px">' +
+      '<div>' + statusBadge + '</div>' +
+      '<p class="small" style="line-height:1.55;margin:0">' +
+        'Aplikacja korzysta z prawdziwego silnika <strong>PostgreSQL 16</strong> skompilowanego do WebAssembly (PGlite). ' +
+        'Wszystkie zapytania SQL wykonują się <strong>w 100% lokalnie</strong> w Twojej przeglądarce bez wysyłania kodu na zewnętrzny serwer.' +
+      '</p>' +
+      '<div class="tbl-stats-card" style="background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:10px 12px">' +
+        '<div style="font-size:12px;font-weight:700;margin-bottom:4px">📊 Baza dvdrental:</div>' +
+        '<div class="small muted">Liczba tabel: <strong>' + tblCount + '</strong> (m.in. film, customer, payment, rental, actor).</div>' +
+        '<div class="small muted">Wersja silnika: <strong>PGlite 0.2.x (PG16.x)</strong></div>' +
+      '</div>' +
+      '<p class="small muted" style="margin:0;font-size:11.5px">' +
+        'Gdyby baza nie odpowiadała lub wystąpił błąd pamięci podręcznej, możesz bezpiecznie zresetować pamięć podręczną — Twój postęp nauki (punkty XP i zaliczone zadania) zostanie zachowany.' +
+      '</p>' +
+      '<div style="display:flex;gap:8px;margin-top:4px;flex-wrap:wrap">' +
+        '<button type="button" class="btn sm warn" data-act="resetDatabase">🔄 Zresetuj bazę danych</button>' +
+        '<button type="button" class="btn sm" data-act="closeTopbarModal">✕ Zamknij</button>' +
+      '</div>' +
+    '</div>';
+  } else if (modalType === 'xp') {
+    title = '⚡ Twój Postęp i Doświadczenie (XP)';
+    var xp = state.xp || 0;
+    var pathDone = Object.keys(state.completedVariants || {}).length;
+    var pathTotal = window.PATH_TASKS ? window.PATH_TASKS.reduce(function(acc, t) { return acc + (t.variants || []).length; }, 0) : 128;
+    var diagDone = Array.isArray(state.diagSkipped) ? state.diagSkipped.length : (state.diagIdx || 0);
+    var diagTotal = window.DIAG_QUESTIONS ? window.DIAG_QUESTIONS.length : 10;
+    var lemurDone = Object.keys(state.completedLemur || {}).length;
+    var lemurTotal = window.INTERVIEW_TASKS ? window.INTERVIEW_TASKS.length : 60;
+
+    var rank = 'Nowicjusz SQL';
+    var nextRank = 'Adept Zapytań (100 XP)';
+    var xpPct = Math.min(100, Math.round((xp / 100) * 100));
+    if (xp >= 1000) {
+      rank = 'Arcymistrz PostgreSQL 👑';
+      nextRank = 'Maksymalna ranga osiągnięta!';
+      xpPct = 100;
+    } else if (xp >= 500) {
+      rank = 'Ekspert Baz Danych 💎';
+      nextRank = 'Arcymistrz PostgreSQL (1000 XP)';
+      xpPct = Math.round(((xp - 500) / 500) * 100);
+    } else if (xp >= 250) {
+      rank = 'Zaawansowany Analityk 🚀';
+      nextRank = 'Ekspert Baz Danych (500 XP)';
+      xpPct = Math.round(((xp - 250) / 250) * 100);
+    } else if (xp >= 100) {
+      rank = 'Adept Zapytań ⭐';
+      nextRank = 'Zaawansowany Analityk (250 XP)';
+      xpPct = Math.round(((xp - 100) / 150) * 100);
+    }
+
+    bodyHtml = '<div style="display:flex;flex-direction:column;gap:12px">' +
+      '<div style="display:flex;align-items:center;justify-content:space-between">' +
+        '<div><div class="small muted">Aktualna Ranga:</div><div style="font-size:16px;font-weight:700">' + esc(rank) + '</div></div>' +
+        '<div style="font-size:20px;font-weight:700;color:var(--accent)">' + xp + ' XP</div>' +
+      '</div>' +
+      '<div>' +
+        '<div style="display:flex;justify-content:space-between;font-size:11.5px;margin-bottom:3px">' +
+          '<span>Postęp do: <strong>' + esc(nextRank) + '</strong></span>' +
+          '<span>' + xpPct + '%</span>' +
+        '</div>' +
+        '<div class="bar" style="height:8px"><i style="width:' + xpPct + '%"></i></div>' +
+      '</div>' +
+      '<div style="background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:10px 12px">' +
+        '<div style="font-size:12px;font-weight:700;margin-bottom:6px">📈 Statystyki rozwiązanych zadań:</div>' +
+        '<div class="small" style="display:flex;justify-content:space-between;padding:2px 0">' +
+          '<span>🗺️ Ścieżka SQL (zadania + rozgrzewki):</span><strong>' + pathDone + ' / ' + pathTotal + '</strong>' +
+        '</div>' +
+        '<div class="small" style="display:flex;justify-content:space-between;padding:2px 0">' +
+          '<span>🩺 Diagnoza luk kompetencyjnych:</span><strong>' + diagDone + ' / ' + diagTotal + '</strong>' +
+        '</div>' +
+        '<div class="small" style="display:flex;justify-content:space-between;padding:2px 0">' +
+          '<span>💼 Wyzwania Rekrutacyjne:</span><strong>' + lemurDone + ' / ' + lemurTotal + '</strong>' +
+        '</div>' +
+      '</div>' +
+      '<p class="small muted" style="margin:0;font-size:11.5px">' +
+        '💡 Każde rozwiązane zadanie i ukończona rozgrzewka przyznaje punkty XP i podnosi Twoją pozycję w rankingu!' +
+      '</p>' +
+      '<div style="display:flex;gap:8px;margin-top:4px">' +
+        '<button type="button" class="btn sm primary" data-act="closeTopbarModal">✕ Zamknij</button>' +
+      '</div>' +
+    '</div>';
+  } else if (modalType === 'streak') {
+    title = '🔥 Twoja Seria Dni Nauki (Streak)';
+    var streakDays = state.streak || 1;
+    bodyHtml = '<div style="display:flex;flex-direction:column;gap:12px;text-align:center">' +
+      '<div style="font-size:42px;margin:4px 0">🔥</div>' +
+      '<div style="font-size:22px;font-weight:700">' + streakDays + ' ' + (streakDays === 1 ? 'dzień' : 'dni') + ' z rzędu!</div>' +
+      '<p class="small" style="line-height:1.5;margin:0">' +
+        'Świetna konsekwencja! Regularny kontakt z zapytaniami SQL pozwala najszybciej zbudować pamięć mięśniową i intuicję analityczną.' +
+      '</p>' +
+      '<div style="background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:10px 12px;text-align:left">' +
+        '<div class="small">📅 Ostatnia aktywność: <strong>' + (state.lastActiveDate || 'dzisiaj') + '</strong></div>' +
+        '<div class="small muted" style="margin-top:3px">Rozwiązuj przynajmniej jedno zadanie dziennie, aby Twój płomień nigdy nie wygasł!</div>' +
+      '</div>' +
+      '<div style="display:flex;justify-content:center;gap:8px;margin-top:4px">' +
+        '<button type="button" class="btn sm primary" data-act="closeTopbarModal">🚀 Utrzymaj serię i ucz się dalej</button>' +
+      '</div>' +
+    '</div>';
+  }
+
+  return '<div class="topbar-modal-backdrop" data-act="closeTopbarModal">' +
+    '<div class="topbar-modal-card" onclick="event.stopPropagation()">' +
+      '<div class="topbar-modal-hdr">' +
+        '<h3 style="margin:0;font-size:15px">' + title + '</h3>' +
+        '<button type="button" class="topbar-modal-close" data-act="closeTopbarModal" aria-label="Zamknij">✕</button>' +
+      '</div>' +
+      '<div class="topbar-modal-body">' + bodyHtml + '</div>' +
+    '</div>' +
+  '</div>';
+}
+
 // ZAKŁADKA 5: KONTO, RANKING SOLOLEARN, SUPABASE & AI
 function renderProfileTab() {
   var totalPathVars = PATH_TASKS.reduce(function(acc, t) { return acc + t.variants.length; }, 0);
@@ -3958,7 +4362,7 @@ function render() {
                : currentTab === 'lemur' ? renderLemurTab()
                : currentTab === 'schema' ? renderSchemaTab()
                : renderProfileTab();
-  v.innerHTML = mainHtml + renderOnboardingModal() + renderAuthModal();
+  v.innerHTML = mainHtml + renderOnboardingModal() + renderAuthModal() + renderTopbarModal();
 
   document.querySelectorAll('.tab').forEach(function(b) {
     if (b.dataset.tab === currentTab) b.setAttribute('aria-current', 'page');
@@ -4073,9 +4477,16 @@ document.addEventListener('input', function(e) {
     }
     if (lastExecResult && lastExecResult.errorLine) lastExecResult.errorLine = 0;
     sqlUpdate();
-    saveState();
+    debouncedSaveState(200);
   }
 });
+
+document.addEventListener('blur', function(e) {
+  if (e.target && e.target.id === 'answer') {
+    state.editorCode = e.target.value;
+    saveState();
+  }
+}, true);
 
 document.addEventListener('click', async function(e) {
   var liveTa = document.getElementById('answer');
@@ -4090,6 +4501,25 @@ document.addEventListener('click', async function(e) {
       render();
       return;
     }
+  }
+
+  // Obsługa pigułki kolumny z aliasem/wyliczeniem (wszystkie zadania w aplikacji)
+  var aliasPill = e.target.closest('.req-col-pill-alias');
+  if (aliasPill) {
+    var target = aliasPill.getAttribute('data-alias-target') || '';
+    var source = aliasPill.getAttribute('data-alias-source') || '';
+    var hint = aliasPill.getAttribute('data-alias-hint') || '';
+    if (uiState.activeAliasPopover && uiState.activeAliasPopover.alias === target) {
+      uiState.activeAliasPopover = null;
+    } else {
+      uiState.activeAliasPopover = {
+        alias: target,
+        source: source,
+        hint: hint
+      };
+    }
+    render();
+    return;
   }
 
   var insEl = e.target.closest('[data-insert-sql]');
@@ -4120,6 +4550,57 @@ document.addEventListener('click', async function(e) {
   else if (act === 'setCtxTab') {
     uiState.taskCtxTab = el.dataset.ctx || 'task';
     render();
+  }
+  else if (act === 'insertAlias') {
+    var aliasVal = el.dataset.alias || '';
+    if (aliasVal) {
+      insertAtCursor('AS ' + aliasVal);
+    }
+  }
+  else if (act === 'closeAliasPopover') {
+    uiState.activeAliasPopover = null;
+    render();
+  }
+  else if (act === 'toggleTableCols') {
+    var tbl = el.dataset.table || '';
+    if (tbl) {
+      if (!uiState.tableColsOpen) uiState.tableColsOpen = {};
+      uiState.tableColsOpen[tbl] = !uiState.tableColsOpen[tbl];
+      render();
+    }
+  }
+  else if (act === 'openDbStatusModal') {
+    uiState.topbarModal = 'dbStatus';
+    render();
+  }
+  else if (act === 'openXpModal') {
+    uiState.topbarModal = 'xp';
+    render();
+  }
+  else if (act === 'openStreakModal') {
+    uiState.topbarModal = 'streak';
+    render();
+  }
+  else if (act === 'closeTopbarModal') {
+    uiState.topbarModal = null;
+    render();
+  }
+  else if (act === 'resetDatabase') {
+    if (!confirm('Czy na pewno chcesz zresetować pamięć podręczną bazy danych i pobrać ją na nowo? Twój postęp nauki (punkty XP i zaliczone zadania) zostanie zachowany!')) {
+      return;
+    }
+    toast('🔄 Resetuję bazę i odświeżam aplikację…');
+    try {
+      if ('serviceWorker' in navigator) {
+        var regs = await navigator.serviceWorker.getRegistrations();
+        await Promise.all(regs.map(function(r) { return r.unregister(); }));
+      }
+      if ('caches' in window) {
+        var cKeys = await caches.keys();
+        await Promise.all(cKeys.map(function(k) { return caches.delete(k); }));
+      }
+    } catch (err) {}
+    window.location.reload();
   }
   else if (act === 'tapPuzzleBlock') {
     var bid = el.dataset.bid || '';

@@ -2284,33 +2284,39 @@ details.teach-first-box.teach-first-pill .teach-first-body {
    ========================================================================== */
 
 /* Alias / Calc Column Pills & Popover */
+.req-col-pill.req-col-pill-alias,
 .req-col-pill-alias {
   display: inline-flex;
   align-items: center;
   gap: 5px;
   white-space: nowrap;
-  background: rgba(168, 85, 247, 0.12);
-  border: 1px solid rgba(168, 85, 247, 0.35);
+  background: rgba(245, 158, 11, 0.14) !important;
+  border: 1px solid #f59e0b !important;
+  color: #fef08a !important;
   cursor: pointer;
   padding: 3px 8px;
   border-radius: 8px;
+  box-shadow: 0 0 0 1px rgba(245, 158, 11, 0.22);
   transition: all 0.15s ease;
 }
-.req-col-pill-alias:hover, .req-col-pill-alias.active {
-  background: rgba(168, 85, 247, 0.22);
-  border-color: #c084fc;
-}
-.req-col-pill-alias .sql-as-badge {
-  font-size: 10px;
-  font-weight: 700;
-  color: #ff9e3b;
-  background: rgba(255, 158, 59, 0.15);
-  padding: 1px 4px;
-  border-radius: 4px;
+.req-col-pill.req-col-pill-alias:hover,
+.req-col-pill.req-col-pill-alias.active,
+.req-col-pill-alias:hover,
+.req-col-pill-alias.active {
+  background: rgba(245, 158, 11, 0.24) !important;
+  border-color: #fbbf24 !important;
+  transform: translateY(-1px);
 }
 .alias-info-icon {
   font-size: 11px;
-  opacity: 0.85;
+  opacity: 0.9;
+}
+.alias-guide-caption {
+  font-size: 11.5px;
+  color: #fbbf24;
+  margin-top: 5px;
+  margin-bottom: 2px;
+  display: block;
 }
 .alias-calc-popover {
   position: relative;
@@ -2569,6 +2575,168 @@ details.teach-first-box.teach-first-pill .teach-first-body {
 .diag-next-btn:hover {
   background: #16a34a;
   transform: translateY(-1px);
+}
+
+/* ==========================================================================
+   v13.1 Global UI/UX, Contrast & Resilience System
+   ========================================================================== */
+
+/* 1. Wysoki kontrast kafelków w układance i Quick-Barze (Tryb jasny i ciemny) */
+.puzzle-block-btn,
+.quick-chip-btn,
+.puzzle-chip,
+.qb-chip {
+  color: #f8fafc !important;
+  background: #1e293b !important;
+  border: 1px solid #475569 !important;
+  font-weight: 600 !important;
+}
+.puzzle-block-btn:hover:not(:disabled),
+.quick-chip-btn:hover,
+.puzzle-chip:hover,
+.qb-chip:hover {
+  background: #334155 !important;
+  border-color: #64748b !important;
+}
+.puzzle-block-btn.used,
+.puzzle-block-btn:disabled {
+  opacity: 0.35 !important;
+  pointer-events: none !important;
+  border-color: #334155 !important;
+}
+.puzzle-block-btn .sql-kw,
+.quick-chip-btn .sql-kw,
+.puzzle-chip .sql-kw,
+.qb-chip .sql-kw {
+  color: #fbbf24 !important;
+  font-weight: 700 !important;
+}
+.puzzle-block-btn .sql-fn,
+.quick-chip-btn .sql-fn,
+.puzzle-chip .sql-fn,
+.qb-chip .sql-fn {
+  color: #d8b4fe !important;
+  font-weight: 700 !important;
+}
+.puzzle-block-btn .sql-alias,
+.quick-chip-btn .sql-alias,
+.puzzle-chip .sql-alias,
+.qb-chip .sql-alias {
+  color: #fde047 !important;
+  font-weight: 700 !important;
+}
+
+/* 2. Dwustopniowy akordeon dla wielu tabel (>= 2 tabel w zadaniu) */
+.multi-table-accordion-card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-bottom: 8px;
+  background: var(--bg-card);
+  overflow: hidden;
+}
+.tbl-accordion-hdr {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border: none;
+  border-bottom: 1px solid var(--border);
+  color: var(--fg);
+  font-size: 13px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s ease;
+}
+.tbl-accordion-hdr:hover {
+  background: rgba(255, 255, 255, 0.07);
+}
+.tbl-acc-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.tbl-col-cnt {
+  font-size: 11.5px;
+  color: var(--muted);
+}
+.tbl-acc-arrow {
+  font-size: 11.5px;
+  color: var(--accent);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.tbl-accordion-body {
+  padding: 10px 12px;
+}
+
+/* 3. Globalna ochrona układu i nagłówków na ekranach mobilnych (360px–414px) */
+.view, .app, .card, .task-card-zero-scroll {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+.top-stats, .brand, .acts, .req-cols-pipeline, .ctx-tabs-bar {
+  flex-wrap: wrap;
+}
+.card h2, .card h3, .brand-title {
+  word-break: normal;
+  overflow-wrap: break-word;
+}
+
+/* 4. Interaktywne okienka górnego paska (PG16, XP, Streak) */
+.topbar-modal-backdrop {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.72);
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  animation: fadeIn 0.15s ease-out;
+}
+.topbar-modal-card {
+  background: var(--bg-surface, #1e293b);
+  border: 1px solid var(--border, #334155);
+  border-radius: 12px;
+  width: 100%;
+  max-width: 440px;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+  overflow: hidden;
+  box-sizing: border-box;
+}
+.topbar-modal-hdr {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border, #334155);
+  background: rgba(255, 255, 255, 0.02);
+}
+.topbar-modal-close {
+  background: transparent;
+  border: none;
+  color: var(--muted, #94a3b8);
+  font-size: 16px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+}
+.topbar-modal-close:hover {
+  color: var(--fg, #f8fafc);
+  background: rgba(255, 255, 255, 0.08);
+}
+.topbar-modal-body {
+  padding: 16px;
 }
 
 
