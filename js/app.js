@@ -4,7 +4,7 @@
 /* ==========================================================================
    0. KONFIGURACJA CHMURY SUPABASE (REST API — RANKING I PROFILE TESTERÓW)
    ========================================================================== */
-const APP_VERSION = 'v12.1';
+const APP_VERSION = 'v13';
 const DEFAULT_SUPABASE_URL = 'https://hpfrcykbzuzucglorpkr.supabase.co';
 const DEFAULT_SUPABASE_KEY = 'sb_publishable_5klYjdIKjT35Zl2OtOyGQA_DGxdJCHh';
 
@@ -169,7 +169,11 @@ async function initDatabase() {
     var statusEl = document.getElementById('dbStatus');
     var instance = null;
     try {
-      if (statusEl) statusEl.textContent = 'Pobieranie silnika PostgreSQL (PGlite)…';
+      if (statusEl) {
+        statusEl.textContent = '⏳ PG16';
+        statusEl.className = 'pill-pg loading';
+        statusEl.title = 'Pobieranie silnika PostgreSQL 16 (PGlite)...';
+      }
       var mod = await import('https://cdn.jsdelivr.net/npm/@electric-sql/pglite/dist/index.js');
       var PGlite = mod.PGlite;
       try {
@@ -217,7 +221,11 @@ async function initDatabase() {
         tableSamples[tblName] = sampleRes;
         interviewSamples[tblName] = sampleRes;
       }
-      if (statusEl) statusEl.textContent = 'Silnik PostgreSQL 16 (PGlite) gotowy';
+      if (statusEl) {
+        statusEl.textContent = '🟢 PG16';
+        statusEl.className = 'pill-pg ready';
+        statusEl.title = 'Silnik PostgreSQL 16 (PGlite) gotowy';
+      }
       render();
       return db;
     } catch (err) {
@@ -239,7 +247,11 @@ async function initDatabase() {
       db = null;
       dbReady = false;
       dbInitPromise = null;
-      if (statusEl) statusEl.textContent = 'Błąd inicjalizacji PostgreSQL WASM';
+      if (statusEl) {
+        statusEl.textContent = '🔴 PG16';
+        statusEl.className = 'pill-pg error';
+        statusEl.title = 'Błąd inicjalizacji PostgreSQL WASM';
+      }
     }
   })();
 
@@ -501,7 +513,11 @@ var uiState = {
   syntaxTipOpen: false,
   editorUndoStack: [],
   taskCtxTab: 'task',
-  warmupUsedBlocks: []
+  warmupUsedBlocks: [],
+  activeAliasPopover: null,
+  tableSamplesOpen: {},
+  onboardingTableSelection: null,
+  teachFirstOpen: false
 };
 
 function resetTaskContextUi() {
@@ -511,6 +527,9 @@ function resetTaskContextUi() {
   uiState.syntaxTipOpen = false;
   uiState.schemaBoxOpen = false;
   uiState.hintStep = 0;
+  uiState.activeAliasPopover = null;
+  uiState.tableSamplesOpen = {};
+  uiState.teachFirstOpen = false;
 }
 
 function triggerStepFlash() {
@@ -1050,7 +1069,7 @@ function sqlUpdate() {
   }
   gut.innerHTML = gHtml;
   code.style.height = 'auto';
-  code.style.height = Math.max(88, code.scrollHeight + 4) + 'px';
+  code.style.height = Math.max(118, code.scrollHeight + 4) + 'px';
 
   var out = highlightSQL(t);
   if (t.slice(-1) === '\n') out += ' ';
@@ -1245,17 +1264,26 @@ function renderTaskTablesInline(tableNames, solSql) {
   return '<div class="inline-schema-wrap">' +
     joinBanner +
     metas.map(function(m) {
-      var sample = tableSamples[m.table] || interviewSamples[m.table];
+      var isSampleOpen = !!(uiState.tableSamplesOpen && uiState.tableSamplesOpen[m.table]);
       var sampleHtml = '';
-      if (sample && sample.columns && sample.columns.length) {
-        var rowCnt = (sample.values || []).length;
-        sampleHtml = '<div class="example-input-box" style="margin-top:8px">' +
-          '<div class="example-input-hdr">📊 Example Input — tabela <code>' + esc(m.table) + '</code> (pierwsze ' + Math.min(4, rowCnt) + ' wiersze):</div>' +
-          renderSingleTable(sample, 4) +
-        '</div>';
-      } else {
-        sampleHtml = '<div style="margin-top:6px"><button type="button" class="btn sm" data-act="peekTable" data-table="' + esc(m.table) + '">👁 Pobierz Example Input (' + esc(m.table) + ')</button></div>';
+      if (isSampleOpen) {
+        var sample = tableSamples[m.table] || interviewSamples[m.table];
+        if (sample && sample.columns && sample.columns.length) {
+          var rowCnt = (sample.values || []).length;
+          sampleHtml = '<div class="example-input-box" style="margin-top:8px">' +
+            '<div class="example-input-hdr">📊 Example Input — tabela <code>' + esc(m.table) + '</code> (pierwsze ' + Math.min(4, rowCnt) + ' wiersze):</div>' +
+            renderSingleTable(sample, 4) +
+          '</div>';
+        } else {
+          sampleHtml = '<div style="margin-top:6px"><button type="button" class="btn sm" data-act="peekTable" data-table="' + esc(m.table) + '">👁 Pobierz Example Input (' + esc(m.table) + ')</button></div>';
+        }
       }
+
+      var toggleBtnHtml = '<div style="margin-top:8px">' +
+        '<button type="button" class="btn sm tbl-sample-toggle-btn' + (isSampleOpen ? ' active' : '') + '" data-act="toggleTableSample" data-table="' + esc(m.table) + '">' +
+          (isSampleOpen ? '🔼 Zwiń podgląd tabeli ▴' : '👁️ Rozwiń podgląd tabeli (pierwsze 4 wiersze) ▾') +
+        '</button>' +
+      '</div>';
 
       return '<div class="iv-tbl-card">' +
         '<div style="display:flex;flex-wrap:wrap;align-items:center;gap:5px">' +
@@ -1273,6 +1301,7 @@ function renderTaskTablesInline(tableNames, solSql) {
             return '<button type="button" class="' + cls + '" data-act="ins" data-val="' + esc(colName) + '" data-insert-sql="' + esc(colName) + '" title="' + esc(ttl) + '">' + lbl + '</button>';
           }).join('') +
         '</div>' +
+        toggleBtnHtml +
         sampleHtml +
       '</div>';
     }).join('') +
@@ -1818,20 +1847,40 @@ function buildDataLemurSpec(item, parentTask) {
             '<span class="req-col-idx">' + num + '</span><code>' + esc(c.name) + '</code>' +
           '</button>';
         }
-        var safeAlias = ('AS ' + String(c.name || '')).replace(/'/g, "\\'");
-        var calcLbl = buildCalcPillText(c.expr);
-        return '<button type="button" class="req-col-pill req-col-pill-alias" onclick="insertAtCursor(\'' + esc(safeAlias) + '\')">' +
+        var exprCols = extractExprSourceCols(c.expr);
+        var exprColsStr = exprCols.length ? exprCols.join(', ') : '';
+        return '<button type="button" class="req-col-pill req-col-pill-alias" data-act="toggleAliasPopover" data-alias="' + esc(c.name) + '" data-expr-cols="' + esc(exprColsStr) + '" title="Kliknij, aby zobaczyć szczegóły wyliczenia i wstawić AS ' + esc(c.name) + '">' +
           '<span class="req-col-idx">' + num + '</span>' +
-          '<span class="req-calc-pill">' + esc(calcLbl) + '</span>' +
-          '<span class="sql-as-badge">AS</span>' +
           '<code>' + esc(c.name) + '</code>' +
+          '<span class="sql-as-badge">AS</span>' +
+          '<span class="alias-info-icon">ℹ️</span>' +
         '</button>';
       }).join('') +
       '</div>';
 
-    if (hasAnyAlias) {
+    if (uiState.activeAliasPopover) {
+      var ap = uiState.activeAliasPopover;
+      var apColsNote = ap.cols ? (' Wylicz ją na podstawie kolumn: <strong>' + esc(ap.cols) + '</strong>.') : '';
+      colsPipelineHtml += '<div class="alias-calc-popover">' +
+        '<div class="alias-calc-popover-hdr">' +
+          '<span>🧮 <strong>Kolumna docelowa:</strong> <code>' + esc(ap.alias) + '</code></span>' +
+          '<button type="button" class="alias-popover-close" data-act="closeAliasPopover" aria-label="Zamknij">✕</button>' +
+        '</div>' +
+        '<p class="alias-calc-popover-txt">' +
+          'W wyniku użyj zapisu z aliasem: <code class="sql-kw-as">AS ' + esc(ap.alias) + '</code>.' + apColsNote +
+        '</p>' +
+        '<div class="alias-popover-acts">' +
+          '<button type="button" class="btn sm primary alias-popover-insert-btn" onclick="insertAtCursor(\'AS ' + esc(ap.alias) + '\');">' +
+            '➕ Wstaw "AS ' + esc(ap.alias) + '" do edytora' +
+          '</button>' +
+        '</div>' +
+      '</div>';
+    }
+
+    if (hasAnyAlias && (!parentTask || parentTask.id !== 'p1_1')) {
+      var tipBtnLbl = uiState.syntaxTipOpen ? '💡 Zwiń ogólną wskazówkę składni AS ▴' : '💡 Pokaż ogólną wskazówkę składni AS ▾';
       colsPipelineHtml += '<div class="mini-syntax-tip-wrap">' +
-        '<button type="button" class="mini-syntax-tip-btn" data-act="toggleSyntaxTip">💡 Pokaż ogólną wskazówkę składni AS</button>' +
+        '<button type="button" class="mini-syntax-tip-btn" data-act="toggleSyntaxTip">' + tipBtnLbl + '</button>' +
         '__SYNTAX_TIP_BODY__' +
       '</div>';
     }
@@ -1882,6 +1931,14 @@ window.getHintButtonLabel = getHintButtonLabel;
 window.renderOnboardingModal = renderOnboardingModal;
 window.state = state;
 window.uiState = uiState;
+window.APP_VERSION = APP_VERSION;
+window.buildNeutralTeachExample = buildNeutralTeachExample;
+window.renderEditorWidget = renderEditorWidget;
+window.renderTaskTablesInline = renderTaskTablesInline;
+window.renderPathTab = renderPathTab;
+window.renderResultBox = renderResultBox;
+window.setCurrentTab = function(t) { currentTab = t; };
+window.setLastFeedback = function(fb) { lastFeedback = fb; };
 
 // Renderuje zunifikowaną specyfikację zadania (📌 Polecenie + Wizualny Pasek Wymagań)
 function renderTaskSpecBox(item, parentTask, teachFirstHtml) {
@@ -2034,10 +2091,23 @@ var ALL_CHEAT_CLAUSES = [
   }
 ];
 
-function buildNeutralTeachExample(nf, solSql) {
+function buildNeutralTeachExample(nf, solSql, task) {
+  var isP1_1 = task && task.id === 'p1_1';
   var title = String((nf && nf.title) || '');
   var ex = String((nf && nf.example) || '');
   var combined = title + ' ' + ex + ' ' + String(solSql || '');
+
+  if (isP1_1) {
+    if (/\bSELECT\s+\*/i.test(solSql) || /gwiazdk|wszystkie/i.test(combined)) {
+      return 'SELECT * FROM pracownicy;';
+    }
+    return 'SELECT imie, nazwisko FROM pracownicy;';
+  }
+
+  if (/\bSELECT\s+\*/i.test(solSql) && !/\b[a-zA-Z0-9_]+\s*[*+\/-]\s*[a-zA-Z0-9_]+/.test(combined)) {
+    return 'SELECT * FROM pracownicy;';
+  }
+
   if (/\bDENSE_RANK\b/i.test(combined)) return 'SELECT nazwa, DENSE_RANK() OVER (ORDER BY punkty DESC) AS miejsce FROM gracze;';
   if (/\bROW_NUMBER\b/i.test(combined)) return 'SELECT nazwa, ROW_NUMBER() OVER (PARTITION BY kategoria ORDER BY cena DESC) AS nr FROM produkty;';
   if (/\bLAG\b|\bLEAD\b/i.test(combined)) return 'SELECT dzien, przychod, LAG(przychod) OVER (ORDER BY dzien) AS poprzedni_dzien FROM sprzedaz;';
@@ -2060,15 +2130,25 @@ function buildNeutralTeachExample(nf, solSql) {
   if (/\bIS\s+(?:NOT\s+)?NULL\b/i.test(combined)) return 'SELECT id, data_wysylki FROM paczki WHERE data_wysylki IS NULL;';
   if (/\bORDER\s+BY\b/i.test(combined)) return 'SELECT nazwa, cena FROM produkty ORDER BY cena DESC LIMIT 5;';
   if (/\bWHERE\b/i.test(combined)) return 'SELECT nazwa, cena FROM produkty WHERE cena > 20;';
-  if (/[*+\/-]/.test(combined) || /\bAS\b/i.test(combined)) return 'SELECT cena * 100 AS grosze FROM produkty;';
+  if (/\b[a-zA-Z0-9_]+\s*[*+\/-]\s*[a-zA-Z0-9_]+/.test(combined)) return 'SELECT cena * 100 AS grosze FROM produkty;';
+  if (/\bAS\b/i.test(combined)) return 'SELECT cena AS koszt FROM produkty;';
   return 'SELECT kolumna1, kolumna2 FROM przykladowa_tabela;';
 }
 
 function renderTeachFirstBox(newFeature, task, variant) {
   var nf = newFeature;
   var sol = String((variant && variant.sol) || '');
-  // Dla AS w 1.1/1.2 dopilnuj prostego i czytelnego wyjaśnienia na neutralnym przykładzie (bez zdradzania kolumn zadania)
-  if (task && (task.id === 'p1_1' || task.id === 'p1_2') && /\bAS\b/i.test(sol)) {
+  if (task && task.id === 'p1_1') {
+    if (/\bSELECT\s+\*/i.test(sol)) {
+      nf = {
+        title: 'Wszystkie kolumny: * (gwiazdka)',
+        desc: 'Znak gwiazdki * po słowie SELECT oznacza pobranie wszystkich dostępnych kolumn z danej tabeli bez konieczności ich ręcznego wymieniania.',
+        example: 'SELECT * FROM produkty;'
+      };
+    } else {
+      nf = null;
+    }
+  } else if (task && task.id === 'p1_2' && /\bAS\b/i.test(sol)) {
     if (!nf || /\bAS\b/i.test(nf.title)) {
       nf = {
         title: (nf && nf.title) ? nf.title : 'Zmiana nazwy kolumny: AS (alias)',
@@ -2083,9 +2163,11 @@ function renderTeachFirstBox(newFeature, task, variant) {
     .replace(/rental_rate\s*\*\s*\d+/gi, 'cena * 100')
     .replace(/amount\s*\*\s*\d+/gi, 'cena * 100')
     .replace(/length\s+AS\s+duration_min/gi, 'cena * 100 AS grosze');
-  var neutralExample = buildNeutralTeachExample(nf, sol);
-  return '<details class="teach-first-box teach-first-pill">' +
-    '<summary class="teach-first-hdr">🆕 Nowy element: <strong>' + esc(nf.title) + '</strong> <span class="teach-first-more">(rozwiń przykład ▾)</span></summary>' +
+  var neutralExample = buildNeutralTeachExample(nf, sol, task);
+  var isOpen = !!uiState.teachFirstOpen;
+  var moreLbl = isOpen ? '(zwiń przykład ▴)' : '(rozwiń przykład ▾)';
+  return '<details class="teach-first-box teach-first-pill"' + (isOpen ? ' open' : '') + '>' +
+    '<summary class="teach-first-hdr">🆕 Nowy element: <strong>' + esc(nf.title) + '</strong> <span class="teach-first-more">' + moreLbl + '</span></summary>' +
     '<div class="teach-first-body">' +
       '<p class="teach-first-desc">' + formatPrompt(safeDesc) + '</p>' +
       (neutralExample ? '<div class="teach-first-code"><code>' + highlightSQL(neutralExample) + '</code></div>' : '') +
@@ -2539,7 +2621,7 @@ function renderEditorWidget(extraCols, actionType, variant, task) {
       '<div id="sqlgut" aria-hidden="true"><span class="ln">1</span></div>' +
       '<div class="edwrap">' +
         '<pre id="sqlhl" aria-hidden="true"></pre>' +
-        '<textarea id="answer" wrap="off" spellcheck="false" autocomplete="off" autocorrect="off" autocapitalize="off" placeholder="Wpisz zapytanie SQL (np. SELECT ... FROM ...) lub dotknij klocka powyżej">' + esc(state.editorCode || '') + '</textarea>' +
+        '<textarea id="answer" wrap="off" data-gramm="false" data-gramm_editor="false" data-enable-grammarly="false" spellcheck="false" autocomplete="off" autocorrect="off" autocapitalize="off" placeholder="Wpisz zapytanie SQL (np. SELECT ... FROM ...) lub dotknij klocka powyżej">' + esc(state.editorCode || '') + '</textarea>' +
       '</div>' +
     '</div>' +
     '<div class="acts">' +
@@ -2666,6 +2748,12 @@ function renderResultBox() {
     } else if (lastFeedback.type === 'ok' && currentTab === 'lemur' && state.lemurMode === 'solve') {
       nextBtnHtml = '<div style="margin-top:10px">' +
         '<button type="button" class="btn success next-step-cta" data-act="backToLemurList">📋 Wróć do listy zadań rekrutacyjnych</button>' +
+      '</div>';
+    } else if (lastFeedback.type === 'ok' && currentTab === 'diag' && lastFeedback.diagNext) {
+      nextBtnHtml = '<div style="margin-top:12px">' +
+        '<button type="button" class="btn success diag-next-btn next-step-cta" data-act="nextDiagQuestion">' +
+          esc(lastFeedback.nextBtnText || 'Przejdź do kolejnego pytania →') +
+        '</button>' +
       '</div>';
     }
     h += '<div class="fb-box ' + lastFeedback.type + '">' +
@@ -3253,7 +3341,30 @@ function renderPathTab() {
   var doneVariants = PATH_TASKS.reduce(function(acc, t) { return acc + countTotalLessonSolved(t.id); }, 0);
   var doneLessons = PATH_TASKS.filter(function(t) { return isLessonCoreCompleted(t.id) || !!state.completedTasks[t.id]; }).length;
 
+  var hasNick = state.userProfile && state.userProfile.nick && state.userProfile.nick.trim().length > 0;
+  var continueTask = PATH_TASKS.find(function(t) { return t.id === state.activeTaskId && isLessonUnlocked(t.id); }) ||
+                     PATH_TASKS.find(function(t) { return isLessonUnlocked(t.id) && !isLessonCoreCompleted(t.id); }) ||
+                     PATH_TASKS[0];
+  var continueTaskSolved = countTotalLessonSolved(continueTask.id);
+  var continueTaskTotal = continueTask.variants.length;
+
   var h = '';
+  if (!hasNick) {
+    h += '<div class="guest-auth-banner">' +
+      '<span>👋 Nie jesteś zalogowany w Rankingu Testerów</span>' +
+      '<button type="button" class="btn sm guest-auth-btn" data-act="openAuthModal">👉 Kliknij, aby ustawić swój nick</button>' +
+    '</div>';
+  }
+
+  h += '<div class="continue-learning-card" data-act="openPathTask" data-id="' + continueTask.id + '">' +
+    '<div class="continue-left">' +
+      '<span class="continue-badge">🔥 KONTYNUUJ NAUKĘ</span>' +
+      '<h3 class="continue-title">' + esc(continueTask.title) + '</h3>' +
+      '<span class="continue-sub">Postęp: ' + continueTaskSolved + '/' + continueTaskTotal + ' zadań rozwiązanych</span>' +
+    '</div>' +
+    '<button type="button" class="btn primary continue-btn">Przejdź do lekcji →</button>' +
+  '</div>';
+
   if (!state.diagDone) {
     h += '<section class="hero">' +
       '<h2>Znasz już podstawy SQL?</h2>' +
@@ -3300,24 +3411,38 @@ function renderPathTab() {
       var lessonOpen = isLessonUnlocked(t.id);
       var tutDone = !!(state.tutorialsDone && state.tutorialsDone[t.id]);
       var isMastered = isLessonCoreCompleted(t.id);
+      var isCurrent = (t.id === continueTask.id && lessonOpen);
 
       var numMatch = String(t.title || '').match(/^(\d+\.\d+)\s*(.*)$/);
       var subNum = numMatch ? numMatch[1] : '';
       var cleanLessonTitle = numMatch ? numMatch[2] : t.title;
 
       var progCls = vSolved >= 5 ? ' done' : '';
+      var statePill = !lessonOpen
+        ? '<span class="node-state-pill locked">🔒 Zablokowana</span>'
+        : (isMastered
+            ? '<span class="node-state-pill done">✅ Ukończona</span>'
+            : (isCurrent
+                ? '<span class="node-state-pill current">🎯 Tu jesteś</span>'
+                : '<span class="node-state-pill open">🔓 Dostępna</span>'));
+
       var sampleShortTitles = [0, 2, 4].map(function(i) {
         return t.variants[i] ? getVariantShortTitle(t, t.variants[i], i) : '';
       }).filter(Boolean).join(' · ');
 
-      h += '<button type="button" class="node-item' + (!lessonOpen ? ' locked' : '') + '" data-act="openPathTask" data-id="' + t.id + '">' +
+      var nodeCls = 'node-item' + (!lessonOpen ? ' locked' : '') + (isCurrent ? ' current-node' : '') + (isMastered ? ' mastered' : '');
+
+      h += '<button type="button" class="' + nodeCls + '" data-act="openPathTask" data-id="' + t.id + '">' +
         '<div style="width:100%;min-width:0">' +
           '<div class="node-hdr-row">' +
             '<div class="node-title-wrap">' +
               (subNum ? '<span class="node-num-badge">' + (!lessonOpen ? '🔒 ' : isMastered ? '✅ ' : '') + esc(subNum) + '</span>' : '') +
               '<span class="node-title-txt">' + esc(cleanLessonTitle) + '</span>' +
             '</div>' +
-            '<span class="node-prog-badge' + progCls + '">' + vSolved + '/' + t.variants.length + '</span>' +
+            '<div style="display:flex;align-items:center;gap:6px">' +
+              statePill +
+              '<span class="node-prog-badge' + progCls + '">' + vSolved + '/' + t.variants.length + '</span>' +
+            '</div>' +
           '</div>' +
           '<div class="node-meta">' +
             '<span>📖 Slajdy: <strong>' + (tutDone ? '✓ 4/4' : '0/4') + '</strong></span>' +
@@ -3565,28 +3690,63 @@ function renderOnboardingModal() {
         '</div>'
     },
     {
-      badge: 'Karta 2/4 · Budowa tabeli',
+      badge: 'Karta 2/4 · Budowa tabeli (Dotknij kolumny lub wiersza!)',
       title: '📊 Jak wygląda tabela w bazie danych?',
-      body:
-        '<p class="small" style="font-size:13px;line-height:1.55">Każda tabela ma nazwę (np. <code>film</code>) i składa się z pionowych <strong>kolumn</strong> oraz poziomych <strong>wierszy</strong>:</p>' +
-        '<div style="overflow-x:auto; max-width:100%; margin:8px 0; border:1px solid var(--line); border-radius:8px;">' +
-          '<table style="width:100%; font-size:11.5px; border-collapse:collapse;">' +
-            '<thead><tr style="background:var(--surface);">' +
-              '<th style="padding:6px 8px; text-align:left; border-bottom:1px solid var(--line);">film_id</th>' +
-              '<th style="padding:6px 8px; text-align:left; border-bottom:1px solid var(--line);">title</th>' +
-              '<th style="padding:6px 8px; text-align:left; border-bottom:1px solid var(--line);">rental_rate</th>' +
-            '</tr></thead>' +
-            '<tbody>' +
-              '<tr><td style="padding:5px 8px; border-bottom:1px solid rgba(255,255,255,0.06);">1</td><td style="padding:5px 8px; border-bottom:1px solid rgba(255,255,255,0.06);">Academy Dinosaur</td><td style="padding:5px 8px; border-bottom:1px solid rgba(255,255,255,0.06);">0.99</td></tr>' +
-              '<tr><td style="padding:5px 8px; border-bottom:1px solid rgba(255,255,255,0.06);">2</td><td style="padding:5px 8px; border-bottom:1px solid rgba(255,255,255,0.06);">Ace Goldfinger</td><td style="padding:5px 8px; border-bottom:1px solid rgba(255,255,255,0.06);">4.99</td></tr>' +
-              '<tr><td style="padding:5px 8px;">3</td><td style="padding:5px 8px;">Adaptation Holes</td><td style="padding:5px 8px;">2.99</td></tr>' +
-            '</tbody>' +
-          '</table>' +
-        '</div>' +
-        '<ul class="tut-list" style="margin-top:6px">' +
-          '<li><strong>Kolumna (pionowo):</strong> cecha obiektu, np. <code>title</code> (tytuł) lub <code>rental_rate</code> (cena).</li>' +
-          '<li><strong>Wiersz (poziomo):</strong> jeden obiekt, np. pełne dane filmu <em>Academy Dinosaur</em>.</li>' +
-        '</ul>'
+      body: (function() {
+        var sel = uiState.onboardingTableSelection;
+        var isCol0 = sel && sel.type === 'col' && sel.colIdx === 0;
+        var isCol1 = sel && sel.type === 'col' && sel.colIdx === 1;
+        var isCol2 = sel && sel.type === 'col' && sel.colIdx === 2;
+        var isRow0 = sel && sel.type === 'row' && sel.rowIdx === 0;
+        var isRow1 = sel && sel.type === 'row' && sel.rowIdx === 1;
+        var isRow2 = sel && sel.type === 'row' && sel.rowIdx === 2;
+
+        var explHtml = '';
+        if (sel && sel.type === 'col') {
+          explHtml = '<div class="onb-explain-box col-box">' +
+            '<strong>🔹 Kolumna: <code>' + esc(sel.colName) + '</code></strong>' +
+            '<p class="small" style="margin:3px 0 0">Kolumna (pionowo) przechowuje tę samą cechę (np. cenę lub tytuł) dla każdego wiersza w całej tabeli.</p>' +
+          '</div>';
+        } else if (sel && sel.type === 'row') {
+          explHtml = '<div class="onb-explain-box row-box">' +
+            '<strong>🔸 Wiersz: Rekord #' + (sel.rowIdx + 1) + ' (<em>' + esc(sel.rowTitle) + '</em>)</strong>' +
+            '<p class="small" style="margin:3px 0 0">Wiersz (poziomo) to pojedynczy, kompletny rekord obiektu w bazie — zawiera wszystkie kolumny dotyczące tego jednego filmu.</p>' +
+          '</div>';
+        } else {
+          explHtml = '<div class="onb-explain-box hint-box">' +
+            '<p class="small muted" style="margin:0">💡 <strong>Dotknij nagłówka kolumny lub wiersza</strong> w tabeli powyżej, aby zobaczyć różnicę!</p>' +
+          '</div>';
+        }
+
+        return '<p class="small" style="font-size:13px;line-height:1.55">Tabela (np. <code>film</code>) składa się z pionowych <strong>kolumn</strong> i poziomych <strong>wierszy</strong>:</p>' +
+          '<div class="onb-interactive-tbl-wrap" style="overflow-x:auto; max-width:100%; margin:8px 0; border:1px solid var(--line); border-radius:8px;">' +
+            '<table class="onb-interactive-tbl" style="width:100%; font-size:11.5px; border-collapse:collapse;">' +
+              '<thead><tr style="background:var(--surface);">' +
+                '<th class="onb-th' + (isCol0 ? ' col-highlighted' : '') + '" data-act="onbInspectCol" data-col-idx="0" data-col-name="film_id" style="padding:6px 8px; text-align:left; cursor:pointer;" title="Kliknij kolumnę film_id">film_id 👆</th>' +
+                '<th class="onb-th' + (isCol1 ? ' col-highlighted' : '') + '" data-act="onbInspectCol" data-col-idx="1" data-col-name="title" style="padding:6px 8px; text-align:left; cursor:pointer;" title="Kliknij kolumnę title">title 👆</th>' +
+                '<th class="onb-th' + (isCol2 ? ' col-highlighted' : '') + '" data-act="onbInspectCol" data-col-idx="2" data-col-name="rental_rate" style="padding:6px 8px; text-align:left; cursor:pointer;" title="Kliknij kolumnę rental_rate">rental_rate 👆</th>' +
+              '</tr></thead>' +
+              '<tbody>' +
+                '<tr class="onb-tr' + (isRow0 ? ' row-highlighted' : '') + '" data-act="onbInspectRow" data-row-idx="0" data-row-title="Academy Dinosaur" style="cursor:pointer;" title="Kliknij wiersz">' +
+                  '<td class="' + (isCol0 ? 'col-highlighted' : '') + '" style="padding:5px 8px; border-bottom:1px solid rgba(255,255,255,0.06);">1</td>' +
+                  '<td class="' + (isCol1 ? 'col-highlighted' : '') + '" style="padding:5px 8px; border-bottom:1px solid rgba(255,255,255,0.06);">Academy Dinosaur</td>' +
+                  '<td class="' + (isCol2 ? 'col-highlighted' : '') + '" style="padding:5px 8px; border-bottom:1px solid rgba(255,255,255,0.06);">0.99</td>' +
+                '</tr>' +
+                '<tr class="onb-tr' + (isRow1 ? ' row-highlighted' : '') + '" data-act="onbInspectRow" data-row-idx="1" data-row-title="Ace Goldfinger" style="cursor:pointer;" title="Kliknij wiersz">' +
+                  '<td class="' + (isCol0 ? 'col-highlighted' : '') + '" style="padding:5px 8px; border-bottom:1px solid rgba(255,255,255,0.06);">2</td>' +
+                  '<td class="' + (isCol1 ? 'col-highlighted' : '') + '" style="padding:5px 8px; border-bottom:1px solid rgba(255,255,255,0.06);">Ace Goldfinger</td>' +
+                  '<td class="' + (isCol2 ? 'col-highlighted' : '') + '" style="padding:5px 8px; border-bottom:1px solid rgba(255,255,255,0.06);">4.99</td>' +
+                '</tr>' +
+                '<tr class="onb-tr' + (isRow2 ? ' row-highlighted' : '') + '" data-act="onbInspectRow" data-row-idx="2" data-row-title="Adaptation Holes" style="cursor:pointer;" title="Kliknij wiersz">' +
+                  '<td class="' + (isCol0 ? 'col-highlighted' : '') + '" style="padding:5px 8px;">3</td>' +
+                  '<td class="' + (isCol1 ? 'col-highlighted' : '') + '" style="padding:5px 8px;">Adaptation Holes</td>' +
+                  '<td class="' + (isCol2 ? 'col-highlighted' : '') + '" style="padding:5px 8px;">2.99</td>' +
+                '</tr>' +
+              '</tbody>' +
+            '</table>' +
+          '</div>' +
+          explHtml;
+      })()
     },
     {
       badge: 'Karta 3/4 · Twoje pierwsze słowa w SQL',
@@ -3879,9 +4039,27 @@ document.addEventListener('toggle', function(e) {
       uiState.theoryBoxOpen = e.target.open;
     } else if (e.target.classList.contains('example-output-fold')) {
       uiState.exampleOutOpen = e.target.open;
+    } else if (e.target.classList.contains('teach-first-box')) {
+      uiState.teachFirstOpen = e.target.open;
+      var lbl = e.target.querySelector('.teach-first-more');
+      if (lbl) {
+        lbl.textContent = e.target.open ? '(zwiń przykład ▴)' : '(rozwiń przykład ▾)';
+      }
     }
   }
 }, true);
+
+window.addEventListener('keydown', function(e) {
+  if (e.key === 'Enter') {
+    if (currentTab === 'diag' && lastFeedback && lastFeedback.diagNext) {
+      e.preventDefault();
+      var diagNextBtn = document.querySelector('.diag-next-btn');
+      if (diagNextBtn) {
+        diagNextBtn.click();
+      }
+    }
+  }
+});
 
 document.addEventListener('input', function(e) {
   if (e.target.id === 'answer') {
@@ -4039,7 +4217,55 @@ document.addEventListener('click', async function(e) {
   else if (act === 'closeOnboarding') {
     uiState.onboardingOpen = false;
     try { localStorage.setItem(ONBOARDING_KEY, '1'); } catch (err) {}
+    var hasNick = state.userProfile && state.userProfile.nick && state.userProfile.nick.trim().length > 0;
+    if (!hasNick) {
+      uiState.authModalOpen = true;
+      uiState.authError = '';
+    }
     render();
+  }
+  else if (act === 'onbInspectCol') {
+    var colIdx = Number(el.dataset.colIdx) || 0;
+    var colName = el.dataset.colName || 'kolumna';
+    uiState.onboardingTableSelection = { type: 'col', colIdx: colIdx, colName: colName };
+    render();
+  }
+  else if (act === 'onbInspectRow') {
+    var rowIdx = Number(el.dataset.rowIdx) || 0;
+    var rowTitle = el.dataset.rowTitle || ('Rekord ' + (rowIdx + 1));
+    uiState.onboardingTableSelection = { type: 'row', rowIdx: rowIdx, rowTitle: rowTitle };
+    render();
+  }
+  else if (act === 'toggleAliasPopover') {
+    var aAlias = el.dataset.alias;
+    if (uiState.activeAliasPopover && uiState.activeAliasPopover.alias === aAlias) {
+      uiState.activeAliasPopover = null;
+    } else {
+      uiState.activeAliasPopover = {
+        alias: aAlias,
+        orig: el.dataset.orig || aAlias,
+        expr: el.dataset.expr || ('...' + ' AS ' + aAlias),
+        tables: (el.dataset.tables || '').split(',').map(function(s){ return s.trim(); }).filter(Boolean)
+      };
+    }
+    render();
+  }
+  else if (act === 'closeAliasPopover') {
+    uiState.activeAliasPopover = null;
+    render();
+  }
+  else if (act === 'toggleTableSample') {
+    var tbl = el.dataset.table;
+    if (!uiState.tableSamplesOpen) uiState.tableSamplesOpen = {};
+    uiState.tableSamplesOpen[tbl] = !uiState.tableSamplesOpen[tbl];
+    if (uiState.tableSamplesOpen[tbl] && (!tableSamples[tbl] || !tableSamples[tbl].columns)) {
+      runQuery('SELECT * FROM ' + tbl + ' LIMIT 4;').then(function(res) {
+        if (res && res.columns) tableSamples[tbl] = res;
+        render();
+      });
+    } else {
+      render();
+    }
   }
   else if (act === 'nextOnboardingSlide') {
     uiState.onboardingSlideIdx = Math.min(3, (uiState.onboardingSlideIdx || 0) + 1);
@@ -4455,19 +4681,21 @@ document.addEventListener('click', async function(e) {
     if (dCmp.ok) {
       state.diagScore++;
       state.xp += 15;
-      toast('Dobrze! Pytanie ' + (state.diagIdx + 1) + '/10 zaliczone.');
-      state.diagIdx++;
-      resetTaskContextUi();
-      lastExecResult = null;
+      toast('🎉 Dobrze! Pytanie ' + (state.diagIdx + 1) + '/' + DIAG_QUESTIONS.length + ' zaliczone (+15 XP).');
       lastExpectedResult = null;
-      lastFeedback = null;
-      lastChecklist = null;
-      if (state.diagIdx < DIAG_QUESTIONS.length) {
-        state.editorCode = '';
-      }
+      var isLast = (state.diagIdx + 1) >= DIAG_QUESTIONS.length;
+      var nextBtnText = isLast ? '🏆 Zobacz podsumowanie Diagnozy →' : ('Przejdź do pytania ' + (state.diagIdx + 2) + ' z ' + DIAG_QUESTIONS.length + ' →');
+      lastFeedback = {
+        type: 'ok',
+        title: '🎉 Brawo! Zadanie diagnostyczne ' + (state.diagIdx + 1) + ' z ' + DIAG_QUESTIONS.length + ' rozwiązane poprawnie (+15 XP)',
+        msg: 'Twój wynik jest w 100% zgodny ze wzorcem! Kliknij zielony przycisk poniżej lub naciśnij Enter, aby przejść dalej.',
+        diagNext: true,
+        nextBtnText: nextBtnText
+      };
       saveState();
       syncProfileToCloud(true);
       render();
+      scrollToResult();
     } else {
       lastExpectedResult = lastExecResult.error ? null : dExp;
       var diagErrMsg = lastExecResult.error
@@ -4493,6 +4721,20 @@ document.addEventListener('click', async function(e) {
     }
     saveState();
     render();
+  }
+  else if (act === 'nextDiagQuestion') {
+    state.diagIdx++;
+    resetTaskContextUi();
+    lastExecResult = null;
+    lastExpectedResult = null;
+    lastFeedback = null;
+    lastChecklist = null;
+    if (state.diagIdx < DIAG_QUESTIONS.length) {
+      state.editorCode = '';
+    }
+    saveState();
+    render();
+    window.scrollTo(0, 0);
   }
   else if (act === 'applyDiag') {
     var st = Number(el.dataset.stage) || 1;

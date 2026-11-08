@@ -15,22 +15,20 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="./css/style.css?v=12.1">
+<link rel="stylesheet" href="./css/style.css?v=13">
 </head>
 <body>
 <div class="app">
   <header class="topbar">
     <div class="brand">
       <div class="brand-badge">SQL</div>
-      <div class="brand-txt">
-        <b>SQL Master · dvdrental</b>
-        <span><i class="dot-online"></i> <span id="dbStatus">Ładowanie silnika SQL…</span></span>
-      </div>
+      <b class="brand-title">SQL Master</b>
+      <span class="pill-pg" id="dbStatus" title="PostgreSQL 16 WebAssembly (PGlite)">🟢 PG16</span>
     </div>
     <div class="top-stats">
-      <span class="pill-stat" id="xpPill">⚡ 1202 XP</span>
-      <span class="pill-stat" id="streakPill">🔥 4d</span>
-      <button class="btn sm" data-act="theme" title="Zmień motyw">🌓</button>
+      <span class="pill-stat" id="xpPill">⚡ 0 XP</span>
+      <span class="pill-stat" id="streakPill">🔥 1d</span>
+      <button class="btn sm btn-theme" data-act="theme" title="Zmień motyw">🌓</button>
     </div>
   </header>
 
@@ -65,9 +63,9 @@
 
 <div id="toast" role="status"></div>
 
-<script src="./js/data-dvdrental.js?v=12.1"></script>
-<script src="./js/data-tasks.js?v=12.1"></script>
-<script src="./js/data-interview.js?v=12.1"></script>
-<script src="./js/app.js?v=12.1"></script>
+<script src="./js/data-dvdrental.js?v=13"></script>
+<script src="./js/data-tasks.js?v=13"></script>
+<script src="./js/data-interview.js?v=13"></script>
+<script src="./js/app.js?v=13"></script>
 </body>
 </html>
