@@ -1,101 +1,84 @@
-# Architektura i Plan Techniczny: Centrum nauki SQL (Mobile LMS)
+# Architektura i Plan Techniczny: Centrum nauki SQL / Data Master (v3.0)
 
-> **Lokalizacja docelowa w projekcie:** `docs/ARCHITEKTURA.md`
-> **Status (31.10.2026):** etapy 1–2 gotowe, silnik zmieniony z SQL.js na PGlite, następny krok to podział pliku na części i PWA.
-> **Cel dokumentu:** Stały punkt odniesienia opisujący wizję funkcjonalną, architekturę danych, stos technologiczny (obecny i docelowy) oraz harmonogram rozwoju aplikacji.
-
----
-
-## 1. Główny zamysł i wizja aplikacji
-
-Aplikacja jest **mobilnym środowiskiem treningowym SQL (Mobile-First SQL LMS)** łączącym najlepsze cechy **SoloLearn / SQLBolt** (prowadzenie za rękę od zera przez krótkie, ustrukturyzowane lekcje, ale z dużym naciskiem na samodzielne pisanie kodu) oraz **DataLemur / StrataScratch** (zadania rekrutacyjne z ukrytymi pułapkami analitycznymi zasilającymi indywidualny rejestr luk).
-
-### Cztery filary funkcjonalne:
-1. **Ścieżka od 0 do Zaawansowanego (60–100 dynamicznych zadań na bazie `dvdrental`):**
-   * Podzielona na 5 etapów:
-     1. *Fundament SELECT i WHERE*
-     2. *Agregacje, NULL i GROUP BY / HAVING*
-     3. *Złączenia (INNER, LEFT, Anti-Join, Self-Join)*
-     4. *CASE WHEN, COALESCE, FILTER i Rzutowanie*
-     5. *CTE (WITH), Funkcje Okna i Kalendarze (`generate_series`)*
-   * Każde zagadnienie w ścieżce posiada **5 wariantów parametrycznych**. Zmiana wariantu podmienia tabelę docelową (np. `film` → `payment` → `rental` → `customer`), szukane kolumny oraz progi liczbowe, dzięki czemu nie rozwiązujesz zadań „na pamięć”.
-2. **Moduł „Diagnoza” (Placement Test 10–15 zadań z przyciskiem „Pomiń”):**
-   * Przeznaczony dla osób, które mają już podstawy i nie chcą zaczynać od prostego `SELECT *`.
-   * Zawiera przekrojowe zadania od poziomu 1 do 5. Każde zadanie ma przycisk **„⏭ Pomiń zadanie (Nie umiem jeszcze)”**.
-   * Na koniec Diagnoza automatycznie odblokowuje właściwy etap w Ścieżce, zalicza wcześniejsze moduły i dopisuje pominięte lub błędnie rozwiązane zagadnienia bezpośrednio do **Rejestru Luk**.
-3. **Sekcja Rekrutacyjna w stylu DataLemur + Detektor Pułapek + Rejestr Luk:**
-   * Katalog 12 zadań rekrutacyjnych z prawdziwych procesów kwalifikacyjnych (Netflix, Stripe, Amazon, Spotify, Uber, Meta, Microsoft, Airbnb, Google, LinkedIn, PayPal, TikTok) przeniesionych na schemat `dvdrental`.
-   * **Trap Detector:** Gdy zapytanie zwraca zły wynik, algorytm analizuje strukturę Twojego kodu SQL pod kątem typowych błędów (np. warunek dla prawej tabeli `LEFT JOIN` umieszczony w `WHERE` zamiast w `ON`, użycie `COUNT(*)` zamiast `COUNT(prawa.id)`, `NOT IN` na kolumnie z `NULL`, brak `DISTINCT` przy łączeniu dwóch tabel faktów, dzielenie całkowite bez `* 100.0`).
-   * Każda wykryta pułapka automatycznie obniża poziom danej luki w **Rejestrze Luk (Spaced Repetition)** i podsuwa ją do powtórki.
-4. **Ergonomia na telefonie (iOS / Android) + Tryb Hybrydowy (100% Offline + BYOK AI):**
-   * **SQL Quick-Bar:** Dwa paski przycisków nad edytorem (kontekstowe nazwy tabel/kolumn z bieżącego zadania oraz operatory SQL), które wstawiają kod w miejsce kursora jednym dotknięciem.
-   * **Przejrzysty układ Lista ↔ Tryb Zadania:** Na małym ekranie telefonu nigdy nie mieszamy długiej mapy kursu z edytorem kodu.
-   * **Tryb Offline + Własne AI:** Baza `dvdrental`, sprawdzanie zadań, warianty, Diagnoza i pułapki DataLemur działają lokalnie, a po kroku PWA także bez internetu (do tego czasu silnik PGlite ładuje się z internetu przez CDN). Dodatkowo użytkownik może podać darmowy klucz **Google Gemini API** lub korzystać z **Claude** do generowania podpowiedzi mentora.
+> **Lokalizacja w projekcie:** `docs/ARCHITEKTURA.md`
+> **Status (07.11.2026 — Wersja `v12.1`):** Kod rozbity na moduły (`style.css`, `app.js`, `data-*.js`), wdrożony silnik PGlite (PostgreSQL 16 WASM) z Self-Healing Cache, kolorowanie składni w stylu DBeavera, 198 zweryfikowanych zadań (128 Ścieżka + 10 Diagnoza + 60 Rekrutacja DataLemur), PWA Offline-First oraz ranking na żywo w Supabase.
+> **Cel dokumentu:** Kompleksowy opis architektury obecnej (`v12.1`) oraz docelowej architektury komercyjnej (`v3.0 Production` — horyzont 10 tygodni) obejmującej przebudowę wizualną *Zero-Scroll Mobile UI*, *AI Adaptive Gap Engine*, logowanie Supabase Auth, monetyzację Freemium/PRO, natywną aplikację CapacitorJS oraz przyszły moduł Python.
 
 ---
 
-## 2. Stos technologiczny (Teraz vs Docelowo)
+## 1. Wizja Produktu i Pozycjonowanie Rynkowe
 
-| Warstwa | Etap 1–3 (Teraz w VS Code) | Etap 4 (Docelowa aplikacja produkcyjna) | Uzasadnienie techniczne |
+**Centrum nauki SQL (SQL Master)** to mobilna platforma treningowa (**Mobile-First Data LMS**), która łączy dwa światy:
+1. **Przejrzystość wizualną i mikro-naukę (Mimo / SoloLearn / DataCamp Mobile / Duolingo):** układ jednego ekranu bez przewijania (*Zero-Scroll Split UI*), rozgrzewki w formie bezklawiaturowej układanki z klocków (*Tap-to-Build*), 4-kartowe wizualne wprowadzenia i ligi rankingowe.
+2. **Prawdziwy warsztat analityka danych (DataLemur / DBeaver / PostgreSQL 16):** pełny silnik **PGlite (PostgreSQL 16 w WebAssembly)** działający lokalnie na telefonie, 60 zadań rekrutacyjnych z detektorem pułapek (*Trap Detector*) oraz **AI Adaptive Gap Engine** generujący nowe zadania na żywo pod indywidualne błędy użytkownika.
+
+---
+
+## 2. Standard Wizualny i UX („Zero-Scroll Split UI” — v13+)
+
+Na podstawie testów mobilnych na iPhonie (375px) oraz analizy aplikacji SoloLearn, Mimo i DataNinja, interfejs przechodzi z układu długiej przewijanej strony na **Jednoekranowy Układ Mobilny (`100dvh`)**:
+
+1. **Ultracienki Nagłówek Zadania (1 linia, 48px wysokości):**
+   * Zamiast wieloliniowych opisów silnika i zagnieżdżonych ramek informacyjnych, górny pasek zawiera wyłącznie:
+     `[ ← Mapa ]` | `[ ━━━━●━━ 1/6 ▾ ]` | `[ 📖 Slajdy ]` | `[ 🟢 PG16 · ⚡XP ]`.
+2. **Górna Strefa Ekranu (45% wysokości — Karta Kontekstu z 3 zakładkami):**
+   * Użytkownik przełącza jednym dotknięciem kciuka:
+     * **Zakładka `[ 📌 Zadanie ]`:** krótkie, czysto biznesowe polecenie po polsku + **Wizualny Pasek Kolumn Wynikowych** (poziome, klikalne pigułki `[ store_id ] ➔ [ ✨ AS miasto ]` zamiast długiej pionowej listy ze słowem „kolumna”).
+     * **Zakładka `[ 📊 Tabela źródłowa ]`:** nazwy i typy kolumn oraz przykładowe wiersze `Example Input`.
+     * **Zakładka `[ 🎯 Wzór wyniku ]`:** tabela `Example Output` pokazująca jak ma wyglądać poprawny raport.
+3. **Dolna Strefa Ekranu (55% wysokości — Strefa Kodu zawsze pod kciukiem):**
+   * **Tryb Rozgrzewki (`🔥 R1–R2`):** interaktywna układanka z klocków (*Tap-to-Build*) — użytkownik stuka w gotowe kafelki słów kluczowych i kolumn, uzupełniając luki w zapytaniu bez otwierania klawiatury ekranowej.
+   * **Tryb Zadania Głównego (`🎯 1–6`) i Rekrutacji:** dwuwarstwowy edytor SQL z kolorowaniem w stylu DBeavera (`.sql-kw`, `.sql-fn`, `.sql-alias`), paskiem `SQL Quick-Bar`, przyciskami `⌫ Cofnij` / `🧹 Wyczyść` oraz stałym przyciskiem `▶ Uruchom i sprawdź`.
+4. **Wysuwany Panel Wyniku (*Bottom Sheet Drawer*):**
+   * Po kliknięciu `▶ Uruchom i sprawdź` wynik nie wymaga przewijania strony w dół — wysuwa się jako dolny panel z 3-punktową checklistą walidacji (`Kolumny` / `Ziarno — liczba wierszy` / `Wartości i sortowanie`), suflerem błędów i przyciskiem `Następne zadanie →`.
+
+---
+
+## 3. Pięć Filarów Funkcjonalnych (Stan Obecny vs Docelowy v3.0)
+
+### Filar 1: Ścieżka Dydaktyczna 16 Pod-lekcji (128 zadań) — [WDROŻONE + ROZBUDOWA UX]
+* **5 etapów × pod-lekcje po 8 zadań:** 2 rozgrzewkowe (`R1–R2`) + 3 podstawowe (`1–3`) + 3 łączące (`4–6`).
+* **Odblokowanie 5 z 8:** Zaliczenie 5 zadań odblokowuje kolejny temat (`🌟 5/5`), nie blokując ucznia na najtrudniejszych zadaniach łączących.
+* **Progresywny Potok Wykonawczy:** Slajdy wprowadzające pokazują wyłącznie klauzule poznane do bieżącej lekcji (zasada *Teach-First*).
+
+### Filar 2: Diagnoza (Placement Test) i 60 Wyzwań Rekrutacyjnych DataLemur — [WDROŻONE]
+* **Diagnoza (10 zadań z przyciskiem „Pomiń”):** dopasowuje poziom startowy ucznia i zasila początkowy Rejestr Luk.
+* **60 Wyzwań Rekrutacyjnych:** zadania wzorowane na procesach rekrutacyjnych firm technologicznych i działów controllingu, opisane naturalnym językiem biznesowym po polsku (100% zapytań zweryfikowanych na PGlite).
+
+### Filar 3: AI Adaptive Gap Engine (Inteligentny Trener Luk) — [ROZWÓJ v3.0]
+* **Automatyczna Telemetria Luk (`g1–g13`):** Każde błędne uruchomienie kodu jest klasyfikowane przez `Trap Detector` (np. `g1` błędne ziarno agregacji, `g2` warunek `LEFT JOIN` w `WHERE`, `g4` granice dat `TIMESTAMP`, `g6` przecinek przed `FROM` / literówki, `g8` `AVG` na `NULL`-ach, `g10` dzielenie całkowite).
+* **Generowanie Zadań na Żywo przez AI z Walidacją w PGlite:**
+  1. Moduł `AI Gap Trainer` pobiera 3 najsłabsze obszary użytkownika oraz schemat `SCHEMA_META` bazy `dvdrental`.
+  2. Model Gemini generuje nowe zadanie (w formacie JSON) wycelowane dokładnie w daną lukę i aktualny poziom trudności ucznia.
+  3. **Twarda weryfikacja w PGlite:** Zanim zadanie pojawi się na ekranie, silnik PGlite wykonuje w tle zapytanie wzorcowe wygenerowane przez AI. Jeśli zapytanie zwraca poprawną tabelę, aplikacja buduje z niej `Example Output` i prezentuje zadanie uczniowi.
+
+### Filar 4: Konta Chmurowe, Tygodniowe Ligi i Certyfikat Portfolio — [ROZWÓJ v3.0]
+* **Supabase Auth:** Logowanie 1 kliknięciem (Google / Apple / E-mail) z pełną synchronizacją postępu między telefonem a komputerem.
+* **System Lig i *Daily SQL Sprint*:** Tygodniowe dywizje rankingowe (Brązowa, Srebrna, Złota, Diamentowa) oraz jedno wspólne „Wyzwanie Dnia” dla wszystkich graczy.
+* **Weryfikowalny Certyfikat do CV:** Po ukończeniu Ścieżki i Egzaminu Końcowego (≥80%) generowany jest publiczny profil potwierdzający praktyczną znajomość PostgreSQL.
+
+### Filar 5: Architektura Multi-Language (Gotowość pod Python + Pandas) — [PRZYSZŁOŚĆ v3.5]
+* Abstrakcja silnika wykonawczego (`ExecutionEngine`): obok obecnego `PGliteEngine` (PostgreSQL 16 WASM) architektura pozwala podpiąć `PyodideEngine` (Python 3 + biblioteka `pandas` w WebAssembly) na tym samym interfejsie mobilnym i tej samej bazie danych (0 zł kosztu serwerów).
+
+---
+
+## 4. Stos Technologiczny i Model Monetyzacji
+
+| Warstwa | Wersja Obecna (`v12.1`) | Wersja Docelowa (`v3.0 Komercyjna`) | Cel i korzyść |
 | :--- | :--- | :--- | :--- |
-| **Silnik bazy danych** | **PGlite** (pełny PostgreSQL 16 w WASM), ładowany z CDN (jsdelivr) | **PGlite** z lokalnym cache w PWA | Prawdziwy PostgreSQL w przeglądarce: ta sama składnia i te same komunikaty błędów co w DBeaverze (`::numeric`, `FILTER`, `generate_series`). Zapytania wykonują się lokalnie w pamięci telefonu, bez kosztów serwera. |
-| **Frontend & UI** | **Vanilla HTML5 / CSS3 / JS (ES6+)** | **Moduły ES / Vite** opakowane w **PWA** (i opcjonalnie **Capacitor** dla App Store / Google Play) | Brak narzutu ciężkich frameworków, natychmiastowa reakcja dwuwarstwowego edytora kodu na iOS Safari. |
-| **Praca Offline** | `localStorage` + pamięć podręczna przeglądarki | **Service Worker (`sw.js`) + Web App Manifest (`manifest.json`)** | Pełne działanie aplikacji i silnika WASM w trybie samolotowym po dodaniu ikony do ekranu początkowego telefonu. |
-| **Zapis w chmurze i Rankingi** | `localStorage` + eksport/import pliku `.json` | **Supabase** (darmowy PostgreSQL w chmurze + Supabase Auth) | Pozwala w przyszłości dodać logowanie Google/Apple, synchronizację między telefonem a laptopem oraz globalną tablicę wyników (`leaderboard`). |
-| **Integracja AI** | **Google Gemini API (BYOK)**: klucz wpisuje użytkownik, zapis w `localStorage`. Claude Artifacts: opcjonalnie w przyszłości | Adapter AI + opcjonalne proxy w **Supabase Edge Functions** | Użytkownik korzysta za darmo z wbudowanej bazy 80+ zadań lub podpina własny darmowy klucz API. |
+| **Baza danych w telefonie** | **PGlite** (PostgreSQL 16 WASM) + Self-Healing Cache | **PGlite** (SQL) + docelowo **Pyodide** (Python WASM) | Prawdziwy silnik bazodanowy działający za darmo na urządzeniu użytkownika (0 zł kosztów serwerowych). |
+| **Interfejs & Kod** | Vanilla HTML/CSS/JS + edytor DBeaver (`<pre>` + `<textarea>`) | Układ **Zero-Scroll Split UI** + moduły ES (`core-db`, `core-editor`, `ai-trainer`, `ui-views`) | Maksymalna czytelność na ekranie 375px i łatwe utrzymanie kodu. |
+| **Instalacja na telefonie** | **PWA** (`manifest.json`, `sw.js`) na GitHub Pages | **PWA** + natywna paczka iOS / Android przez **CapacitorJS** | Publikacja w **Google Play** i **App Store** z tego samego kodu źródłowego. |
+| **Backend & Konta** | `localStorage` + tabela `SQLRanking` w **Supabase** | **Supabase Auth** + baza PostgreSQL z Row Level Security (RLS) | Bezpieczne logowanie, synchronizacja między urządzeniami i ochrona wyników. |
+| **Integracja AI** | Klucz Gemini API użytkownika (BYOK) | **BYOK** (w wersji Free) + **Supabase Edge Function Proxy** (w wersji PRO) | Użytkownicy PRO korzystają z AI Trenera Luk od razu po zalogowaniu, bez konfigurowania kluczy API. |
+| **Monetyzacja** | Darmowa wersja testowa | **Freemium + Pakiet PRO** (Stripe / BLIK / Google Play Billing) | Etapy 1–2 za darmo; Etapy 3–5 + 60 zadań rekrutacyjnych + AI Trener Luk w pakiecie PRO (39 zł jednorazowo lub 19 zł/mies.). |
 
 ---
 
-## 3. Schemat bazy danych `dvdrental` z zaszytymi przypadkami brzegowymi
+## 5. Harmonogram Wdrożenia v3.0 (10 Tygodni)
 
-Wbudowana baza `dvdrental` składa się z **10 powiązanych tabel**, w których celowo umieszczono anomalie testujące uważność analityka:
-* `film` (20 filmów, różne grupy `rating`, ceny `0.99`, `2.99`, `4.99` oraz remisy w czasie trwania `length`).
-* `category` (6 kategorii) oraz `film_category` (tabela łącząca).
-* `actor` (8 aktorów) oraz `film_actor` — **Przypadek brzegowy:** aktor `actor_id = 8 (MATTHEW JOHANSSON)` nie grał w żadnym filmie (test na `LEFT JOIN ... IS NULL` / `NOT EXISTS`).
-* `store` (2 oddziały) oraz `staff` (2 pracowników).
-* `customer` (10 klientów, aktywni i nieaktywni) — **Przypadek brzegowy:** klientki `customer_id = 9` oraz `10` nigdy nic nie wypożyczyły (pułapka `INNER JOIN` vs `LEFT JOIN`).
-* `rental` (15 wypożyczeń w maju i czerwcu 2026) — **Przypadek brzegowy:** 3 wypożyczenia mają `return_date IS NULL` (filmy jeszcze niezwrócone – test na `COUNT(*)` vs `COUNT(return_date)` oraz pułapkę `NOT IN` z `NULL`).
-* `payment` (15 płatności powiązanych z wypożyczeniami i klientami).
-
----
-
-## 4. Plan realizacji w 4 etapach (Kryteria „Działa, gdy…”)
-
-1. **Etap 1: Przejrzysty Prototyp Rdzenia (ZROBIONE)**
-   * *Działa, gdy:* Użytkownik może w VS Code (Live Server) przeglądać czystą Mapę Ścieżki, wchodzić w Tryb Zadania, pisać zapytania ze składnią PostgreSQL (`::numeric`, `ILIKE`, `DATE_TRUNC`, `INTERVAL`, `generate_series`), przejść 10-pytaniową Diagnozę i wpaść w pułapkę w zadaniu DataLemur z automatycznym wpisem do Rejestru Luk.
-2. **Etap 2: Pula 60–100 zadań i wariantów (ZROBIONE – 82 zadania w bazie)**
-   * *Działa, gdy:* Każda z 12 lekcji w Ścieżce posiada 5 grywalnych wariantów (60 zadań), Diagnoza ma 10 zadań, a katalog Rekrutacji oferuje 12 pełnych zadań w stylu DataLemur.
-3. **Etap 3: Instalowalna aplikacja mobilna PWA (NASTĘPNY KROK)**
-   * *Działa, gdy:* Dodamy pliki `manifest.json` oraz `sw.js`, dzięki czemu aplikacja zapisuje w pamięci podręcznej telefonu pliki silnika PGlite (WASM) i czcionki oraz uruchamia się z ikony na ekranie głównym bez dostępu do sieci.
-   * *Uwaga:* instalacja na iPhonie wymaga adresu HTTPS (np. GitHub Pages, Netlify lub Cloudflare Pages), bo Live Server (`127.0.0.1`) działa tylko na laptopie. GitHub Pages na darmowym koncie wymaga publicznego repozytorium, więc sprawdź aktualne warunki przed wyborem hostingu.
-4. **Etap 4: Chmura Supabase, Konta i Ranking Graczy (PÓŹNIEJ)**
-   * *Działa, gdy:* Użytkownik może założyć konto, jego postęp (`state`) synchronizuje się automatycznie w chmurze, a zakładka `Konto & AI` wyświetla prawdziwy ranking XP innych graczy.
-
----
-
-## 5. Struktura plików (plan podziału)
-
-Obecnie cała aplikacja jest w jednym pliku `index.html` (ok. 2 000 linii: CSS w liniach ok. 10–357, cały JavaScript w jednej funkcji od linii ok. 406). Dzielimy go stopniowo, **jeden commit na krok**, i po każdym kroku aplikacja musi działać dokładnie tak samo.
-
-```
-Centrum_nauki_sql/
-  index.html             szkielet strony
-  css/style.css          style (z bloku <style>)
-  js/data-tasks.js       lekcje, diagnoza, zadania rekrutacyjne (sekcje 3–5 w kodzie)
-  js/data-dvdrental.js   schemat i dane bazy dvdrental (sekcja 1)
-  js/app.js              silnik PGlite, stan, edytor, widoki, zdarzenia (sekcje 2 i 6–9)
-  manifest.json, sw.js   PWA (etap 3)
-  docs/ARCHITEKTURA.md   ten plik
-  stan_projektu.md       bieżący status i checklista
-  GEMINI.md              zasady pracy agenta w VS Code
-```
-
-**Kolejność podziału:** (1) CSS, (2) dane zadań, (3) dane dvdrental. Logikę (`app.js`) zostawiamy w jednym pliku, dopóki nie ma powodu jej dzielić. Dane udostępniamy jako zmienne globalne (np. `window.TASKS`), żeby nie przepisywać całej logiki na importy. Po podziale otwieraj aplikację zawsze przez Live Server, a nie dwuklikiem w plik.
-
-## 6. Dziennik decyzji
-
-| Decyzja | Wybór | Powód |
-| :--- | :--- | :--- |
-| Silnik SQL | PGlite zamiast sql.js | Uczysz się PostgreSQL, a SQLite zachowuje się inaczej (daty, `INTERVAL`, `::numeric`, `generate_series`). |
-| Sposób pracy | Agent w VS Code edytuje pliki, Gem 3 planuje i recenzuje | Wklejanie 2 000 linii z czatu grozi ucięciem kodu i cichymi zmianami. |
-| Kod | Tylko w repozytorium Git | Jedno źródło prawdy, historia zmian i możliwość cofnięcia. |
+* **Etap 1 (Tygodnie 1–2): Rewolucja Wizualna („Zero-Scroll Split UI”)** — odchudzenie nagłówka do 1 linii, zakładki `[Zadanie | Tabela | Wzór]` nad edytorem, poziome pigułki wymaganych kolumn i wysuwany panel wyniku (*Bottom Sheet*).
+* **Etap 2 (Tygodnie 3–4): Układanka Klockowa (*Tap-to-Build*) i Wizualne Slajdy** — bezklawiaturowy tryb dla rozgrzewek `R1–R2` oraz interaktywne podświetlanie kolumn/wierszy w samouczku.
+* **Etap 3 (Tygodnie 5–6): AI Adaptive Gap Engine** — automatyczne profilowanie błędów użytkownika (`g1–g13`) i generator spersonalizowanych zadań AI walidowanych w PGlite.
+* **Etap 4 (Tygodnie 7–8): Supabase Auth i Ligi Rankingowe** — logowanie Google/E-mail, zapis w chmurze, dywizje tygodniowe i „Wyzwanie Dnia”.
+* **Etap 5 (Tygodnie 9–10): Bramka PRO, CapacitorJS i Premiera** — wdrożenie płatności BLIK/Stripe, budowa paczki na Google Play i start promocji w mediach społecznościowych.

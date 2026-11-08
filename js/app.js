@@ -499,8 +499,19 @@ var uiState = {
   selectedClause: null,
   stepFlashActive: false,
   syntaxTipOpen: false,
-  editorUndoStack: []
+  editorUndoStack: [],
+  taskCtxTab: 'task',
+  warmupUsedBlocks: []
 };
+
+function resetTaskContextUi() {
+  uiState.taskCtxTab = 'task';
+  uiState.warmupUsedBlocks = [];
+  uiState.editorUndoStack = [];
+  uiState.syntaxTipOpen = false;
+  uiState.schemaBoxOpen = false;
+  uiState.hintStep = 0;
+}
 
 function triggerStepFlash() {
   uiState.stepFlashActive = true;
@@ -510,7 +521,7 @@ function triggerStepFlash() {
     document.querySelectorAll('.task-step-flash').forEach(function(el) {
       el.classList.remove('task-step-flash');
     });
-  }, 1800);
+  }, 500);
 }
 
 /* --- PROGRESJA SOLOLEARN: SEKWENCYJNE BLOKADY KROK PO KROKU (R1→R2→1→2→3→4→5→6) --- */
@@ -1039,7 +1050,7 @@ function sqlUpdate() {
   }
   gut.innerHTML = gHtml;
   code.style.height = 'auto';
-  code.style.height = Math.max(130, code.scrollHeight + 4) + 'px';
+  code.style.height = Math.max(88, code.scrollHeight + 4) + 'px';
 
   var out = highlightSQL(t);
   if (t.slice(-1) === '\n') out += ' ';
@@ -1061,26 +1072,30 @@ function formatSqlPretty(sql) {
   return s;
 }
 
-function insertAtCursor(snippet) {
+function insertAtCursor(snippet, skipFocus) {
   var ta = document.getElementById('answer');
   if (!ta) return;
   if (!Array.isArray(uiState.editorUndoStack)) uiState.editorUndoStack = [];
   uiState.editorUndoStack.push(ta.value);
   if (uiState.editorUndoStack.length > 40) uiState.editorUndoStack.shift();
-  var start = ta.selectionStart || 0, end = ta.selectionEnd || 0;
+  var start = skipFocus ? ta.value.length : (ta.selectionStart !== undefined ? ta.selectionStart : ta.value.length);
+  var end = skipFocus ? ta.value.length : (ta.selectionEnd !== undefined ? ta.selectionEnd : ta.value.length);
   var val = ta.value;
   var pad = (start > 0 && !/[\s(.]/.test(val[start - 1]) && !/^[,);':]/.test(snippet)) ? ' ' : '';
-  var trailingSpace = (!/[,\s(;]/.test(snippet.slice(-1))) ? ' ' : '';
+  var trailingSpace = (!/[\s(;]/.test(snippet.slice(-1))) ? ' ' : '';
   var toInsert = pad + snippet + trailingSpace;
   ta.value = val.slice(0, start) + toInsert + val.slice(end);
   var pos = start + toInsert.length;
-  ta.focus();
-  ta.setSelectionRange(pos, pos);
+  if (!skipFocus) {
+    ta.focus();
+    ta.setSelectionRange(pos, pos);
+  }
   state.editorCode = ta.value;
   if (lastExecResult && lastExecResult.errorLine) lastExecResult.errorLine = 0;
   sqlUpdate();
   saveState();
 }
+window.insertAtCursor = insertAtCursor;
 
 // Wyciąga nazwy tabel biorących udział w zadaniu (z tablicy tables lub z klauzul FROM/JOIN zapytania wzorcowego sol)
 function resolveTaskTables(tableNames, solSql) {
@@ -1198,6 +1213,95 @@ function renderExampleOutputBox(solSql) {
     '<summary>🎯 Oczekiwany kształt wyniku (Example Output — pierwsze 3 wiersze)</summary>' +
     '<div class="example-output-body">' + innerHtml + '</div>' +
   '</details>';
+}
+
+function getTaskSchemaColCount(tableNames, solSql) {
+  var activeTables = resolveTaskTables(tableNames, solSql);
+  var metas = ALL_SCHEMA_META.filter(function(m) { return activeTables.indexOf(m.table) > -1; });
+  return metas.reduce(function(acc, m) { return acc + (m.cols ? m.cols.length : 0); }, 0);
+}
+
+function renderTaskTablesInline(tableNames, solSql) {
+  var activeTables = resolveTaskTables(tableNames, solSql);
+  if (!activeTables.length) return '<p class="small muted" style="margin:6px 0">Brak przypisanych tabel źródłowych.</p>';
+  var metas = ALL_SCHEMA_META.filter(function(m) { return activeTables.indexOf(m.table) > -1; });
+  if (!metas.length) return '';
+
+  var keyCounts = {};
+  metas.forEach(function(m) {
+    m.cols.forEach(function(c) {
+      var colName = typeof c === 'string' ? c : c.name;
+      var isKey = typeof c === 'string' ? /_id$/i.test(c) : !!c.isKey;
+      if (isKey) {
+        keyCounts[colName] = (keyCounts[colName] || 0) + 1;
+      }
+    });
+  });
+  var sharedKeys = Object.keys(keyCounts).filter(function(k) { return keyCounts[k] > 1; });
+  var joinBanner = (metas.length > 1 && sharedKeys.length > 0)
+    ? '<div class="join-keys-banner">🔗 Klucz łączenia tabel w tym zadaniu: <strong>' + sharedKeys.map(esc).join(', ') + '</strong></div>'
+    : '';
+
+  return '<div class="inline-schema-wrap">' +
+    joinBanner +
+    metas.map(function(m) {
+      var sample = tableSamples[m.table] || interviewSamples[m.table];
+      var sampleHtml = '';
+      if (sample && sample.columns && sample.columns.length) {
+        var rowCnt = (sample.values || []).length;
+        sampleHtml = '<div class="example-input-box" style="margin-top:8px">' +
+          '<div class="example-input-hdr">📊 Example Input — tabela <code>' + esc(m.table) + '</code> (pierwsze ' + Math.min(4, rowCnt) + ' wiersze):</div>' +
+          renderSingleTable(sample, 4) +
+        '</div>';
+      } else {
+        sampleHtml = '<div style="margin-top:6px"><button type="button" class="btn sm" data-act="peekTable" data-table="' + esc(m.table) + '">👁 Pobierz Example Input (' + esc(m.table) + ')</button></div>';
+      }
+
+      return '<div class="iv-tbl-card">' +
+        '<div style="display:flex;flex-wrap:wrap;align-items:center;gap:5px">' +
+          '<button type="button" class="helper-tbl-btn" data-act="ins" data-val="' + esc(m.table) + '" data-insert-sql="' + esc(m.table) + '" title="Wstaw nazwę tabeli ' + esc(m.table) + '">📦 ' + esc(m.table) + '</button>' +
+          (m.desc ? '<span class="small muted" style="font-size:11.5px">· ' + esc(m.desc) + '</span>' : '') +
+        '</div>' +
+        '<div style="display:flex;flex-wrap:wrap;align-items:center;gap:5px;margin-top:6px">' +
+          m.cols.map(function(c) {
+            var colName = typeof c === 'string' ? c : c.name;
+            var colType = typeof c === 'string' ? (DVDRENTAL_COL_TYPES[c] || 'text') : (c.type || 'text');
+            var isKey = typeof c === 'string' ? /_id$/i.test(c) : !!c.isKey;
+            var cls = 'helper-col-btn' + (isKey ? ' col-key-chip' : '');
+            var ttl = (isKey ? 'Klucz złączenia (JOIN ON) · ' : 'Kolumna · ') + 'Typ: ' + colType;
+            var lbl = (isKey ? '🔗 ' : '') + esc(colName) + ' <span class="col-type-badge">' + esc(colType) + '</span>';
+            return '<button type="button" class="' + cls + '" data-act="ins" data-val="' + esc(colName) + '" data-insert-sql="' + esc(colName) + '" title="' + esc(ttl) + '">' + lbl + '</button>';
+          }).join('') +
+        '</div>' +
+        sampleHtml +
+      '</div>';
+    }).join('') +
+  '</div>';
+}
+
+function renderExampleOutputInline(solSql) {
+  if (!solSql) return '';
+  ensureExpectedOutput(solSql);
+  var key = String(solSql || '').trim();
+  var expRes = expectedOutputCache[key];
+
+  var innerHtml = '';
+  if (!expRes || !expRes.columns) {
+    innerHtml = '<p class="small muted" style="margin:6px 0">⏳ Generowanie podglądu oczekiwanego kształtu wyniku w PGlite…</p>';
+  } else {
+    var totalRows = (expRes.values || []).length;
+    var shownRows = Math.min(3, totalRows);
+    var moreNote = totalRows > 3
+      ? '<div class="example-output-more">... (łącznie oczekiwanych wierszy: <strong>' + totalRows + '</strong>)</div>'
+      : '<div class="example-output-more">Łącznie oczekiwanych wierszy w wyniku: <strong>' + totalRows + '</strong></div>';
+    innerHtml = '<div class="example-output-hdr-inline">🎯 <strong>Oczekiwany kształt wyniku (Example Output — pierwsze ' + shownRows + ' wiersze):</strong></div>' +
+      '<p class="small muted" style="margin:3px 0 6px">Docelowe nagłówki kolumn: ' +
+      expRes.columns.map(function(c) { return '<code class="inline">' + esc(c) + '</code>'; }).join(', ') + '</p>' +
+      renderSingleTable(expRes, 3) +
+      moreNote;
+  }
+
+  return '<div class="example-output-inline-box">' + innerHtml + '</div>';
 }
 
 /* ==========================================================================
@@ -1654,6 +1758,14 @@ function buildQuerySkeleton(solSql) {
   return outLines.join('\n');
 }
 
+function buildCalcPillText(expr) {
+  var e = String(expr || '').trim();
+  if (e.toUpperCase() === 'COUNT(*)') return '🧮 zliczanie wierszy';
+  var cols = extractExprSourceCols(e);
+  if (cols.length > 0) return '🧮 z: ' + cols.join(', ');
+  return '🧮 wyliczenie';
+}
+
 function buildDataLemurSpec(item, parentTask) {
   var sol = item.sol || '';
   var fallbackTbls = item.tables || (parentTask && parentTask.tables) || [];
@@ -1662,58 +1774,71 @@ function buildDataLemurSpec(item, parentTask) {
   var polecenie = buildCleanPolecenie(item, details);
   var assumptions = [];
 
-  if (details.tables.length > 0) {
-    var tblCodes = details.tables.map(function(t) { return '<code>' + t + '</code>'; }).join(', ');
-    assumptions.push('Tabele źródłowe: ' + tblCodes + '.');
+  var tblLabel = details.tables.length > 0 ? details.tables.map(esc).join(', ') : 'brak';
+  var sortChipHtml = details.orderBy
+    ? '<span class="req-meta-chip">↕️ Sortowanie: <b>ORDER BY ' + esc(details.orderBy) + '</b></span>'
+    : '<span class="req-meta-chip">↕️ Kolejność dowolna</span>';
+
+  var extraChips = '';
+  if (details.limit) {
+    extraChips += ' <span class="req-meta-chip">✂️ Limit: <b>LIMIT ' + esc(details.limit) + '</b></span>';
+  }
+  if (details.roundDigits !== null) {
+    extraChips += ' <span class="req-meta-chip">🔢 Zaokrąglij: <b>' + esc(details.roundDigits) + ' msc. (ROUND)</b></span>';
+  }
+  if (details.hasDistinct && !/COUNT\s*\(\s*DISTINCT/i.test(sol)) {
+    extraChips += ' <span class="req-meta-chip">✨ Unikalne: <b>SELECT DISTINCT</b></span>';
   }
 
+  var metaStripHtml = '<div class="req-meta-strip">' +
+    '<span class="req-meta-chip">🗄️ Tabela: <b>' + tblLabel + '</b></span> ' +
+    sortChipHtml +
+    extraChips +
+  '</div>';
+
+  var colsPipelineHtml = '';
+  var hasAnyAlias = false;
   if (details.cols.length > 0) {
-    var hasAnyAlias = details.cols.some(function(c) { return c.hasAlias; });
-    var colsHtml = '<div class="dl-cols-sublist-title">Wymagane kolumny w wyniku (w dokładnie tej kolejności):</div>' +
-      '<ul class="dl-cols-sublist">' +
-      details.cols.map(function(c) {
+    hasAnyAlias = details.cols.some(function(c) { return c.hasAlias; });
+    colsPipelineHtml = '<div class="req-cols-hdr">' +
+        '<span class="req-cols-title">📋 Wymagane kolumny wyniku:</span>' +
+        '<span class="req-cols-caption">(👆 Dotknij kolumnę, aby wstawić ją do edytora)</span>' +
+      '</div>' +
+      '<div class="req-cols-pipeline">' +
+      details.cols.map(function(c, idx) {
+        var num = idx + 1;
         if (c.name === '*') {
-          return '<li><span class="req-col-row">wszystkie kolumny tabeli <span class="req-calc-pill">*</span></span></li>';
+          return '<button type="button" class="req-col-pill" onclick="insertAtCursor(\'*\')">' +
+            '<span class="req-col-idx">' + num + '</span><code>*</code><span class="req-calc-pill">wszystkie kolumny</span>' +
+          '</button>';
         }
         if (!c.hasAlias) {
-          return '<li><span class="req-col-row">kolumna <code>' + esc(c.name) + '</code></span></li>';
+          var safeCol = String(c.name || '').replace(/'/g, "\\'");
+          return '<button type="button" class="req-col-pill" onclick="insertAtCursor(\'' + esc(safeCol) + '\')">' +
+            '<span class="req-col-idx">' + num + '</span><code>' + esc(c.name) + '</code>' +
+          '</button>';
         }
-        var isSimpleRename = /^[a-zA-Z_]\w*(?:\.[a-zA-Z_]\w*)?$/.test(c.expr);
-        var sourceDesc = '';
-        if (isSimpleRename) {
-          sourceDesc = 'kolumna <code>' + esc(c.expr) + '</code> <span class="req-calc-pill">wyliczenie z: ' + esc(c.expr) + '</span>';
-        } else {
-          var descPl = describeSqlExprPl(c.expr, c.name);
-          var exprCols = extractExprSourceCols(c.expr);
-          sourceDesc = descPl || ('wartość wyliczona <span class="req-calc-pill">wartość wyliczona na podstawie: ' + esc(exprCols.join(', ') || 'kolumn tabeli') + '</span>');
-        }
-        return '<li><span class="req-col-row">' + sourceDesc + ' <span class="sql-as-badge">AS</span> <code>' + esc(c.name) + '</code></span></li>';
+        var safeAlias = ('AS ' + String(c.name || '')).replace(/'/g, "\\'");
+        var calcLbl = buildCalcPillText(c.expr);
+        return '<button type="button" class="req-col-pill req-col-pill-alias" onclick="insertAtCursor(\'' + esc(safeAlias) + '\')">' +
+          '<span class="req-col-idx">' + num + '</span>' +
+          '<span class="req-calc-pill">' + esc(calcLbl) + '</span>' +
+          '<span class="sql-as-badge">AS</span>' +
+          '<code>' + esc(c.name) + '</code>' +
+        '</button>';
       }).join('') +
-      '</ul>';
+      '</div>';
+
     if (hasAnyAlias) {
-      colsHtml += '<div class="mini-syntax-tip-wrap">' +
-        '<button type="button" class="mini-syntax-tip-btn" data-act="toggleSyntaxTip">💡 Pokaż ogólną wskazówkę składni</button>' +
+      colsPipelineHtml += '<div class="mini-syntax-tip-wrap">' +
+        '<button type="button" class="mini-syntax-tip-btn" data-act="toggleSyntaxTip">💡 Pokaż ogólną wskazówkę składni AS</button>' +
         '__SYNTAX_TIP_BODY__' +
       '</div>';
     }
-    assumptions.push(colsHtml);
   }
 
-  if (details.roundDigits !== null) {
-    assumptions.push('Zaokrąglij wartości ułamkowe do <strong>' + details.roundDigits + ' miejsc po przecinku</strong> za pomocą <code>' + highlightSQL('ROUND(..., ' + details.roundDigits + ')') + '</code>.');
-  }
-
-  if (details.hasDistinct && !/COUNT\s*\(\s*DISTINCT/i.test(sol)) {
-    assumptions.push('Zwróć wyłącznie unikalne wiersze (zastosuj <code>' + highlightSQL('SELECT DISTINCT') + '</code>).');
-  }
-
-  if (details.orderBy) {
-    assumptions.push('Sortowanie wyniku: <code>' + highlightSQL('ORDER BY ' + details.orderBy) + '</code>' + (details.limit ? ' oraz ograniczenie do <code>' + highlightSQL('LIMIT ' + details.limit) + '</code> wierszy.' : '.'));
-  } else if (details.limit) {
-    assumptions.push('Ogranicz liczbę zwracanych wierszy do: <code>' + highlightSQL('LIMIT ' + details.limit) + '</code>.');
-  } else if (item.order === false) {
-    assumptions.push('Kolejność wierszy w wyniku nie ma znaczenia.');
-  }
+  var reqStripHtml = metaStripHtml + colsPipelineHtml;
+  assumptions.push(reqStripHtml);
 
   var usedClauses = [];
   if (details.hasCte) usedClauses.push('WITH ... AS (...)');
@@ -1745,6 +1870,7 @@ function buildDataLemurSpec(item, parentTask) {
 
   return {
     polecenie: polecenie,
+    reqStripHtml: reqStripHtml,
     assumptions: assumptions,
     hints: [step1Html, step2Html, step3Html]
   };
@@ -1757,31 +1883,27 @@ window.renderOnboardingModal = renderOnboardingModal;
 window.state = state;
 window.uiState = uiState;
 
-// Renderuje zunifikowaną specyfikację zadania w standardzie DataLemur (📌 Polecenie + 📋 Wymagania i założenia)
-function renderTaskSpecBox(item, parentTask) {
+// Renderuje zunifikowaną specyfikację zadania (📌 Polecenie + Wizualny Pasek Wymagań)
+function renderTaskSpecBox(item, parentTask, teachFirstHtml) {
   if (!item) return '';
   if (!item._v12SpecDone) {
     var spec = buildDataLemurSpec(item, parentTask || null);
     item.polecenie = spec.polecenie;
+    item.reqStripHtml = spec.reqStripHtml;
     item.assumptions = spec.assumptions;
     item.hints = spec.hints;
     item._v12SpecDone = true;
   }
   var polecenieTxt = item.polecenie || item.prompt || '';
-  var assumptionsList = Array.isArray(item.assumptions) ? item.assumptions : [];
+  var rawReqStrip = item.reqStripHtml || (Array.isArray(item.assumptions) ? item.assumptions.join('') : '');
 
   var tipBodyHtml = uiState.syntaxTipOpen
     ? '<div class="dl-alias-tip" style="margin-top:6px">💡 <strong>Ogólna wskazówka składni:</strong> Aby nadać kolumnie lub obliczeniu nową nazwę w wyniku, użyj zapisu <code>' + highlightSQL('SELECT cena * 100 AS grosze FROM produkty;') + '</code>.</div>'
     : '';
 
-  var assumptionsHtml = assumptionsList.length
-    ? '<div class="dl-assumptions-box">' +
-        '<div class="dl-sec-hdr">📋 Wymagania i założenia:</div>' +
-        '<ul class="dl-assumptions-list">' +
-          assumptionsList.map(function(a) {
-            return '<li>' + String(a).replace('__SYNTAX_TIP_BODY__', tipBodyHtml) + '</li>';
-          }).join('') +
-        '</ul>' +
+  var reqHtml = rawReqStrip
+    ? '<div class="dl-assumptions-box req-strip-box">' +
+        String(rawReqStrip).replace('__SYNTAX_TIP_BODY__', tipBodyHtml) +
       '</div>'
     : '';
 
@@ -1790,7 +1912,8 @@ function renderTaskSpecBox(item, parentTask) {
       '<div class="dl-sec-hdr">📌 Polecenie:</div>' +
       '<div class="dl-prompt-body">' + formatPrompt(polecenieTxt) + '</div>' +
     '</div>' +
-    assumptionsHtml +
+    (teachFirstHtml || '') +
+    reqHtml +
   '</div>';
 }
 
@@ -1961,10 +2084,63 @@ function renderTeachFirstBox(newFeature, task, variant) {
     .replace(/amount\s*\*\s*\d+/gi, 'cena * 100')
     .replace(/length\s+AS\s+duration_min/gi, 'cena * 100 AS grosze');
   var neutralExample = buildNeutralTeachExample(nf, sol);
-  return '<div class="teach-first-box">' +
-    '<div class="teach-first-hdr">🆕 Nowy element w tym zadaniu: <strong>' + esc(nf.title) + '</strong></div>' +
-    '<p class="teach-first-desc">' + formatPrompt(safeDesc) + '</p>' +
-    (neutralExample ? '<div class="teach-first-code"><code>' + highlightSQL(neutralExample) + '</code></div>' : '') +
+  return '<details class="teach-first-box teach-first-pill">' +
+    '<summary class="teach-first-hdr">🆕 Nowy element: <strong>' + esc(nf.title) + '</strong> <span class="teach-first-more">(rozwiń przykład ▾)</span></summary>' +
+    '<div class="teach-first-body">' +
+      '<p class="teach-first-desc">' + formatPrompt(safeDesc) + '</p>' +
+      (neutralExample ? '<div class="teach-first-code"><code>' + highlightSQL(neutralExample) + '</code></div>' : '') +
+    '</div>' +
+  '</details>';
+}
+
+function renderZeroScrollTaskCard(item, parentTask, mode) {
+  if (!item) return '';
+  var activeTab = uiState.taskCtxTab || 'task';
+  var tblNames = item.tables || (parentTask && parentTask.tables) || [];
+  var colCount = getTaskSchemaColCount(tblNames, item.sol);
+
+  var tabsBarHtml = '<div class="ctx-tabs-bar" role="tablist">' +
+    '<button type="button" class="ctx-tab-btn' + (activeTab === 'task' ? ' active' : '') + '" data-act="setCtxTab" data-ctx="task">📌 Zadanie</button>' +
+    '<button type="button" class="ctx-tab-btn' + (activeTab === 'table' ? ' active' : '') + '" data-act="setCtxTab" data-ctx="table">📊 Tabela (' + colCount + ')</button>' +
+    '<button type="button" class="ctx-tab-btn' + (activeTab === 'help' ? ' active' : '') + '" data-act="setCtxTab" data-ctx="help">🎯 Wzór i pomoc</button>' +
+  '</div>';
+
+  var bodyHtml = '';
+  if (activeTab === 'table') {
+    bodyHtml = renderTaskTablesInline(tblNames, item.sol);
+  } else if (activeTab === 'help') {
+    var helpBtnsHtml = '';
+    if (mode === 'path') {
+      helpBtnsHtml = '<div class="acts ctx-help-acts">' +
+        '<button type="button" class="btn sm warn" data-act="stepHint">' + esc(getHintButtonLabel()) + '</button>' +
+        '<button type="button" class="btn sm" data-act="showSolution">💡 Pokaż wzorcowy kod</button>' +
+        '<button type="button" class="btn sm" data-act="aiHint">🤖 Podpowiedź AI</button>' +
+      '</div>';
+    } else if (mode === 'diag') {
+      helpBtnsHtml = '<div class="acts ctx-help-acts">' +
+        '<button type="button" class="btn sm warn" data-act="stepHint">' + esc(getHintButtonLabel()) + '</button>' +
+        '<button type="button" class="btn sm warn" data-act="skipDiag">⏭ Pomiń zadanie</button>' +
+        '<button type="button" class="btn sm" data-act="resetDiag">Restart</button>' +
+      '</div>';
+    } else if (mode === 'lemur') {
+      helpBtnsHtml = '<div class="acts ctx-help-acts">' +
+        '<button type="button" class="btn sm warn" data-act="stepHint">' + esc(getHintButtonLabel()) + '</button>' +
+        '<button type="button" class="btn sm" data-act="lemurTrapHint">🛡️ Jaka tu jest pułapka?</button>' +
+        '<button type="button" class="btn sm" data-act="showLemurSol">💡 Pokaż wzorcowe rozwiązanie</button>' +
+      '</div>';
+    }
+    bodyHtml = renderExampleOutputInline(item.sol) +
+      helpBtnsHtml +
+      renderHintStepperBox(item, parentTask) +
+      renderStepByStepCheatSheet(item.sol, parentTask ? parentTask.theory : '', true, parentTask);
+  } else {
+    var teachHtml = (mode === 'path') ? renderTeachFirstBox(item.newFeature, parentTask, item) : '';
+    bodyHtml = renderTaskSpecBox(item, parentTask, teachHtml);
+  }
+
+  return '<div class="ctx-card">' +
+    tabsBarHtml +
+    '<div class="ctx-tab-body">' + bodyHtml + '</div>' +
   '</div>';
 }
 
@@ -2172,10 +2348,193 @@ function renderQuickBar(task, variant) {
   '</div>';
 }
 
+function tokenizeWarmupSql(solSql) {
+  var s = String(solSql || '').trim().replace(/\s+/g, ' ');
+  if (!s) return [];
+
+  // 1. Podział na surowe tokeny z zachowaniem tekstów '...' oraz nawiasów funkcji (...) bez podzapytań SELECT
+  var raw = [];
+  var cur = '';
+  var inStr = false;
+  var depth = 0;
+  for (var i = 0; i < s.length; i++) {
+    var ch = s[i];
+    if (ch === "'" && s[i - 1] !== '\\') {
+      inStr = !inStr;
+      cur += ch;
+      continue;
+    }
+    if (!inStr) {
+      if (ch === '(') {
+        // Sprawdź czy ten nawias otwiera podzapytanie lub definicję CTE
+        var rest = s.slice(i + 1).trim();
+        if (/^SELECT\b/i.test(rest)) {
+          cur += ch;
+          if (cur.trim()) raw.push(cur.trim());
+          cur = '';
+          continue;
+        }
+        depth++;
+        cur += ch;
+        continue;
+      }
+      if (ch === ')') {
+        if (depth > 0) {
+          depth--;
+          cur += ch;
+          continue;
+        }
+      }
+      if (ch === ' ' && depth === 0) {
+        if (cur.trim()) raw.push(cur.trim());
+        cur = '';
+        continue;
+      }
+    }
+    cur += ch;
+  }
+  if (cur.trim()) raw.push(cur.trim());
+
+  // 2. Łączenie wieloczłonowych klauzul i wyrażeń w logiczne klocki SQL
+  var merged = [];
+  var k = 0;
+  while (k < raw.length) {
+    var t0 = raw[k];
+    var t1 = raw[k + 1] || '';
+    var t2 = raw[k + 2] || '';
+    var u0 = t0.toUpperCase();
+    var u1 = t1.toUpperCase();
+    var u2 = t2.toUpperCase();
+
+    if ((u0 === 'ORDER' || u0 === 'GROUP' || u0 === 'PARTITION') && u1 === 'BY') {
+      merged.push(t0 + ' ' + t1);
+      k += 2;
+    } else if ((u0 === 'LEFT' || u0 === 'INNER' || u0 === 'RIGHT' || u0 === 'FULL') && u1 === 'JOIN') {
+      merged.push(t0 + ' ' + t1);
+      k += 2;
+    } else if (u0 === 'IS' && u1 === 'NOT' && /^NULL[;,]?$/i.test(u2)) {
+      merged.push(t0 + ' ' + t1 + ' ' + t2);
+      k += 3;
+    } else if (u0 === 'IS' && /^NULL[;,]?$/i.test(u1)) {
+      merged.push(t0 + ' ' + t1);
+      k += 2;
+    } else if ((u1 === 'OVER' || u1 === 'FILTER') && t2.charAt(0) === '(') {
+      merged.push(t0 + ' ' + t1 + ' ' + t2);
+      k += 3;
+    } else if (/^(?:=|>|<|>=|<=|<>|!=|\+|-|\*|\/|ILIKE|LIKE)$/i.test(u1) && t2 && !/^(?:SELECT|FROM|WHERE|GROUP|ORDER|HAVING|LIMIT|AND|OR)$/i.test(u0)) {
+      merged.push(t0 + ' ' + t1 + ' ' + t2);
+      k += 3;
+    } else if (/^(?:ASC|DESC)[;,]?$/i.test(u1) && !/^(?:SELECT|FROM|WHERE|BY)$/i.test(u0)) {
+      merged.push(t0 + ' ' + t1);
+      k += 2;
+    } else {
+      merged.push(t0);
+      k += 1;
+    }
+  }
+  return merged;
+}
+
+function buildWarmupPuzzlePool(task, variant, vIdx) {
+  var sol = String((variant && variant.sol) || '').trim();
+  var coreBlocks = tokenizeWarmupSql(sol);
+  var items = coreBlocks.map(function(txt, idx) {
+    return { id: 'core_' + idx, sql: txt, isDistractor: false };
+  });
+
+  // Dodaj 2 klocki-zmyłki: 1 nieużywaną kolumnę z tabeli + 1 nieużywane słowo kluczowe
+  var tbls = resolveTaskTables(variant ? variant.tables : null, sol);
+  if (!tbls.length && task && Array.isArray(task.tables)) tbls = task.tables.slice(0, 1);
+  var mainTbl = tbls[0] || 'film';
+  var meta = ALL_SCHEMA_META.find(function(m) { return m.table === mainTbl; });
+  var solLower = sol.toLowerCase();
+
+  var distractorCol = 'last_update';
+  if (meta && Array.isArray(meta.cols)) {
+    for (var ci = 0; ci < meta.cols.length; ci++) {
+      var cName = typeof meta.cols[ci] === 'string' ? meta.cols[ci] : meta.cols[ci].name;
+      if (cName && solLower.indexOf(cName.toLowerCase()) === -1) {
+        distractorCol = cName;
+        break;
+      }
+    }
+  }
+  items.push({ id: 'dist_col', sql: distractorCol, isDistractor: true });
+
+  var candidateKws = ['HAVING', 'LIMIT 5', 'DISTINCT', 'GROUP BY', 'ORDER BY', 'WHERE'];
+  var distractorKw = 'HAVING';
+  for (var ki = 0; ki < candidateKws.length; ki++) {
+    var kw = candidateKws[ki].split(' ')[0];
+    if (!new RegExp('\\b' + kw + '\\b', 'i').test(sol)) {
+      distractorKw = candidateKws[ki];
+      break;
+    }
+  }
+  items.push({ id: 'dist_kw', sql: distractorKw, isDistractor: true });
+
+  // Deterministyczne przetasowanie dla danego zadania/wariantu (aby klocki nie skakały po ekranie podczas klikania)
+  var seedStr = (task ? task.id : 't') + '_' + (vIdx || 0) + '_' + sol.length;
+  var seed = 0;
+  for (var si = 0; si < seedStr.length; si++) {
+    seed = ((seed << 5) - seed + seedStr.charCodeAt(si)) | 0;
+  }
+  var shuffled = items.slice();
+  for (var i = shuffled.length - 1; i > 0; i--) {
+    seed = (seed * 1664525 + 1013904223) | 0;
+    var j = Math.abs(seed) % (i + 1);
+    var tmp = shuffled[i];
+    shuffled[i] = shuffled[j];
+    shuffled[j] = tmp;
+  }
+  // Upewnij się, że pierwszy klocek po przetasowaniu nie jest od razu SELECT na 1. miejscu
+  if (shuffled.length > 2 && shuffled[0].id === 'core_0') {
+    var swapTmp = shuffled[0];
+    shuffled[0] = shuffled[1];
+    shuffled[1] = swapTmp;
+  }
+  return shuffled;
+}
+window.tokenizeWarmupSql = tokenizeWarmupSql;
+window.buildWarmupPuzzlePool = buildWarmupPuzzlePool;
+
+function renderWarmupPuzzleBar(task, variant, vIdx) {
+  var pool = buildWarmupPuzzlePool(task, variant, vIdx);
+  var usedList = Array.isArray(uiState.warmupUsedBlocks) ? uiState.warmupUsedBlocks : [];
+  return '<div class="warmup-puzzle-box">' +
+    '<div class="warmup-puzzle-hdr">' +
+      '<span>🧩 <strong>Szybka układanka (Stuknij klocki w kolejności)</strong></span>' +
+      '<div class="quick-bar-actions">' +
+        '<button type="button" class="qb-act-btn" data-act="undoToken" title="Cofnij ostatnio wstawiony klocek">⌫ Cofnij</button>' +
+        '<button type="button" class="qb-act-btn qb-clear-btn" data-act="clearEd" title="Wyczyść i odblokuj klocki">🧹 Wyczyść</button>' +
+      '</div>' +
+    '</div>' +
+    '<div class="warmup-puzzle-grid">' +
+      pool.map(function(b) {
+        var isUsed = usedList.indexOf(b.id) > -1;
+        return '<button type="button" class="puzzle-block-btn' + (isUsed ? ' used' : '') + '" data-act="tapPuzzleBlock" data-bid="' + esc(b.id) + '" data-sql="' + esc(b.sql) + '"' + (isUsed ? ' disabled' : '') + '>' +
+          '<code>' + highlightSQL(b.sql) + '</code>' +
+        '</button>';
+      }).join('') +
+    '</div>' +
+  '</div>';
+}
+
 function renderEditorWidget(extraCols, actionType, variant, task) {
-  var quickBarHtml = (variant || task) ? renderQuickBar(task, variant) : '';
+  var isWarmupStep = false;
+  var curVIdx = 0;
+  if (task && Array.isArray(task.variants) && variant) {
+    curVIdx = task.variants.indexOf(variant);
+    if (curVIdx === -1) curVIdx = state.activeVariantIdx % task.variants.length;
+    isWarmupStep = (curVIdx === 0 || curVIdx === 1 || variant.tier === 'warmup');
+  }
+  var barHtml = '';
+  if (isWarmupStep && task && variant) {
+    barHtml = renderWarmupPuzzleBar(task, variant, curVIdx);
+  } else if (variant || task) {
+    barHtml = renderQuickBar(task, variant);
+  }
   return '' +
-    quickBarHtml +
+    barHtml +
     '<div class="ed">' +
       '<div id="sqlgut" aria-hidden="true"><span class="ln">1</span></div>' +
       '<div class="edwrap">' +
@@ -2209,15 +2568,23 @@ function renderSingleTable(resObj, maxRows) {
       return '<tr>' + r.map(function(v) { return '<td>' + (v === null ? '<em class="muted">NULL</em>' : esc(v)) + '</td>'; }).join('') + '</tr>';
     }).join('') +
     '</tbody></table></div>';
-}
+  }
 
-// Nowa numeracja zadań w Ścieżce: 🔥 Rozgrzewka 1 z 2 / 🎯 Zadanie 1 z 6 + zwięzłe nazwy 3–5 słów
+// Nowa numeracja zadań w Ścieżce: 🔥 Rozgrzewka 1 z 2 / 🎯 Zadanie 1 z 6 + kompaktowy wariant na pasek nawigacji
 function getStepSwitchLabel(vIdx, totalSteps) {
   var mainCnt = Math.max(1, (totalSteps || 8) - 2);
   if (vIdx < 2) {
     return '🔥 Rozgrzewka ' + (vIdx + 1) + ' z 2';
   }
   return '🎯 Zadanie ' + (vIdx - 1) + ' z ' + mainCnt;
+}
+
+function getCompactStepLabel(vIdx, totalSteps) {
+  var mainCnt = Math.max(1, (totalSteps || 8) - 2);
+  if (vIdx < 2) {
+    return '🔥 Rozgrz. ' + (vIdx + 1) + '/2';
+  }
+  return '🎯 Zad. ' + (vIdx - 1) + '/' + mainCnt;
 }
 
 function getVariantShortDesc(task, variant, vIdx) {
@@ -2817,22 +3184,16 @@ function renderPathTab() {
     }
     var variant = task.variants[vIdx];
     var totalSteps = task.variants.length;
-    var curStepNum = vIdx + 1;
-    var stepSwitchLbl = getStepSwitchLabel(vIdx, totalSteps);
-    var shortTaskTitle = getVariantShortTitle(task, variant, vIdx);
-    var pct = Math.round((curStepNum / totalSteps) * 100);
+    var compactSwitchLbl = getCompactStepLabel(vIdx, totalSteps);
 
     var solvedInLesson = countTotalLessonSolved(task.id);
     var unlockGoal = 5;
     var unlockedCount = Math.min(unlockGoal, solvedInLesson);
     var isNextLessonUnlocked = solvedInLesson >= unlockGoal || isLessonCoreCompleted(task.id);
-    var unlockDotsHtml = '';
-    for (var di = 0; di < unlockGoal; di++) {
-      unlockDotsHtml += '<i class="udot' + (di < unlockedCount ? ' on' : '') + '"></i>';
-    }
-    var unlockPillHtml = isNextLessonUnlocked
-      ? '<span class="unlock-progress-pill unlocked">🌟 Kolejna lekcja odblokowana! (5/5) <span class="unlock-dots">' + unlockDotsHtml + '</span></span>'
-      : '<span class="unlock-progress-pill">🔓 Odblokowanie kolejnej lekcji: <strong>' + unlockedCount + '/5</strong> <span class="unlock-dots">' + unlockDotsHtml + '</span></span>';
+    var unlockPct = Math.round((unlockedCount / unlockGoal) * 100);
+    var unlockBadgeHtml = isNextLessonUnlocked
+      ? '<span class="unlock-progress-pill compact-unlock-badge unlocked" title="Kolejna lekcja odblokowana (5/5)">🌟 5/5</span>'
+      : '<span class="unlock-progress-pill compact-unlock-badge" title="Rozwiąż 5 zadań, aby odblokować kolejną lekcję">🔓 ' + unlockedCount + '/5</span>';
 
     var hasPrev = vIdx > 0;
     var hasNext = (vIdx + 1 < totalSteps) && isStepUnlocked(task, vIdx + 1);
@@ -2863,39 +3224,28 @@ function renderPathTab() {
 
     var flashCls = uiState.stepFlashActive ? ' task-step-flash' : '';
 
-    return '<div class="card task-transition-enter">' +
-      '<div class="task-nav-hdr">' +
-        '<button type="button" class="btn back-path-btn" data-act="backToPathList">← Mapa ścieżki</button>' +
-        '<button type="button" class="btn sololearn-theory-btn" data-act="openTutorialSlides">📖 Slajdy lekcji</button>' +
-      '</div>' +
-      '<div class="sololearn-progress-wrap' + flashCls + '">' +
-        '<div class="sololearn-progress-meta">' +
-          '<div class="step-nav-cluster">' +
+    return '<div class="card task-solve-card task-transition-enter' + flashCls + '">' +
+      '<div class="compact-task-topbar">' +
+        '<div class="compact-nav-row1">' +
+          '<button type="button" class="btn compact-top-btn back-path-btn" data-act="backToPathList">← Mapa</button>' +
+          '<div class="step-nav-cluster compact-step-cluster">' +
             '<button type="button" class="step-nav-btn' + (!hasPrev ? ' disabled' : '') + '" data-act="prevStep" title="Poprzednie zadanie"' + (!hasPrev ? ' disabled' : '') + '>◀</button>' +
-            '<button type="button" class="sololearn-step-badge step-dropdown-btn" data-act="toggleTaskDropdown" title="Rozwiń listę zadań">' + esc(stepSwitchLbl) + ' ▾</button>' +
+            '<button type="button" class="sololearn-step-badge step-dropdown-btn compact-step-btn" data-act="toggleTaskDropdown" title="Rozwiń listę zadań">' + esc(compactSwitchLbl) + ' ▾</button>' +
             '<button type="button" class="step-nav-btn' + (!hasNext ? ' disabled' : '') + '" data-act="nextStep" title="Następne odblokowane zadanie"' + (!hasNext ? ' disabled' : '') + '>▶</button>' +
           '</div>' +
-          unlockPillHtml +
+          '<button type="button" class="btn compact-top-btn sololearn-theory-btn" data-act="openTutorialSlides">📖 Slajdy</button>' +
         '</div>' +
-        '<div class="sololearn-bar"><i style="width:' + pct + '%"></i></div>' +
+        '<div class="compact-nav-row2">' +
+          '<span class="compact-lesson-title" title="' + esc(task.title) + '">' + esc(task.title) + '</span>' +
+          '<div class="compact-unlock-wrap">' +
+            unlockBadgeHtml +
+            '<div class="compact-micro-bar"><i style="width:' + unlockPct + '%"></i></div>' +
+          '</div>' +
+        '</div>' +
         dropdownHtml +
       '</div>' +
-      '<div class="task-now-solving-banner' + flashCls + '">' +
-        '➡️ Teraz rozwiązujesz: <strong>' + esc(stepSwitchLbl) + '</strong>' +
-      '</div>' +
-      '<h2 class="task-page-title">' + esc(task.title) + '</h2>' +
-      renderTaskSpecBox(variant, task) +
-      buildTaskSchemaBox(variant.tables || task.tables, variant.sol) +
-      renderTeachFirstBox(variant.newFeature, task, variant) +
+      renderZeroScrollTaskCard(variant, task, 'path') +
       renderEditorWidget(task.cols, 'checkPathTask', variant, task) +
-      renderExampleOutputBox(variant.sol) +
-      renderHintStepperBox(variant, task) +
-      '<div class="acts" style="margin-top:12px;border-top:1px solid var(--line);padding-top:10px">' +
-        '<button type="button" class="btn sm warn" data-act="stepHint">' + esc(getHintButtonLabel()) + '</button>' +
-        '<button type="button" class="btn sm" data-act="showSolution">💡 Pokaż wzorcowy kod</button>' +
-        '<button type="button" class="btn sm" data-act="aiHint">🤖 Podpowiedź AI</button>' +
-      '</div>' +
-      renderStepByStepCheatSheet(variant.sol, task.theory, false, task) +
     '</div>';
   }
 
@@ -3005,29 +3355,23 @@ function renderDiagTab() {
   var totalDiag = DIAG_QUESTIONS.length;
   var curDNum = state.diagIdx + 1;
   var dPct = Math.round((curDNum / totalDiag) * 100);
-  return '<div class="card task-transition-enter">' +
-    '<div class="sololearn-progress-wrap">' +
-      '<div class="sololearn-progress-meta">' +
-        '<span class="sololearn-step-badge">PYTANIE ' + curDNum + ' z ' + totalDiag + '</span>' +
-        '<span class="sololearn-tier-badge">Sprawdza: Etap ' + q.stage + '</span>' +
-        '<span class="sololearn-pct">' + dPct + '%</span>' +
+  return '<div class="card task-solve-card task-transition-enter">' +
+    '<div class="compact-task-topbar">' +
+      '<div class="compact-nav-row1">' +
+        '<span class="sololearn-step-badge compact-step-btn">PYTANIE ' + curDNum + '/' + totalDiag + '</span>' +
+        '<span class="sololearn-tier-badge">Etap ' + q.stage + '</span>' +
+        '<button type="button" class="btn sm warn compact-top-btn" data-act="skipDiag">⏭ Pomiń</button>' +
       '</div>' +
-      '<div class="sololearn-bar"><i style="width:' + dPct + '%"></i></div>' +
+      '<div class="compact-nav-row2">' +
+        '<span class="compact-lesson-title" title="' + esc(q.title) + '">' + esc(q.title) + '</span>' +
+        '<div class="compact-unlock-wrap">' +
+          '<span class="sololearn-pct">' + dPct + '%</span>' +
+          '<div class="compact-micro-bar"><i style="width:' + dPct + '%"></i></div>' +
+        '</div>' +
+      '</div>' +
     '</div>' +
-    '<h2 class="task-page-title">' + esc(q.title) + '</h2>' +
-    renderTaskSpecBox(q, null) +
-    buildTaskSchemaBox(q.tables, q.sol) +
+    renderZeroScrollTaskCard(q, null, 'diag') +
     renderEditorWidget(null, 'submitDiag', q, null) +
-    renderExampleOutputBox(q.sol) +
-    renderHintStepperBox(q, null) +
-    '<div class="acts" style="margin-top:12px;border-top:1px solid var(--line);padding-top:12px;justify-content:space-between">' +
-      '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
-        '<button type="button" class="btn sm warn" data-act="stepHint">' + esc(getHintButtonLabel()) + '</button>' +
-        '<button type="button" class="btn warn" data-act="skipDiag">⏭ Pomiń zadanie (Nie umiem jeszcze)</button>' +
-      '</div>' +
-      '<button type="button" class="btn sm" data-act="resetDiag">Restart</button>' +
-    '</div>' +
-    renderStepByStepCheatSheet(q.sol, '', false) +
   '</div>';
 }
 
@@ -3090,30 +3434,23 @@ function renderLemurTab() {
       '<button type="button" class="' + (state.lemurSubTab === 'gaps' ? 'active' : '') + '" data-act="lemurSub" data-sub="gaps">🧠 Twój Rejestr Luk (' + state.gaps.length + (openGapsCnt ? ' · 🔥' + openGapsCnt : '') + ')</button>' +
     '</div>';
 
-    return topClickBanner + '<div class="card task-transition-enter">' +
-      '<div class="sololearn-progress-wrap" style="margin-top:2px">' +
-        '<div class="sololearn-progress-meta">' +
-          '<span class="sololearn-step-badge">WYZWANIE ' + curNum + ' z ' + tasksList.length + '</span>' +
-          '<div style="display:flex;gap:6px;align-items:center">' +
-            '<span class="chip ' + bdg.cls + '">' + bdg.lbl + '</span>' +
-            '<span class="chip info">' + esc(task.categoryTag || 'Analiza SQL') + '</span>' +
-          '</div>' +
-          '<span class="sololearn-pct">' + pct + '%</span>' +
+    return topClickBanner + '<div class="card task-solve-card task-transition-enter">' +
+      '<div class="compact-task-topbar">' +
+        '<div class="compact-nav-row1">' +
+          '<button type="button" class="btn compact-top-btn back-path-btn" data-act="backToLemurList">← Lista</button>' +
+          '<span class="sololearn-step-badge compact-step-btn">WYZWANIE ' + curNum + '/' + tasksList.length + '</span>' +
+          '<span class="chip ' + bdg.cls + '">' + bdg.lbl + '</span>' +
         '</div>' +
-        '<div class="sololearn-bar"><i style="width:' + pct + '%"></i></div>' +
+        '<div class="compact-nav-row2">' +
+          '<span class="compact-lesson-title" title="' + esc(task.title) + '">' + (isSolved ? '✅ ' : '') + esc(task.title) + '</span>' +
+          '<div class="compact-unlock-wrap">' +
+            '<span class="chip info" style="padding:1px 6px;font-size:10px">' + esc(task.categoryTag || 'Analiza SQL') + '</span>' +
+            '<div class="compact-micro-bar"><i style="width:' + pct + '%"></i></div>' +
+          '</div>' +
+        '</div>' +
       '</div>' +
-      '<h2 class="task-page-title">' + (isSolved ? '✅ ' : '') + esc(task.title) + '</h2>' +
-      renderTaskSpecBox(task, null) +
-      buildTaskSchemaBox(task.tables, task.sol) +
+      renderZeroScrollTaskCard(task, null, 'lemur') +
       renderEditorWidget(task.cols, 'checkLemurTask', task, null) +
-      renderExampleOutputBox(task.sol) +
-      renderHintStepperBox(task, null) +
-      '<div class="acts" style="margin-top:12px;border-top:1px solid var(--line);padding-top:10px">' +
-        '<button type="button" class="btn sm warn" data-act="stepHint">' + esc(getHintButtonLabel()) + '</button>' +
-        '<button type="button" class="btn sm" data-act="lemurTrapHint">🛡️ Jaka tu jest pułapka?</button>' +
-        '<button type="button" class="btn sm" data-act="showLemurSol">💡 Pokaż wzorcowe rozwiązanie</button>' +
-      '</div>' +
-      renderStepByStepCheatSheet(task.sol, '', false) +
     '</div>';
   }
 
@@ -3479,6 +3816,7 @@ function render() {
     sqlUpdate();
   }
 }
+window.render = render;
 
 // Obsługa gestów przesuwania (swipe) dla Samouczka Powitalnego i Slajdów Lekcji na telefonie
 var _touchStartX = null;
@@ -3548,6 +3886,13 @@ document.addEventListener('toggle', function(e) {
 document.addEventListener('input', function(e) {
   if (e.target.id === 'answer') {
     state.editorCode = e.target.value;
+    if (!state.editorCode.trim() && Array.isArray(uiState.warmupUsedBlocks) && uiState.warmupUsedBlocks.length > 0) {
+      uiState.warmupUsedBlocks = [];
+      document.querySelectorAll('.puzzle-block-btn.used').forEach(function(b) {
+        b.classList.remove('used');
+        b.disabled = false;
+      });
+    }
     if (lastExecResult && lastExecResult.errorLine) lastExecResult.errorLine = 0;
     sqlUpdate();
     saveState();
@@ -3555,6 +3900,11 @@ document.addEventListener('input', function(e) {
 });
 
 document.addEventListener('click', async function(e) {
+  var liveTa = document.getElementById('answer');
+  if (liveTa) {
+    state.editorCode = liveTa.value;
+  }
+
   // Zamknij rozwijaną listę zadań, jeśli kliknięto poza dropdown
   if (uiState.taskDropdownOpen && !e.target.closest('.task-dropdown-menu') && !e.target.closest('[data-act="toggleTaskDropdown"]')) {
     uiState.taskDropdownOpen = false;
@@ -3580,8 +3930,7 @@ document.addEventListener('click', async function(e) {
     lastExecResult = null;
     lastExpectedResult = null;
     lastChecklist = null;
-    uiState.hintStep = 0;
-    uiState.schemaBoxOpen = false;
+    resetTaskContextUi();
     if (currentTab === 'diag' && state.diagIdx < DIAG_QUESTIONS.length) {
       state.editorCode = '';
     } else if (currentTab === 'profile') {
@@ -3589,6 +3938,21 @@ document.addEventListener('click', async function(e) {
     }
     render();
     window.scrollTo(0, 0);
+  }
+  else if (act === 'setCtxTab') {
+    uiState.taskCtxTab = el.dataset.ctx || 'task';
+    render();
+  }
+  else if (act === 'tapPuzzleBlock') {
+    var bid = el.dataset.bid || '';
+    var sqlChunk = el.dataset.sql || '';
+    if (!Array.isArray(uiState.warmupUsedBlocks)) uiState.warmupUsedBlocks = [];
+    if (bid && uiState.warmupUsedBlocks.indexOf(bid) === -1) {
+      uiState.warmupUsedBlocks.push(bid);
+    }
+    el.classList.add('used');
+    el.disabled = true;
+    insertAtCursor(sqlChunk, true);
   }
   else if (act === 'theme') {
     state.theme = state.theme === 'dark' ? 'light' : 'dark';
@@ -3614,11 +3978,23 @@ document.addEventListener('click', async function(e) {
     } else if (curCode) {
       state.editorCode = curCode.replace(/\s*\S+\s*$/, '');
     }
+    if (Array.isArray(uiState.warmupUsedBlocks) && uiState.warmupUsedBlocks.length > 0) {
+      var poppedBid = uiState.warmupUsedBlocks.pop();
+      if (!state.editorCode.trim()) uiState.warmupUsedBlocks = [];
+      var btnToUnlock = document.querySelector('.puzzle-block-btn[data-bid="' + poppedBid + '"]');
+      if (btnToUnlock && uiState.warmupUsedBlocks.indexOf(poppedBid) === -1) {
+        btnToUnlock.classList.remove('used');
+        btnToUnlock.disabled = false;
+      }
+      if (!state.editorCode.trim()) {
+        document.querySelectorAll('.puzzle-block-btn.used').forEach(function(b) {
+          b.classList.remove('used');
+          b.disabled = false;
+        });
+      }
+    }
     if (taUndo) {
       taUndo.value = state.editorCode;
-      var endPos = state.editorCode.length;
-      taUndo.focus();
-      taUndo.setSelectionRange(endPos, endPos);
     }
     if (lastExecResult && lastExecResult.errorLine) lastExecResult.errorLine = 0;
     sqlUpdate();
@@ -3630,6 +4006,7 @@ document.addEventListener('click', async function(e) {
       uiState.editorUndoStack.push(state.editorCode);
     }
     state.editorCode = '';
+    uiState.warmupUsedBlocks = [];
     lastExecResult = null;
     lastExpectedResult = null;
     lastFeedback = null;
@@ -3691,9 +4068,7 @@ document.addEventListener('click', async function(e) {
     state.activeTaskId = targetId;
     var t = PATH_TASKS.find(function(x) { return x.id === state.activeTaskId; });
     state.activeVariantIdx = t ? getFirstUnsolvedStepIdx(t) : 0;
-    uiState.schemaBoxOpen = false;
-    uiState.theoryBoxOpen = null;
-    uiState.hintStep = 0;
+    resetTaskContextUi();
     uiState.tutorialSlideIdx = 0;
     uiState.selectedClause = null;
     uiState.quizSelected = null;
@@ -3718,9 +4093,7 @@ document.addEventListener('click', async function(e) {
     }) || PATH_TASKS.find(function(pt) { return pt.id === state.activeTaskId && isLessonUnlocked(pt.id); }) || PATH_TASKS[0];
     state.activeTaskId = nextTask.id;
     state.activeVariantIdx = getFirstUnsolvedStepIdx(nextTask);
-    uiState.schemaBoxOpen = false;
-    uiState.theoryBoxOpen = null;
-    uiState.hintStep = 0;
+    resetTaskContextUi();
     uiState.tutorialSlideIdx = 0;
     uiState.selectedClause = null;
     uiState.quizSelected = null;
@@ -3815,6 +4188,7 @@ document.addEventListener('click', async function(e) {
     if (!isStepUnlocked(fTask, state.activeVariantIdx)) {
       state.activeVariantIdx = getFirstUnsolvedStepIdx(fTask);
     }
+    resetTaskContextUi();
     if (!state.editorCode) {
       state.editorCode = '';
     }
@@ -3826,7 +4200,7 @@ document.addEventListener('click', async function(e) {
     clearInterval(window._sqlAnimTimer);
     uiState.sqlAnimRunning = false;
     state.pathMode = 'list';
-    uiState.hintStep = 0;
+    resetTaskContextUi();
     lastExecResult = null;
     lastExpectedResult = null;
     lastFeedback = null;
@@ -3847,8 +4221,7 @@ document.addEventListener('click', async function(e) {
     }
     state.activeVariantIdx = reqIdx;
     uiState.taskDropdownOpen = false;
-    uiState.schemaBoxOpen = false;
-    uiState.hintStep = 0;
+    resetTaskContextUi();
     state.editorCode = '';
     lastExecResult = null;
     lastExpectedResult = null;
@@ -3867,9 +4240,7 @@ document.addEventListener('click', async function(e) {
     if (state.activeVariantIdx > 0) {
       state.activeVariantIdx--;
       uiState.taskDropdownOpen = false;
-      uiState.schemaBoxOpen = false;
-      uiState.hintStep = 0;
-      var curTPrev = PATH_TASKS.find(function(x) { return x.id === state.activeTaskId; }) || PATH_TASKS[0];
+      resetTaskContextUi();
       state.editorCode = '';
       lastExecResult = null;
       lastExpectedResult = null;
@@ -3891,8 +4262,7 @@ document.addEventListener('click', async function(e) {
       }
       state.activeVariantIdx = nextIdx;
       uiState.taskDropdownOpen = false;
-      uiState.schemaBoxOpen = false;
-      uiState.hintStep = 0;
+      resetTaskContextUi();
       state.editorCode = '';
       lastExecResult = null;
       lastExpectedResult = null;
@@ -3916,8 +4286,7 @@ document.addEventListener('click', async function(e) {
     }
     state.activeVariantIdx = reqIdxJump;
     uiState.taskDropdownOpen = false;
-    uiState.schemaBoxOpen = false;
-    uiState.hintStep = 0;
+    resetTaskContextUi();
     state.editorCode = '';
     lastExecResult = null;
     lastExpectedResult = null;
@@ -3934,8 +4303,7 @@ document.addEventListener('click', async function(e) {
     if (nextStepIdx < curTaskStep.variants.length) {
       state.activeVariantIdx = nextStepIdx;
       uiState.taskDropdownOpen = false;
-      uiState.schemaBoxOpen = false;
-      uiState.hintStep = 0;
+      resetTaskContextUi();
       state.editorCode = '';
       lastExecResult = null;
       lastExpectedResult = null;
@@ -3954,9 +4322,7 @@ document.addEventListener('click', async function(e) {
       state.activeTaskId = nextL.id;
       state.activeVariantIdx = getFirstUnsolvedStepIdx(nextL);
       uiState.taskDropdownOpen = false;
-      uiState.schemaBoxOpen = false;
-      uiState.theoryBoxOpen = null;
-      uiState.hintStep = 0;
+      resetTaskContextUi();
       uiState.tutorialSlideIdx = 0;
       uiState.selectedClause = null;
       uiState.quizSelected = null;
@@ -3973,7 +4339,7 @@ document.addEventListener('click', async function(e) {
     } else {
       state.pathMode = 'list';
       uiState.taskDropdownOpen = false;
-      uiState.hintStep = 0;
+      resetTaskContextUi();
       lastExecResult = null;
       lastExpectedResult = null;
       lastFeedback = null;
@@ -3996,8 +4362,7 @@ document.addEventListener('click', async function(e) {
       nextIdx = unlockedIndices[(curPos + 1) % availLen];
     }
     state.activeVariantIdx = nextIdx;
-    uiState.schemaBoxOpen = false;
-    uiState.hintStep = 0;
+    resetTaskContextUi();
     state.editorCode = '';
     lastExecResult = null;
     lastExpectedResult = null;
@@ -4092,8 +4457,7 @@ document.addEventListener('click', async function(e) {
       state.xp += 15;
       toast('Dobrze! Pytanie ' + (state.diagIdx + 1) + '/10 zaliczone.');
       state.diagIdx++;
-      uiState.schemaBoxOpen = false;
-      uiState.hintStep = 0;
+      resetTaskContextUi();
       lastExecResult = null;
       lastExpectedResult = null;
       lastFeedback = null;
@@ -4119,8 +4483,7 @@ document.addEventListener('click', async function(e) {
     state.diagSkipped.push(sq.lvl);
     registerGapTrap(sq.gap, sq.title, 'Zagadnienie pominięte podczas Diagnozy.');
     state.diagIdx++;
-    uiState.schemaBoxOpen = false;
-    uiState.hintStep = 0;
+    resetTaskContextUi();
     lastExecResult = null;
     lastExpectedResult = null;
     lastFeedback = null;
@@ -4151,8 +4514,7 @@ document.addEventListener('click', async function(e) {
     state.diagIdx = 0;
     state.diagScore = 0;
     state.diagSkipped = [];
-    uiState.schemaBoxOpen = false;
-    uiState.hintStep = 0;
+    resetTaskContextUi();
     state.editorCode = '';
     lastExecResult = null;
     lastExpectedResult = null;
@@ -4179,9 +4541,7 @@ document.addEventListener('click', async function(e) {
   else if (act === 'openLemurTask') {
     state.activeLemurId = el.dataset.id;
     state.lemurMode = 'solve';
-    uiState.schemaBoxOpen = false;
-    uiState.hintStep = 0;
-    var ltOpen = LEMUR_TASKS.find(function(x) { return x.id === state.activeLemurId; });
+    resetTaskContextUi();
     state.editorCode = '';
     lastExecResult = null;
     lastExpectedResult = null;
@@ -4194,7 +4554,7 @@ document.addEventListener('click', async function(e) {
   else if (act === 'backToLemurList') {
     state.lemurMode = 'list';
     state.lemurSubTab = 'tasks';
-    uiState.hintStep = 0;
+    resetTaskContextUi();
     lastExecResult = null;
     lastExpectedResult = null;
     lastFeedback = null;
