@@ -2793,6 +2793,19 @@ details.teach-first-box.teach-first-pill .teach-first-body {
 #alias-help-popover-slot {
   width: 100%;
 }
+.alias-exact-formula {
+  margin: 8px 0;
+  padding: 8px 12px;
+  background: var(--code-bg, #0d1117);
+  border: 1px solid var(--border, #334155);
+  border-radius: 8px;
+  font-family: var(--mono);
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--ink, #f8fafc);
+}
 .alias-popover-src-btn,
 .alias-popover-insert-btn {
   min-height: 36px;

@@ -2084,7 +2084,7 @@ function buildDataLemurSpec(item, parentTask) {
         var rawExprClean = String(c.expr || '').trim().replace(/^[a-zA-Z0-9_]+\./, '');
         var isSimpleRename = (exprCols.length === 1 && rawExprClean.toLowerCase() === exprCols[0].toLowerCase());
 
-        return '<button type="button" class="req-col-pill req-col-pill-alias" data-alias-name="' + esc(c.name) + '" data-alias-cols="' + esc(exprColsStr) + '" data-alias-simple="' + (isSimpleRename ? '1' : '0') + '" onclick="window.toggleAliasHelpBox(this, event)">' +
+        return '<button type="button" class="req-col-pill req-col-pill-alias" data-alias-name="' + esc(c.name) + '" data-alias-expr="' + esc(c.expr) + '" data-alias-cols="' + esc(exprColsStr) + '" data-alias-simple="' + (isSimpleRename ? '1' : '0') + '" onclick="window.toggleAliasHelpBox(this, event)">' +
           '<span class="req-col-idx">' + num + '</span> ✨ <code>' + esc(c.name) + '</code> <span class="alias-info-icon">ℹ️</span>' +
         '</button>';
       }).join('') +
@@ -2092,10 +2092,17 @@ function buildDataLemurSpec(item, parentTask) {
 
     var initialAliasSlotHtml = '';
     if (uiState.activeAliasPopover && uiState.activeAliasPopover.alias) {
-      var apFound = details.cols.some(function(colObj) { return colObj.hasAlias && colObj.name === uiState.activeAliasPopover.alias; });
+      var apFound = null;
+      for (var ci = 0; ci < details.cols.length; ci++) {
+        if (details.cols[ci].hasAlias && details.cols[ci].name === uiState.activeAliasPopover.alias) {
+          apFound = details.cols[ci];
+          break;
+        }
+      }
       if (apFound) {
         initialAliasSlotHtml = buildAliasHelpBoxHtml(
-          uiState.activeAliasPopover.alias,
+          apFound.name,
+          apFound.expr,
           uiState.activeAliasPopover.cols || '*',
           !!uiState.activeAliasPopover.isSimple
         );
@@ -2151,30 +2158,164 @@ function buildDataLemurSpec(item, parentTask) {
   };
 }
 
-function buildAliasHelpBoxHtml(aliasName, sourceColsList, isSimpleRename) {
-  var safeAlias = esc(aliasName || '');
-  var safeCols = esc(sourceColsList || '*');
-  var jsSafeCols = String(sourceColsList || '*').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-  var jsSafeAlias = String(aliasName || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+function explainSqlExpressionInPolish(rawExpr, aliasName) {
+  var expr = String(rawExpr || '').trim();
+  var alias = String(aliasName || '').trim();
+  var safeAlias = esc(alias);
+  var cleanExpr = expr.replace(/\s+/g, ' ');
 
-  var humanDescHtml = isSimpleRename
-    ? 'Pobierz kolumnę <b>' + safeCols + '</b> i zmień jej nagłówek w wyniku za pomocą: <code>AS ' + safeAlias + '</code>.'
-    : 'Ta kolumna nie istnieje gotowa w tabeli — wylicz tę wartość w SELECT korzystając z kolumn: <b>' + safeCols + '</b> (zgodnie z poleceniem zadania), a na końcu nadaj jej nazwę wpisując: <code>AS ' + safeAlias + '</code>.';
+  // 1. Zwykła zmiana nazwy kolumny: col AS alias
+  if (/^[a-zA-Z_]\w*(?:\.[a-zA-Z_]\w*)?$/.test(cleanExpr)) {
+    return 'Pobierz kolumnę <code>' + esc(cleanExpr) + '</code> i zmień jej nagłówek w tabeli wynikowej na <code>' + safeAlias + '</code>:';
+  }
+
+  // 2. Łączenie tekstów (||)
+  if (cleanExpr.indexOf('||') > -1) {
+    return 'Połącz ze sobą wartości tekstowe za pomocą operatora <code>||</code> i nazwij wynik <code>' + safeAlias + '</code>:';
+  }
+
+  // 3. CASE WHEN
+  if (/^CASE\b/i.test(cleanExpr)) {
+    return 'Użyj konstrukcji warunkowej <code>CASE WHEN</code> i nazwij wynik <code>' + safeAlias + '</code>:';
+  }
+
+  // 4. COALESCE i NULLIF
+  if (/^COALESCE\s*\(/i.test(cleanExpr)) {
+    var coalMatch = /^COALESCE\s*\(([^,]+)/i.exec(cleanExpr);
+    var colInCoal = coalMatch ? coalMatch[1].trim() : 'kolumnę';
+    return 'Użyj funkcji <code>COALESCE</code>, aby zastąpić brakujące wartości (NULL) w <code>' + esc(colInCoal) + '</code> i nazwij wynik <code>' + safeAlias + '</code>:';
+  }
+  if (/^NULLIF\s*\(/i.test(cleanExpr)) {
+    return 'Użyj funkcji <code>NULLIF</code> i nazwij wynik <code>' + safeAlias + '</code>:';
+  }
+
+  // 5. Daty: EXTRACT i DATE_TRUNC
+  if (/^EXTRACT\s*\(\s*([a-zA-Z_]+)\s+FROM\s+([^)]+)\)/i.test(cleanExpr)) {
+    var extMatch = /^EXTRACT\s*\(\s*([a-zA-Z_]+)\s+FROM\s+([^)]+)\)/i.exec(cleanExpr);
+    return 'Wyciągnij <code>' + esc(extMatch[1]) + '</code> z daty <code>' + esc(extMatch[2].trim()) + '</code> za pomocą <code>EXTRACT()</code> i nazwij wynik <code>' + safeAlias + '</code>:';
+  }
+  if (/^DATE_TRUNC\s*\(/i.test(cleanExpr)) {
+    return 'Zaokrąglij datę za pomocą funkcji <code>DATE_TRUNC()</code> i nazwij wynik <code>' + safeAlias + '</code>:';
+  }
+
+  // 6. Funkcje okna: RANK, DENSE_RANK, ROW_NUMBER, LAG, LEAD
+  if (/^RANK\s*\(/i.test(cleanExpr)) {
+    return 'Wyznacz pozycję w rankingu za pomocą funkcji okna <code>RANK() OVER (...)</code> i nazwij wynik <code>' + safeAlias + '</code>:';
+  }
+  if (/^DENSE_RANK\s*\(/i.test(cleanExpr)) {
+    return 'Wyznacz pozycję w rankingu bez przerw za pomocą <code>DENSE_RANK() OVER (...)</code> i nazwij wynik <code>' + safeAlias + '</code>:';
+  }
+  if (/^ROW_NUMBER\s*\(/i.test(cleanExpr)) {
+    return 'Ponumeruj kolejne wiersze za pomocą funkcji okna <code>ROW_NUMBER() OVER (...)</code> i nazwij wynik <code>' + safeAlias + '</code>:';
+  }
+  if (/^LAG\s*\(/i.test(cleanExpr)) {
+    return 'Pobierz wartość z poprzedniego wiersza za pomocą funkcji okna <code>LAG() OVER (...)</code> i nazwij wynik <code>' + safeAlias + '</code>:';
+  }
+  if (/^LEAD\s*\(/i.test(cleanExpr)) {
+    return 'Pobierz wartość z następnego wiersza za pomocą funkcji okna <code>LEAD() OVER (...)</code> i nazwij wynik <code>' + safeAlias + '</code>:';
+  }
+
+  // 7. Zaokrąglanie: ROUND
+  if (/^ROUND\s*\(/i.test(cleanExpr)) {
+    return 'Zaokrąglij wynik wyliczenia za pomocą funkcji <code>ROUND()</code> i nazwij kolumnę <code>' + safeAlias + '</code>:';
+  }
+
+  // 8. Agregacje: COUNT, SUM, AVG, MIN, MAX
+  if (/^COUNT\s*\(\s*DISTINCT\s+([^)]+)\)/i.test(cleanExpr)) {
+    var cDistCol = /^COUNT\s*\(\s*DISTINCT\s+([^)]+)\)/i.exec(cleanExpr)[1].trim();
+    return 'Policz unikalne wartości w kolumnie <code>' + esc(cDistCol) + '</code> za pomocą <code>COUNT(DISTINCT ...)</code> i nazwij wynik <code>' + safeAlias + '</code>:';
+  }
+  if (/^COUNT\s*\(\s*\*\s*\)/i.test(cleanExpr)) {
+    return 'Policz wszystkie wiersze za pomocą funkcji <code>COUNT(*)</code> i nazwij wynik <code>' + safeAlias + '</code>:';
+  }
+  if (/^COUNT\s*\(\s*([^)]+)\)/i.test(cleanExpr)) {
+    var cntCol = /^COUNT\s*\(\s*([^)]+)\)/i.exec(cleanExpr)[1].trim();
+    return 'Policz niepuste wartości w kolumnie <code>' + esc(cntCol) + '</code> za pomocą <code>COUNT()</code> i nazwij wynik <code>' + safeAlias + '</code>:';
+  }
+  if (/^SUM\s*\(\s*([^)]+)\)/i.test(cleanExpr)) {
+    var sumCol = /^SUM\s*\(\s*([^)]+)\)/i.exec(cleanExpr)[1].trim();
+    return 'Zsumuj wartości kolumny <code>' + esc(sumCol) + '</code> za pomocą funkcji <code>SUM()</code> i nazwij wynik <code>' + safeAlias + '</code>:';
+  }
+  if (/^AVG\s*\(\s*([^)]+)\)/i.test(cleanExpr)) {
+    var avgCol = /^AVG\s*\(\s*([^)]+)\)/i.exec(cleanExpr)[1].trim();
+    return 'Oblicz średnią z kolumny <code>' + esc(avgCol) + '</code> za pomocą funkcji <code>AVG()</code> i nazwij wynik <code>' + safeAlias + '</code>:';
+  }
+  if (/^MIN\s*\(\s*([^)]+)\)/i.test(cleanExpr)) {
+    var minCol = /^MIN\s*\(\s*([^)]+)\)/i.exec(cleanExpr)[1].trim();
+    return 'Wyszukaj najmniejszą wartość w kolumnie <code>' + esc(minCol) + '</code> za pomocą <code>MIN()</code> i nazwij wynik <code>' + safeAlias + '</code>:';
+  }
+  if (/^MAX\s*\(\s*([^)]+)\)/i.test(cleanExpr)) {
+    var maxCol = /^MAX\s*\(\s*([^)]+)\)/i.exec(cleanExpr)[1].trim();
+    return 'Wyszukaj największą wartość w kolumnie <code>' + esc(maxCol) + '</code> za pomocą <code>MAX()</code> i nazwij wynik <code>' + safeAlias + '</code>:';
+  }
+
+  // 9. Funkcje tekstowe: UPPER, LOWER, LENGTH, TRIM
+  if (/^UPPER\s*\(\s*([^)]+)\)/i.test(cleanExpr)) {
+    var uCol = /^UPPER\s*\(\s*([^)]+)\)/i.exec(cleanExpr)[1].trim();
+    return 'Zamień tekst w kolumnie <code>' + esc(uCol) + '</code> na wielkie litery za pomocą <code>UPPER()</code> i nazwij wynik <code>' + safeAlias + '</code>:';
+  }
+  if (/^LOWER\s*\(\s*([^)]+)\)/i.test(cleanExpr)) {
+    var lCol = /^LOWER\s*\(\s*([^)]+)\)/i.exec(cleanExpr)[1].trim();
+    return 'Zamień tekst w kolumnie <code>' + esc(lCol) + '</code> na małe litery za pomocą <code>LOWER()</code> i nazwij wynik <code>' + safeAlias + '</code>:';
+  }
+  if (/^LENGTH\s*\(\s*([^)]+)\)/i.test(cleanExpr)) {
+    var lenCol = /^LENGTH\s*\(\s*([^)]+)\)/i.exec(cleanExpr)[1].trim();
+    return 'Oblicz długość tekstu w kolumnie <code>' + esc(lenCol) + '</code> za pomocą <code>LENGTH()</code> i nazwij wynik <code>' + safeAlias + '</code>:';
+  }
+  if (/^TRIM\s*\(\s*([^)]+)\)/i.test(cleanExpr)) {
+    var trCol = /^TRIM\s*\(\s*([^)]+)\)/i.exec(cleanExpr)[1].trim();
+    return 'Usuń zbędne spacje z kolumny <code>' + esc(trCol) + '</code> za pomocą <code>TRIM()</code> i nazwij wynik <code>' + safeAlias + '</code>:';
+  }
+
+  // 10. Operacje arytmetyczne: A - B, A * B, A / B, A + B
+  var subMatch = /^([a-zA-Z0-9_.'()]+)\s*-\s*([a-zA-Z0-9_.'()]+)$/.exec(cleanExpr);
+  if (subMatch) {
+    return 'Odejmij kolumnę <code>' + esc(subMatch[2].trim()) + '</code> od kolumny <code>' + esc(subMatch[1].trim()) + '</code> i nazwij wynik <code>' + safeAlias + '</code>:';
+  }
+  var mulMatch = /^([a-zA-Z0-9_.'()]+)\s*\*\s*([a-zA-Z0-9_.'()]+)$/.exec(cleanExpr);
+  if (mulMatch) {
+    return 'Pomnóż kolumnę <code>' + esc(mulMatch[1].trim()) + '</code> przez <code>' + esc(mulMatch[2].trim()) + '</code> i nazwij wynik <code>' + safeAlias + '</code>:';
+  }
+  var divMatch = /^([a-zA-Z0-9_.'()]+)\s*\/\s*([a-zA-Z0-9_.'()]+)$/.exec(cleanExpr);
+  if (divMatch) {
+    return 'Podziel <code>' + esc(divMatch[1].trim()) + '</code> przez <code>' + esc(divMatch[2].trim()) + '</code> i nazwij wynik <code>' + safeAlias + '</code>:';
+  }
+  var addMatch = /^([a-zA-Z0-9_.'()]+)\s*\+\s*([a-zA-Z0-9_.'()]+)$/.exec(cleanExpr);
+  if (addMatch) {
+    return 'Dodaj <code>' + esc(addMatch[1].trim()) + '</code> do <code>' + esc(addMatch[2].trim()) + '</code> i nazwij wynik <code>' + safeAlias + '</code>:';
+  }
+
+  // 11. Domyślne wyjaśnienie
+  return 'Wylicz wartość za pomocą wyrażenia <code>' + esc(cleanExpr) + '</code> i nazwij wynik <code>' + safeAlias + '</code>:';
+}
+
+function buildAliasHelpBoxHtml(aliasName, expr, sourceColsList, isSimpleRename) {
+  var safeAlias = esc(aliasName || '');
+  var exprClean = String(expr || sourceColsList || '').trim();
+  if (!exprClean || exprClean === '*') exprClean = aliasName || '';
+
+  var formulaSql = exprClean + ' AS ' + (aliasName || '');
+  var highlightedFormula = highlightSQL(formulaSql);
+  var polishExplanation = explainSqlExpressionInPolish(exprClean, aliasName);
+
+  var jsSafeFormula = String(formulaSql).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+  var jsSafeAlias = String(aliasName || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
 
   return '<div class="alias-calc-popover">' +
     '<div class="alias-calc-popover-hdr">' +
-      '<span>🧮 <strong>Jak zbudować kolumnę "' + safeAlias + '"?</strong></span>' +
+      '<span>🧮 <strong>Wzór dla kolumny "' + safeAlias + '"</strong></span>' +
       '<button type="button" class="alias-popover-close" onclick="window.closeAliasHelpBox(event)" aria-label="Zamknij">✕</button>' +
     '</div>' +
     '<div class="alias-calc-popover-txt">' +
-      humanDescHtml +
+      polishExplanation +
     '</div>' +
+    '<pre class="alias-exact-formula">' + highlightedFormula + '</pre>' +
     '<div class="alias-popover-acts">' +
-      '<button type="button" class="btn sm alias-popover-src-btn" onclick="window.insertAtCursor(\'' + esc(jsSafeCols) + '\'); event.stopPropagation();">' +
-        '➕ Wstaw kolumny źródłowe (' + safeCols + ')' +
+      '<button type="button" class="btn sm primary alias-popover-src-btn" onclick="window.insertAtCursor(\'' + esc(jsSafeFormula) + ' \'); event.stopPropagation();">' +
+        '➕ Wstaw "' + esc(formulaSql) + '"' +
       '</button>' +
-      '<button type="button" class="btn sm primary alias-popover-insert-btn" onclick="window.insertAtCursor(\' AS ' + esc(jsSafeAlias) + ' \'); event.stopPropagation();">' +
-        '🏷️ Wstaw "AS ' + safeAlias + '" do edytora' +
+      '<button type="button" class="btn sm alias-popover-insert-btn" onclick="window.insertAtCursor(\' AS ' + esc(jsSafeAlias) + ' \'); event.stopPropagation();">' +
+        '🏷️ Wstaw samo "AS ' + safeAlias + '"' +
       '</button>' +
     '</div>' +
   '</div>';
@@ -2184,6 +2325,7 @@ window.toggleAliasHelpBox = function(btn, event) {
   if (event && typeof event.stopPropagation === 'function') event.stopPropagation();
   if (!btn) return;
   var aliasName = btn.getAttribute('data-alias-name') || btn.getAttribute('data-alias-target') || '';
+  var expr = btn.getAttribute('data-alias-expr') || '';
   var sourceColsList = btn.getAttribute('data-alias-cols') || btn.getAttribute('data-alias-source') || '*';
   var isSimple = btn.getAttribute('data-alias-simple') === '1';
 
@@ -2195,11 +2337,12 @@ window.toggleAliasHelpBox = function(btn, event) {
   }
   uiState.activeAliasPopover = {
     alias: aliasName,
+    expr: expr,
     cols: sourceColsList,
     isSimple: isSimple
   };
   if (slot) {
-    slot.innerHTML = buildAliasHelpBoxHtml(aliasName, sourceColsList, isSimple);
+    slot.innerHTML = buildAliasHelpBoxHtml(aliasName, expr, sourceColsList, isSimple);
   } else {
     render();
   }
@@ -2215,6 +2358,9 @@ window.closeAliasHelpBox = function(event) {
     render();
   }
 };
+
+window.explainSqlExpressionInPolish = explainSqlExpressionInPolish;
+window.buildAliasHelpBoxHtml = buildAliasHelpBoxHtml;
 
 window.buildDataLemurSpec = buildDataLemurSpec;
 window.buildCleanPolecenie = buildCleanPolecenie;
@@ -3479,67 +3625,84 @@ function getProgressivePipelineForTask(task, slide) {
   var writeList = [];
   var execRaw = [];
 
-  if (tid === 'p1_1' || tid === 'p1_2') {
-    writeList = ['SELECT', 'FROM'];
-    execRaw = [
-      { key: 'FROM', lbl: 'FROM', desc: 'Pobranie tabeli z bazy' },
-      { key: 'SELECT', lbl: 'SELECT', desc: 'Wybór kolumn i nadanie aliasów AS' }
-    ];
-  } else if (tid === 'p1_3') {
-    writeList = ['SELECT', 'DISTINCT', 'FROM'];
-    execRaw = [
-      { key: 'FROM', lbl: 'FROM', desc: 'Pobranie tabeli z bazy' },
-      { key: 'SELECT', lbl: 'SELECT', desc: 'Wybór wskazanych kolumn' },
-      { key: 'DISTINCT', lbl: 'DISTINCT', desc: 'Usunięcie duplikatów z wyniku' }
-    ];
-  } else if (tid === 'p1_4') {
+  if (stg === 1) {
+    if (tid === 'p1_1' || tid === 'p1_2') {
+      writeList = ['SELECT', 'FROM'];
+      execRaw = [
+        { key: 'FROM', lbl: 'FROM', desc: 'Pobranie tabeli z bazy' },
+        { key: 'SELECT', lbl: 'SELECT', desc: 'Wybór kolumn i nadanie aliasów AS' }
+      ];
+    } else {
+      writeList = ['SELECT', 'DISTINCT', 'FROM'];
+      execRaw = [
+        { key: 'FROM', lbl: 'FROM', desc: 'Pobranie tabeli z bazy' },
+        { key: 'SELECT', lbl: 'SELECT', desc: 'Wybór wskazanych kolumn' },
+        { key: 'DISTINCT', lbl: 'DISTINCT', desc: 'Usunięcie duplikatów z wyniku' }
+      ];
+    }
+  } else if (stg === 2) {
     writeList = ['SELECT', 'FROM', 'ORDER BY', 'LIMIT'];
     execRaw = [
       { key: 'FROM', lbl: 'FROM', desc: 'Pobranie tabeli z bazy' },
       { key: 'SELECT', lbl: 'SELECT', desc: 'Wybór kolumn i aliasów AS' },
-      { key: 'ORDER BY', lbl: 'ORDER BY', desc: 'Sortowanie wyniku (widzi aliasy AS!)' },
+      { key: 'ORDER BY', lbl: 'ORDER BY', desc: 'Sortowanie wyniku (ASC/DESC)' },
+      { key: 'LIMIT', lbl: 'LIMIT / OFFSET', desc: 'Odcięcie N wierszy i paginacja' }
+    ];
+  } else if (stg === 3) {
+    writeList = ['SELECT', 'FROM', 'WHERE', 'ORDER BY', 'LIMIT'];
+    execRaw = [
+      { key: 'FROM', lbl: 'FROM', desc: 'Pobranie tabeli z bazy' },
+      { key: 'WHERE', lbl: 'WHERE', desc: 'Sito pojedynczych wierszy (porównania, IN, BETWEEN, LIKE, IS NULL)' },
+      { key: 'SELECT', lbl: 'SELECT', desc: 'Wyliczenia i aliasy AS' },
+      { key: 'ORDER BY', lbl: 'ORDER BY', desc: 'Sortowanie przefiltrowanych wierszy' },
       { key: 'LIMIT', lbl: 'LIMIT', desc: 'Odcięcie pierwszych N wierszy' }
     ];
-  } else if (stg === 2 || tid === 'p3_1') {
+  } else if (stg === 4) {
+    if (tid === 'p3_1' || tid === 'p3_2') {
+      writeList = ['SELECT', 'FROM', 'WHERE'];
+      execRaw = [
+        { key: 'FROM', lbl: 'FROM', desc: 'Pobranie tabeli z bazy' },
+        { key: 'WHERE', lbl: 'WHERE', desc: 'Filtrowanie wierszy przed agregacją' },
+        { key: 'SELECT', lbl: 'SELECT (AGREGACJA)', desc: 'Obliczenie funkcji COUNT, SUM, AVG, MIN, MAX' }
+      ];
+    } else if (tid === 'p3_4') {
+      writeList = ['SELECT', 'FROM', 'WHERE', 'GROUP BY', 'HAVING', 'ORDER BY'];
+      execRaw = [
+        { key: 'FROM', lbl: 'FROM', desc: 'Pobranie tabeli z bazy' },
+        { key: 'WHERE', lbl: 'WHERE', desc: 'Sito pojedynczych wierszy przed grupowaniem' },
+        { key: 'GROUP BY', lbl: 'GROUP BY', desc: 'Podział wierszy na koszyki (grupy)' },
+        { key: 'HAVING', lbl: 'HAVING', desc: 'Filtr całych grup po agregacji' },
+        { key: 'SELECT', lbl: 'SELECT', desc: 'Pobranie kolumn grupowanych i agregatów' },
+        { key: 'ORDER BY', lbl: 'ORDER BY', desc: 'Sortowanie wyniku' }
+      ];
+    } else {
+      writeList = ['SELECT', 'FROM', 'WHERE', 'GROUP BY', 'ORDER BY', 'LIMIT'];
+      execRaw = [
+        { key: 'FROM', lbl: 'FROM', desc: 'Pobranie tabeli z bazy' },
+        { key: 'WHERE', lbl: 'WHERE', desc: 'Sito pojedynczych wierszy' },
+        { key: 'GROUP BY', lbl: 'GROUP BY', desc: 'Podział na koszyki (grupy)' },
+        { key: 'SELECT', lbl: 'SELECT', desc: 'Wyliczenia agregatów lub FILTER (WHERE)' },
+        { key: 'ORDER BY', lbl: 'ORDER BY', desc: 'Sortowanie wyniku' },
+        { key: 'LIMIT', lbl: 'LIMIT', desc: 'Odcięcie pierwszych N wierszy' }
+      ];
+    }
+  } else if (stg === 5 || stg === 6) {
     writeList = ['SELECT', 'FROM', 'WHERE', 'ORDER BY', 'LIMIT'];
     execRaw = [
       { key: 'FROM', lbl: 'FROM', desc: 'Pobranie tabeli z bazy' },
       { key: 'WHERE', lbl: 'WHERE', desc: 'Sito pojedynczych wierszy' },
+      { key: 'SELECT', lbl: 'SELECT', desc: 'Funkcje skalarne (tekst, liczby, daty, CASE WHEN, COALESCE)' },
+      { key: 'ORDER BY', lbl: 'ORDER BY', desc: 'Sortowanie wyniku' },
+      { key: 'LIMIT', lbl: 'LIMIT', desc: 'Odcięcie pierwszych N wierszy' }
+    ];
+  } else if (stg === 7) {
+    writeList = ['SELECT', 'FROM', 'JOIN', 'WHERE', 'GROUP BY', 'ORDER BY'];
+    execRaw = [
+      { key: 'FROM / JOIN', lbl: 'FROM / JOIN (lub UNION)', desc: 'Pobranie i złączenie tabel po kluczu ON' },
+      { key: 'WHERE', lbl: 'WHERE', desc: 'Sito pojedynczych wierszy (np. Anti-Join IS NULL)' },
+      { key: 'GROUP BY', lbl: 'GROUP BY', desc: 'Podział na koszyki (jeśli dotyczy)' },
       { key: 'SELECT', lbl: 'SELECT', desc: 'Wyliczenia i aliasy AS' },
-      { key: 'ORDER BY', lbl: 'ORDER BY', desc: 'Sortowanie wyniku' },
-      { key: 'LIMIT', lbl: 'LIMIT', desc: 'Odcięcie pierwszych N wierszy' }
-    ];
-  } else if (tid === 'p3_2') {
-    writeList = ['SELECT', 'FROM', 'WHERE', 'GROUP BY', 'ORDER BY', 'LIMIT'];
-    execRaw = [
-      { key: 'FROM', lbl: 'FROM', desc: 'Pobranie tabeli z bazy' },
-      { key: 'WHERE', lbl: 'WHERE', desc: 'Sito pojedynczych wierszy przed grupowaniem' },
-      { key: 'GROUP BY', lbl: 'GROUP BY', desc: 'Podział wierszy na koszyki (grupy)' },
-      { key: 'SELECT', lbl: 'SELECT', desc: 'Policzenie COUNT/SUM/AVG dla grup' },
-      { key: 'ORDER BY', lbl: 'ORDER BY', desc: 'Sortowanie gotowych grup' },
-      { key: 'LIMIT', lbl: 'LIMIT', desc: 'Odcięcie pierwszych N wierszy' }
-    ];
-  } else if (tid === 'p3_3') {
-    writeList = ['SELECT', 'FROM', 'WHERE', 'GROUP BY', 'HAVING', 'ORDER BY', 'LIMIT'];
-    execRaw = [
-      { key: 'FROM', lbl: 'FROM', desc: 'Pobranie tabeli z bazy' },
-      { key: 'WHERE', lbl: 'WHERE', desc: 'Sito pojedynczych wierszy' },
-      { key: 'GROUP BY', lbl: 'GROUP BY', desc: 'Podział na koszyki (grupy)' },
-      { key: 'HAVING', lbl: 'HAVING', desc: 'Filtr całych koszyków po agregacji' },
-      { key: 'SELECT', lbl: 'SELECT', desc: 'Wycięcie kolumn i aliasów AS' },
-      { key: 'ORDER BY', lbl: 'ORDER BY', desc: 'Sortowanie wyniku' },
-      { key: 'LIMIT', lbl: 'LIMIT', desc: 'Odcięcie pierwszych N wierszy' }
-    ];
-  } else if (stg === 4) {
-    writeList = ['SELECT', 'FROM', 'JOIN', 'WHERE', 'GROUP BY', 'HAVING', 'ORDER BY', 'LIMIT'];
-    execRaw = [
-      { key: 'FROM / JOIN', lbl: 'FROM / JOIN', desc: 'Pobranie i złączenie tabel po kluczu ON' },
-      { key: 'WHERE', lbl: 'WHERE', desc: 'Sito pojedynczych wierszy' },
-      { key: 'GROUP BY', lbl: 'GROUP BY', desc: 'Podział na koszyki (grupy)' },
-      { key: 'HAVING', lbl: 'HAVING', desc: 'Filtr całych koszyków po agregacji' },
-      { key: 'SELECT', lbl: 'SELECT', desc: 'Wyliczenia i aliasy AS' },
-      { key: 'ORDER BY', lbl: 'ORDER BY', desc: 'Sortowanie wyniku' },
-      { key: 'LIMIT', lbl: 'LIMIT', desc: 'Odcięcie pierwszych N wierszy' }
+      { key: 'ORDER BY', lbl: 'ORDER BY', desc: 'Sortowanie wyniku' }
     ];
   } else {
     writeList = ['WITH', 'SELECT', 'FROM', 'JOIN', 'WHERE', 'GROUP BY', 'HAVING', 'ORDER BY', 'LIMIT'];
@@ -3548,8 +3711,7 @@ function getProgressivePipelineForTask(task, slide) {
       { key: 'FROM / JOIN', lbl: 'FROM / JOIN', desc: 'Pobranie i złączenie tabel' },
       { key: 'WHERE', lbl: 'WHERE', desc: 'Sito pojedynczych wierszy' },
       { key: 'GROUP BY', lbl: 'GROUP BY', desc: 'Podział na koszyki (grupy)' },
-      { key: 'HAVING', lbl: 'HAVING', desc: 'Filtr całych koszyków po agregacji' },
-      { key: 'SELECT', lbl: 'SELECT (+ OVER)', desc: 'Wyliczenia, aliasy AS i funkcje okna' },
+      { key: 'SELECT', lbl: 'SELECT (+ OVER)', desc: 'Wyliczenia, aliasy AS i funkcje okna (OVER, RANK, LAG)' },
       { key: 'ORDER BY', lbl: 'ORDER BY', desc: 'Sortowanie wyniku' },
       { key: 'LIMIT', lbl: 'LIMIT', desc: 'Odcięcie pierwszych N wierszy' }
     ];
@@ -3567,6 +3729,7 @@ function getProgressivePipelineForTask(task, slide) {
     })
   };
 }
+window.getProgressivePipelineForTask = getProgressivePipelineForTask;
 
 function formatQuizOptionSql(optTxt) {
   var s = String(optTxt || '');
@@ -3979,10 +4142,13 @@ function renderPathTab() {
 // ZAKŁADKA 2: DIAGNOZA (10 ZADAŃ Z PRZYCISKIEM POMIŃ)
 function renderDiagTab() {
   if (state.diagIdx >= DIAG_QUESTIONS.length) {
-    var targetStage = Math.max(1, Math.min(5, Math.floor(state.diagScore / 2) + 1));
+    var maxStages = (window.STAGES && window.STAGES.length) ? window.STAGES.length : 8;
+    var targetStage = Math.max(1, Math.min(maxStages, Math.floor((state.diagScore / 10) * (maxStages - 0.01)) + 1));
+    var stageObj = (window.STAGES && window.STAGES[targetStage - 1]) ? window.STAGES[targetStage - 1] : ((typeof STAGES !== 'undefined' && STAGES[targetStage - 1]) ? STAGES[targetStage - 1] : null);
+    var stageName = stageObj ? stageObj.name : ('Etap ' + targetStage);
     return '<section class="hero">' +
       '<h2>Diagnoza ukończona!</h2>' +
-      '<p>Twój wyznaczony poziom: Etap ' + targetStage + ' (' + esc(STAGES[targetStage - 1].name) + ')</p>' +
+      '<p>Twój wyznaczony poziom: Etap ' + targetStage + ' (' + esc(stageName) + ')</p>' +
       '<div class="sub-hero">Poprawne odpowiedzi: ' + state.diagScore + '/10 · Pominięte zadania: ' + state.diagSkipped.length + '</div>' +
       '<button class="btn ghost" data-act="applyDiag" data-stage="' + targetStage + '">🚀 Odblokuj Etap ' + targetStage + ' i przejdź do Ścieżki</button>' +
     '</section>' +
@@ -4286,7 +4452,7 @@ function renderOnboardingModal() {
       body:
         '<ul class="tut-list" style="margin-bottom:8px">' +
           '<li><strong>Klikaj klocki nad edytorem:</strong> dotknij nazwy kolumny lub <code>SELECT</code> w pasku <em>SQL Quick-Bar</em>, aby wkleić ją bez pisania na klawiaturze.</li>' +
-          '<li><strong>Zasada 5 z 8 zadań:</strong> każda lekcja ma 2 krótkie rozgrzewki (🔥 1–2) i 6 zadań (🎯 1–6). Rozwiąż <strong>5 z 8</strong>, aby odblokować kolejny temat!</li>' +
+          '<li><strong>Krótkie mikro-lekcje (4–6 zadań):</strong> każda lekcja zaczyna się szybką rozgrzewką z klocków (Tap-to-Build) i zadaniami praktycznymi. Zaliczenie większości zadań (np. 3 z 4 lub 4 z 6) od razu otwiera kolejny temat na Mapie Ścieżki!</li>' +
         '</ul>' +
         '<div class="pwa-box">' +
           '<strong>📲 Włącz pełny ekran bez pasków przeglądarki (PWA):</strong>' +
@@ -5791,7 +5957,7 @@ if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.
   });
 
   window.addEventListener('load', function() {
-    navigator.serviceWorker.register('./sw.js?v=12.1', { updateViaCache: 'none' }).then(function(registration) {
+    navigator.serviceWorker.register('./sw.js?v=14', { updateViaCache: 'none' }).then(function(registration) {
       document.addEventListener('visibilitychange', function() {
         if (document.visibilityState === 'visible') {
           registration.update().catch(function() {});
