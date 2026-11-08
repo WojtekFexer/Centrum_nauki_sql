@@ -2696,6 +2696,7 @@ details.teach-first-box.teach-first-pill .teach-first-body {
   bottom: 0;
   background: rgba(0, 0, 0, 0.72);
   z-index: 9999;
+  pointer-events: auto;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2713,6 +2714,8 @@ details.teach-first-box.teach-first-pill .teach-first-body {
   box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
   overflow: hidden;
   box-sizing: border-box;
+  pointer-events: auto;
+  z-index: 9999;
 }
 .topbar-modal-hdr {
   display: flex;
@@ -2724,20 +2727,101 @@ details.teach-first-box.teach-first-pill .teach-first-body {
 }
 .topbar-modal-close {
   background: transparent;
-  border: none;
-  color: var(--muted, #94a3b8);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: var(--fg, #f8fafc);
   font-size: 16px;
   cursor: pointer;
-  padding: 4px 8px;
-  border-radius: 4px;
+  padding: 6px 10px;
+  min-height: 38px;
+  min-width: 38px;
+  border-radius: 6px;
+  pointer-events: auto;
+  z-index: 9999;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 .topbar-modal-close:hover {
-  color: var(--fg, #f8fafc);
-  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.12);
+}
+.topbar-modal-action-close {
+  min-height: 38px !important;
+  pointer-events: auto !important;
+  z-index: 9999;
 }
 .topbar-modal-body {
   padding: 16px;
 }
+
+/* ==========================================================================
+   v13.2: WYRÓŻNIENIE NAZW TABEL, SLOT POPOVERA ALIASU I PORÓWNANIA SOLOLEARN
+   ========================================================================== */
+.schema-table-name-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(56, 189, 248, 0.16);
+  color: #38bdf8;
+  border: 1px solid rgba(56, 189, 248, 0.45);
+  font-family: var(--mono);
+  font-weight: 700;
+  padding: 3px 9px;
+  border-radius: 6px;
+  font-size: 13px;
+  line-height: 1.25;
+}
+.schema-table-desc {
+  color: #94a3b8;
+  font-size: 12px;
+  font-weight: 400;
+}
+
+#alias-help-popover-slot {
+  width: 100%;
+}
+.alias-popover-src-btn,
+.alias-popover-insert-btn {
+  min-height: 36px;
+  font-weight: 600;
+}
+
+.sololearn-cmp-box {
+  margin: 8px 0;
+  padding: 9px 12px;
+  background: rgba(15, 23, 42, 0.65);
+  border: 1px solid rgba(56, 189, 248, 0.28);
+  border-radius: 8px;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+.sololearn-cmp-title {
+  font-weight: 700;
+  color: #38bdf8;
+  margin-bottom: 6px;
+  font-size: 12.5px;
+}
+.sololearn-cmp-bad {
+  padding: 6px 8px;
+  margin-bottom: 5px;
+  background: rgba(239, 68, 68, 0.08);
+  border-left: 3px solid #f87171;
+  border-radius: 4px;
+}
+.sololearn-cmp-good {
+  padding: 6px 8px;
+  background: rgba(34, 197, 94, 0.1);
+  border-left: 3px solid #4ade80;
+  border-radius: 4px;
+}
+.sololearn-cmp-item {
+  padding: 4px 0;
+  border-bottom: 1px dashed rgba(148, 163, 184, 0.16);
+}
+.sololearn-cmp-item:last-child {
+  border-bottom: none;
+}
+
 
 
 

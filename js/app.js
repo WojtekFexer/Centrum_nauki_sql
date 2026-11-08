@@ -4,7 +4,7 @@
 /* ==========================================================================
    0. KONFIGURACJA CHMURY SUPABASE (REST API — RANKING I PROFILE TESTERÓW)
    ========================================================================== */
-const APP_VERSION = 'v13.1';
+const APP_VERSION = 'v13.2';
 const DEFAULT_SUPABASE_URL = 'https://hpfrcykbzuzucglorpkr.supabase.co';
 const DEFAULT_SUPABASE_KEY = 'sb_publishable_5klYjdIKjT35Zl2OtOyGQA_DGxdJCHh';
 
@@ -1222,9 +1222,9 @@ function buildTaskSchemaBox(tableNames, solSql) {
         '</details>';
 
         return '<div class="iv-tbl-card">' +
-          '<div style="display:flex;flex-wrap:wrap;align-items:center;gap:5px">' +
-            '<button type="button" class="helper-tbl-btn" data-act="ins" data-val="' + esc(m.table) + '" data-insert-sql="' + esc(m.table) + '" title="Wstaw nazwę tabeli ' + esc(m.table) + '">📦 ' + esc(m.table) + '</button>' +
-            (m.desc ? '<span class="small muted" style="font-size:11.5px">· ' + esc(m.desc) + '</span>' : '') +
+          '<div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px">' +
+            '<button type="button" class="helper-tbl-btn" data-act="ins" data-val="' + esc(m.table) + '" data-insert-sql="' + esc(m.table) + '" title="Wstaw nazwę tabeli ' + esc(m.table) + '" style="background:none;border:0;padding:0"><span class="schema-table-name-badge">🗄️ ' + esc(m.table) + '</span></button>' +
+            (m.desc ? '<span class="schema-table-desc">' + esc(m.desc) + '</span>' : '') +
           '</div>' +
           '<div style="display:flex;flex-wrap:wrap;align-items:center;gap:5px;margin-top:6px">' +
             m.cols.map(function(c) {
@@ -1371,17 +1371,20 @@ function renderTaskTablesInline(tableNames, solSql) {
         var hdrBtnLbl = isColsOpen ? '🔼 Zwiń kolumny ▴' : '🔽 Rozwiń kolumny ▾';
         return '<div class="iv-tbl-card multi-table-accordion-card">' +
           '<button type="button" class="tbl-accordion-hdr" data-act="toggleTableCols" data-table="' + esc(m.table) + '">' +
-            '<span class="tbl-acc-title">🗄️ <b>' + esc(m.table) + '</b>' + (m.desc ? ' — ' + esc(m.desc) : '') + ' <span class="tbl-col-cnt">(' + m.cols.length + ' kol.)</span></span>' +
+            '<span class="tbl-acc-title"><span class="schema-table-name-badge">🗄️ ' + esc(m.table) + '</span>' + (m.desc ? ' <span class="schema-table-desc">— ' + esc(m.desc) + '</span>' : '') + ' <span class="tbl-col-cnt">(' + m.cols.length + ' kol.)</span></span>' +
             '<span class="tbl-acc-arrow">' + hdrBtnLbl + '</span>' +
           '</button>' +
-          (isColsOpen ? ('<div class="tbl-accordion-body">' + colsListHtml + toggleBtnHtml + sampleHtml + '</div>') : '') +
+          (isColsOpen ? ('<div class="tbl-accordion-body">' +
+            '<div style="margin-bottom:6px"><button type="button" class="helper-tbl-btn" data-act="ins" data-val="' + esc(m.table) + '" data-insert-sql="' + esc(m.table) + '" title="Wstaw nazwę tabeli ' + esc(m.table) + ' do edytora">➕ Wstaw tabelę: ' + esc(m.table) + '</button></div>' +
+            colsListHtml + toggleBtnHtml + sampleHtml +
+          '</div>') : '') +
         '</div>';
       }
 
       return '<div class="iv-tbl-card">' +
-        '<div style="display:flex;flex-wrap:wrap;align-items:center;gap:5px">' +
-          '<button type="button" class="helper-tbl-btn" data-act="ins" data-val="' + esc(m.table) + '" data-insert-sql="' + esc(m.table) + '" title="Wstaw nazwę tabeli ' + esc(m.table) + '">📦 ' + esc(m.table) + '</button>' +
-          (m.desc ? '<span class="small muted" style="font-size:11.5px">· ' + esc(m.desc) + '</span>' : '') +
+        '<div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px">' +
+          '<button type="button" class="helper-tbl-btn" data-act="ins" data-val="' + esc(m.table) + '" data-insert-sql="' + esc(m.table) + '" title="Wstaw nazwę tabeli ' + esc(m.table) + '" style="background:none;border:0;padding:0"><span class="schema-table-name-badge">🗄️ ' + esc(m.table) + '</span></button>' +
+          (m.desc ? '<span class="schema-table-desc">' + esc(m.desc) + ' <span class="tbl-col-cnt">(' + m.cols.length + ' kol.)</span></span>' : '') +
         '</div>' +
         colsListHtml +
         toggleBtnHtml +
@@ -1532,6 +1535,10 @@ function parseSqlDetails(sol, fallbackTables) {
       var exprPart = cleanC.slice(0, asMatch.index).trim();
       return { name: alias, expr: exprPart, hasAlias: true };
     }
+    var isComplexExpr = !/^(?:[a-zA-Z_]\w*\.)?[a-zA-Z_]\w*$/.test(cleanC);
+    if (isComplexExpr) {
+      return { name: cleanC, expr: cleanC, hasAlias: true };
+    }
     var dotMatch = /(?:^|\.)([a-zA-Z_]\w*)\s*$/.exec(cleanC);
     var colName = dotMatch ? dotMatch[1] : cleanC;
     return { name: colName, expr: cleanC, hasAlias: false };
@@ -1575,7 +1582,7 @@ function extractExprSourceCols(expr) {
     'FILTER', 'EXISTS', 'UNION', 'ALL', 'ROUND', 'COUNT', 'SUM', 'AVG', 'MIN',
     'MAX', 'COALESCE', 'NULLIF', 'DATE_TRUNC', 'CAST', 'EXTRACT', 'TO_CHAR',
     'ROW_NUMBER', 'RANK', 'DENSE_RANK', 'LAG', 'LEAD', 'GENERATE_SERIES',
-    'LOWER', 'UPPER', 'TRIM', 'LENGTH', 'INTERVAL', 'NUMERIC', 'INTEGER',
+    'LOWER', 'UPPER', 'TRIM', 'INTERVAL', 'NUMERIC', 'INTEGER',
     'TEXT', 'DATE', 'DAY', 'DAYS', 'MONTH', 'YEAR', 'TRUE', 'FALSE'
   ]);
   var cols = [];
@@ -1584,6 +1591,9 @@ function extractExprSourceCols(expr) {
   while ((m = re.exec(clean)) !== null) {
     var col = m[1];
     var u = col.toUpperCase();
+    var afterIdx = m.index + m[0].length;
+    var isFuncCall = /^\s*\(/.test(clean.slice(afterIdx));
+    if (u === 'LENGTH' && isFuncCall) continue;
     if (!ignore.has(u) && !/^\d/.test(col) && cols.indexOf(col) === -1) {
       cols.push(col);
     }
@@ -2015,52 +2025,28 @@ function buildDataLemurSpec(item, parentTask) {
           '</button>';
         }
         var exprCols = extractExprSourceCols(c.expr);
-        var exprColsStr = exprCols.length ? exprCols.join(', ') : '';
-        var exprHint = '';
-        var exprUpper = String(c.expr || '').toUpperCase();
-        if (/COUNT\s*\(\s*\*\s*\)/.test(exprUpper)) {
-          exprColsStr = 'zliczanie wszystkich wierszy (COUNT)';
-          exprHint = 'Użyj funkcji COUNT(*) i nadaj jej alias AS ' + c.name + '.';
-        } else if (/OVER\s*\(/.test(exprUpper)) {
-          exprHint = 'Użyj funkcji analitycznej z klauzulą OVER(...) i nadaj wynikowi alias AS ' + c.name + '.';
-        } else if (/CASE\s+WHEN/.test(exprUpper)) {
-          exprHint = 'Zastosuj warunek CASE WHEN ... THEN ... ELSE ... END i nadaj mu alias AS ' + c.name + '.';
-        } else if (/[*+\/-]/.test(c.expr)) {
-          exprHint = 'Wykonaj obliczenie na kolumnach źródłowych i nadaj wynikowi alias AS ' + c.name + '.';
-        } else if (/\b(?:ROUND|SUM|AVG|MIN|MAX|COALESCE|NULLIF|DATE_TRUNC)\b/.test(exprUpper)) {
-          exprHint = 'Zastosuj odpowiednią funkcję SQL i nadaj wynikowi alias AS ' + c.name + '.';
-        } else {
-          exprHint = 'Nadaj tej kolumnie alias AS ' + c.name + ' w zapytaniu SELECT.';
-        }
+        var exprColsStr = exprCols.length ? exprCols.join(', ') : '*';
+        var rawExprClean = String(c.expr || '').trim().replace(/^[a-zA-Z0-9_]+\./, '');
+        var isSimpleRename = (exprCols.length === 1 && rawExprClean.toLowerCase() === exprCols[0].toLowerCase());
 
-        return '<button type="button" class="req-col-pill req-col-pill-alias" data-alias-target="' + esc(c.name) + '" data-alias-source="' + esc(exprColsStr) + '" data-alias-hint="' + esc(exprHint) + '">' +
+        return '<button type="button" class="req-col-pill req-col-pill-alias" data-alias-name="' + esc(c.name) + '" data-alias-cols="' + esc(exprColsStr) + '" data-alias-simple="' + (isSimpleRename ? '1' : '0') + '" onclick="window.toggleAliasHelpBox(this, event)">' +
           '<span class="req-col-idx">' + num + '</span> ✨ <code>' + esc(c.name) + '</code> <span class="alias-info-icon">ℹ️</span>' +
         '</button>';
       }).join('') +
       '</div>';
 
-    if (uiState.activeAliasPopover) {
-      var ap = uiState.activeAliasPopover;
-      var apSourceNote = ap.source ? ('<div style="margin-bottom:6px">📌 <strong>Źródło / operacja:</strong> ' + esc(ap.source) + '</div>') : '';
-      var apHintNote = ap.hint ? ('<div style="margin-bottom:6px">' + esc(ap.hint) + '</div>') : '';
-      colsPipelineHtml += '<div class="alias-calc-popover">' +
-        '<div class="alias-calc-popover-hdr">' +
-          '<span>🧮 <strong>Kolumna docelowa:</strong> <code>' + esc(ap.alias) + '</code></span>' +
-          '<button type="button" class="alias-popover-close" data-act="closeAliasPopover" aria-label="Zamknij">✕</button>' +
-        '</div>' +
-        '<div class="alias-calc-popover-txt">' +
-          apSourceNote +
-          apHintNote +
-          '<div class="small muted">W wyniku użyj zapisu z aliasem: <code class="sql-kw-as">AS ' + esc(ap.alias) + '</code></div>' +
-        '</div>' +
-        '<div class="alias-popover-acts">' +
-          '<button type="button" class="btn sm primary alias-popover-insert-btn" data-act="insertAlias" data-alias="' + esc(ap.alias) + '">' +
-            '➕ Wstaw "AS ' + esc(ap.alias) + '" do edytora' +
-          '</button>' +
-          '<button type="button" class="btn sm" data-act="closeAliasPopover">✕ Zamknij</button>' +
-        '</div>' +
-      '</div>';
+    var initialAliasSlotHtml = '';
+    if (uiState.activeAliasPopover && uiState.activeAliasPopover.alias) {
+      var apFound = details.cols.some(function(colObj) { return colObj.hasAlias && colObj.name === uiState.activeAliasPopover.alias; });
+      if (apFound) {
+        initialAliasSlotHtml = buildAliasHelpBoxHtml(
+          uiState.activeAliasPopover.alias,
+          uiState.activeAliasPopover.cols || '*',
+          !!uiState.activeAliasPopover.isSimple
+        );
+      }
     }
+    colsPipelineHtml += '<div id="alias-help-popover-slot">' + initialAliasSlotHtml + '</div>';
 
     if (hasAnyAlias && (!parentTask || parentTask.id !== 'p1_1')) {
       var tipBtnLbl = uiState.syntaxTipOpen ? '💡 Zwiń ogólną wskazówkę składni AS ▴' : '💡 Pokaż ogólną wskazówkę składni AS ▾';
@@ -2109,6 +2095,72 @@ function buildDataLemurSpec(item, parentTask) {
     hints: [step1Html, step2Html, step3Html]
   };
 }
+
+function buildAliasHelpBoxHtml(aliasName, sourceColsList, isSimpleRename) {
+  var safeAlias = esc(aliasName || '');
+  var safeCols = esc(sourceColsList || '*');
+  var jsSafeCols = String(sourceColsList || '*').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+  var jsSafeAlias = String(aliasName || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+
+  var humanDescHtml = isSimpleRename
+    ? 'Pobierz kolumnę <b>' + safeCols + '</b> i zmień jej nagłówek w wyniku za pomocą: <code>AS ' + safeAlias + '</code>.'
+    : 'Ta kolumna nie istnieje gotowa w tabeli — wylicz tę wartość w SELECT korzystając z kolumn: <b>' + safeCols + '</b> (zgodnie z poleceniem zadania), a na końcu nadaj jej nazwę wpisując: <code>AS ' + safeAlias + '</code>.';
+
+  return '<div class="alias-calc-popover">' +
+    '<div class="alias-calc-popover-hdr">' +
+      '<span>🧮 <strong>Jak zbudować kolumnę "' + safeAlias + '"?</strong></span>' +
+      '<button type="button" class="alias-popover-close" onclick="window.closeAliasHelpBox(event)" aria-label="Zamknij">✕</button>' +
+    '</div>' +
+    '<div class="alias-calc-popover-txt">' +
+      humanDescHtml +
+    '</div>' +
+    '<div class="alias-popover-acts">' +
+      '<button type="button" class="btn sm alias-popover-src-btn" onclick="window.insertAtCursor(\'' + esc(jsSafeCols) + '\'); event.stopPropagation();">' +
+        '➕ Wstaw kolumny źródłowe (' + safeCols + ')' +
+      '</button>' +
+      '<button type="button" class="btn sm primary alias-popover-insert-btn" onclick="window.insertAtCursor(\' AS ' + esc(jsSafeAlias) + ' \'); event.stopPropagation();">' +
+        '🏷️ Wstaw "AS ' + safeAlias + '" do edytora' +
+      '</button>' +
+    '</div>' +
+  '</div>';
+}
+
+window.toggleAliasHelpBox = function(btn, event) {
+  if (event && typeof event.stopPropagation === 'function') event.stopPropagation();
+  if (!btn) return;
+  var aliasName = btn.getAttribute('data-alias-name') || btn.getAttribute('data-alias-target') || '';
+  var sourceColsList = btn.getAttribute('data-alias-cols') || btn.getAttribute('data-alias-source') || '*';
+  var isSimple = btn.getAttribute('data-alias-simple') === '1';
+
+  var slot = document.getElementById('alias-help-popover-slot');
+  if (uiState.activeAliasPopover && uiState.activeAliasPopover.alias === aliasName && slot && slot.innerHTML.trim() !== '') {
+    uiState.activeAliasPopover = null;
+    slot.innerHTML = '';
+    return;
+  }
+  uiState.activeAliasPopover = {
+    alias: aliasName,
+    cols: sourceColsList,
+    isSimple: isSimple
+  };
+  if (slot) {
+    slot.innerHTML = buildAliasHelpBoxHtml(aliasName, sourceColsList, isSimple);
+  } else {
+    render();
+  }
+};
+
+window.closeAliasHelpBox = function(event) {
+  if (event && typeof event.stopPropagation === 'function') event.stopPropagation();
+  uiState.activeAliasPopover = null;
+  var slot = document.getElementById('alias-help-popover-slot');
+  if (slot) {
+    slot.innerHTML = '';
+  } else {
+    render();
+  }
+};
+
 window.buildDataLemurSpec = buildDataLemurSpec;
 window.buildCleanPolecenie = buildCleanPolecenie;
 window.buildQuerySkeleton = buildQuerySkeleton;
@@ -2134,19 +2186,24 @@ window.setLastFeedback = function(fb) { lastFeedback = fb; };
 // Renderuje zunifikowaną specyfikację zadania (📌 Polecenie + Wizualny Pasek Wymagań)
 function renderTaskSpecBox(item, parentTask, teachFirstHtml) {
   if (!item) return '';
-  if (!item._v12SpecDone) {
-    var spec = buildDataLemurSpec(item, parentTask || null);
-    item.polecenie = spec.polecenie;
-    item.reqStripHtml = spec.reqStripHtml;
-    item.assumptions = spec.assumptions;
-    item.hints = spec.hints;
-    item._v12SpecDone = true;
-  }
+  var spec = buildDataLemurSpec(item, parentTask || null);
+  item.polecenie = spec.polecenie;
+  item.reqStripHtml = spec.reqStripHtml;
+  item.assumptions = spec.assumptions;
+  item.hints = spec.hints;
+  item._v12SpecDone = true;
+
   var polecenieTxt = item.polecenie || item.prompt || '';
   var rawReqStrip = item.reqStripHtml || (Array.isArray(item.assumptions) ? item.assumptions.join('') : '');
 
   var tipBodyHtml = uiState.syntaxTipOpen
-    ? '<div class="dl-alias-tip" style="margin-top:6px">💡 <strong>Ogólna wskazówka składni:</strong> Aby nadać kolumnie lub obliczeniu nową nazwę w wyniku, użyj zapisu <code>' + highlightSQL('SELECT cena * 100 AS grosze FROM produkty;') + '</code>.</div>'
+    ? '<div class="dl-alias-tip sololearn-cmp-box" style="margin-top:6px">' +
+        '<div>💡 <strong>Ogólna wskazówka składni (Przed vs Po):</strong> Słowo <code>AS</code> zmienia wyłącznie nazwę nagłówka w tabeli wynikowej. Bez <code>AS</code> baza nazwie wyliczoną kolumnę nieczytelnie (np. <code>?column?</code>), a po dopisaniu <code>AS nowa_nazwa</code> nagłówek w raporcie będzie czytelny.</div>' +
+        '<div class="sololearn-cmp-row" style="margin-top:6px">' +
+          '<div class="sololearn-cmp-bad">❌ <strong>Bez AS:</strong> <code>' + highlightSQL('SELECT cena * 100 FROM produkty;') + '</code> → nagłówek: <code>?column?</code></div>' +
+          '<div class="sololearn-cmp-good">✅ <strong>Z aliasem AS:</strong> <code>' + highlightSQL('SELECT cena * 100 AS grosze FROM produkty;') + '</code> → w tabeli wynikowej kolumna otrzyma nagłówek <b>grosze</b>.</div>' +
+        '</div>' +
+      '</div>'
     : '';
 
   var reqHtml = rawReqStrip
@@ -2411,6 +2468,117 @@ function wrapKeywordsInBackticks(text) {
   }).join('');
 }
 
+function buildSoloLearnComparisonHtml(nf, solSql, task) {
+  var title = String((nf && nf.title) || '');
+  var desc = String((nf && nf.desc) || '');
+  var ex = String((nf && nf.example) || '');
+  var sol = String(solSql || '');
+  var combined = (title + ' ' + desc + ' ' + ex + ' ' + sol).toUpperCase();
+
+  // 1. IN (...)
+  if (/\bIN\s*\(/.test(title.toUpperCase()) || (/\bIN\s*\(/.test(sol.toUpperCase()) && /\bIN\b/i.test(title + ' ' + desc))) {
+    return '<div class="sololearn-cmp-box">' +
+      '<div class="sololearn-cmp-title">🔄 Porównanie zapisu (Przed vs Po):</div>' +
+      '<div class="sololearn-cmp-bad">❌ <strong>Długi zapis z wieloma <code>OR</code>:</strong><br><code>' + highlightSQL("WHERE kategoria = 'A' OR kategoria = 'B' OR kategoria = 'C'") + '</code></div>' +
+      '<div class="sololearn-cmp-good">✅ <strong>Krótki zapis z <code>IN</code>:</strong><br><code>' + highlightSQL("WHERE kategoria IN ('A', 'B', 'C')") + '</code></div>' +
+    '</div>';
+  }
+
+  // 2. BETWEEN ... AND ...
+  if (/\bBETWEEN\b/.test(combined)) {
+    return '<div class="sololearn-cmp-box">' +
+      '<div class="sololearn-cmp-title">🔄 Porównanie zapisu (Przed vs Po):</div>' +
+      '<div class="sololearn-cmp-bad">❌ <strong>Zapis z dwoma nierównościami:</strong><br><code>' + highlightSQL('WHERE cena >= 10 AND cena <= 20') + '</code></div>' +
+      '<div class="sololearn-cmp-good">✅ <strong>Krótki zapis z <code>BETWEEN</code>:</strong><br><code>' + highlightSQL('WHERE cena BETWEEN 10 AND 20') + '</code> <em>(obejmuje 10 oraz 20 włącznie!)</em></div>' +
+    '</div>';
+  }
+
+  // 3. LIKE / ILIKE i znak %
+  if (/\bILIKE\b|\bLIKE\b/.test(combined)) {
+    return '<div class="sololearn-cmp-box">' +
+      '<div class="sololearn-cmp-title">🔍 Jak działa znak <code>%</code> (zastępuje dowolny ciąg znaków):</div>' +
+      '<div class="sololearn-cmp-item">🔹 <strong>Zaczyna się na „As”:</strong> <code>' + highlightSQL("WHERE imie ILIKE 'As%'") + '</code> (procent na końcu = dowolna końcówka),</div>' +
+      '<div class="sololearn-cmp-item">🔹 <strong>Kończy się na „ski”:</strong> <code>' + highlightSQL("WHERE nazwisko ILIKE '%ski'") + '</code> (procent na początku = dowolny początek),</div>' +
+      '<div class="sololearn-cmp-item">🔹 <strong>Zawiera w środku „akcja”:</strong> <code>' + highlightSQL("WHERE opis ILIKE '%akcja%'") + '</code> (procenty z obu stron = szukany fragment w dowolnym miejscu tekstu).</div>' +
+    '</div>';
+  }
+
+  // 4. AS (Alias — w zadaniach p1_2 lub gdy głównym tematem jest AS / wyliczenie)
+  if ((task && task.id === 'p1_2') || /\bALIAS\b|\bAS\b/i.test(title)) {
+    return '<div class="sololearn-cmp-box">' +
+      '<div class="sololearn-cmp-title">🏷️ Dlaczego używamy <code>AS</code> (Przed vs Po):</div>' +
+      '<div class="small" style="margin-bottom:6px">Słowo <code>AS</code> zmienia wyłącznie nazwę nagłówka w tabeli wynikowej. Bez <code>AS</code> baza nazwie wyliczoną kolumnę nieczytelnie (np. <code>?column?</code>), a po dopisaniu <code>AS nowa_nazwa</code> nagłówek w raporcie będzie czytelny.</div>' +
+      '<div class="sololearn-cmp-bad">❌ <strong>Bez <code>AS</code>:</strong> <code>' + highlightSQL('SELECT cena * 100 FROM produkty;') + '</code> → nagłówek kolumny: <code>?column?</code></div>' +
+      '<div class="sololearn-cmp-good">✅ <strong>Z aliasem <code>AS</code>:</strong> <code>' + highlightSQL('SELECT cena * 100 AS grosze FROM produkty;') + '</code> → w tabeli wynikowej kolumna otrzyma nagłówek <b>grosze</b>.</div>' +
+    '</div>';
+  }
+
+  // 5. LEFT JOIN
+  if (/\bLEFT\s+(?:OUTER\s+)?JOIN\b/.test(combined)) {
+    return '<div class="sololearn-cmp-box">' +
+      '<div class="sololearn-cmp-title">🔄 Co na wejściu → Co w tabeli wynikowej (LEFT JOIN):</div>' +
+      '<div class="sololearn-cmp-bad">📥 <strong>Wejście:</strong> Tabela <code>klienci</code> (wszyscy klienci, także bez zakupów) + tabela <code>zamowienia</code>:<br><code>' + highlightSQL('SELECT k.nazwa, z.id AS zamowienie_id FROM klienci k LEFT JOIN zamowienia z ON k.id = z.klient_id;') + '</code></div>' +
+      '<div class="sololearn-cmp-good">📤 <strong>Wynik:</strong> Zostają <b>wszyscy klienci z lewej tabeli</b>. Jeśli klient nie ma zamówienia, w kolumnie <code>zamowienie_id</code> pojawi się <code>NULL</code> (nie tracisz wiersza!).</div>' +
+    '</div>';
+  }
+
+  // 6. JOIN (INNER JOIN)
+  if (/\bJOIN\b/.test(combined)) {
+    return '<div class="sololearn-cmp-box">' +
+      '<div class="sololearn-cmp-title">🔄 Co na wejściu → Co w tabeli wynikowej (JOIN):</div>' +
+      '<div class="sololearn-cmp-bad">📥 <strong>Wejście:</strong> Dwie osobne tabele połączone wspólnym kluczem w <code>ON</code>:<br><code>' + highlightSQL('SELECT p.nazwa, k.nazwa_kategorii FROM produkty p JOIN kategorie k ON p.kategoria_id = k.id;') + '</code></div>' +
+      '<div class="sololearn-cmp-good">📤 <strong>Wynik:</strong> W tabeli wynikowej wiersze z obu tabel sklejają się w jeden wspólny wiersz wszędzie tam, gdzie identyfikatory są równe.</div>' +
+    '</div>';
+  }
+
+  // 7. HAVING
+  if (/\bHAVING\b/.test(combined)) {
+    return '<div class="sololearn-cmp-box">' +
+      '<div class="sololearn-cmp-title">🔄 Co na wejściu → Co w tabeli wynikowej (HAVING):</div>' +
+      '<div class="sololearn-cmp-bad">📥 <strong>Wejście:</strong> Koszyki utworzone przez <code>GROUP BY</code> wraz z policzonym <code>COUNT(*)</code>:<br><code>' + highlightSQL('SELECT kategoria, COUNT(*) AS liczba FROM produkty GROUP BY kategoria HAVING COUNT(*) > 5;') + '</code></div>' +
+      '<div class="sololearn-cmp-good">📤 <strong>Wynik:</strong> W tabeli wynikowej zostają <b>tylko te grupy (koszyki)</b>, w których wyliczona liczba wierszy przekracza 5.</div>' +
+    '</div>';
+  }
+
+  // 8. GROUP BY
+  if (/\bGROUP\s+BY\b/.test(combined)) {
+    return '<div class="sololearn-cmp-box">' +
+      '<div class="sololearn-cmp-title">🔄 Co na wejściu → Co w tabeli wynikowej (GROUP BY):</div>' +
+      '<div class="sololearn-cmp-bad">📥 <strong>Wejście:</strong> Setki pojedynczych wierszy z powtarzającymi się kategoriami:<br><code>' + highlightSQL('SELECT kategoria, COUNT(*) AS liczba FROM produkty GROUP BY kategoria;') + '</code></div>' +
+      '<div class="sololearn-cmp-good">📤 <strong>Wynik:</strong> Wiersze o tej samej wartości <code>kategoria</code> zwijają się w <b>jeden wiersz podsumowujący</b> dla każdego koszyka wraz z wynikiem agregacji.</div>' +
+    '</div>';
+  }
+
+  // 9. CASE WHEN
+  if (/\bCASE\s+WHEN\b/.test(combined)) {
+    return '<div class="sololearn-cmp-box">' +
+      '<div class="sololearn-cmp-title">🔄 Co na wejściu → Co w tabeli wynikowej (CASE WHEN):</div>' +
+      '<div class="sololearn-cmp-bad">📥 <strong>Wejście:</strong> Surowa liczba w kolumnie <code>cena</code> sprawdzana warunkiem:<br><code>' + highlightSQL("SELECT cena, CASE WHEN cena >= 50 THEN 'wysoka' ELSE 'standardowa' END AS segment FROM produkty;") + '</code></div>' +
+      '<div class="sololearn-cmp-good">📤 <strong>Wynik:</strong> W nowej kolumnie <b>segment</b> baza wpisuje czytelny tekst <code>\'wysoka\'</code> lub <code>\'standardowa\'</code> zależnie od wartości w danym wierszu.</div>' +
+    '</div>';
+  }
+
+  // 10. COALESCE / NULLIF
+  if (/\bCOALESCE\b|\bNULLIF\b/.test(combined)) {
+    return '<div class="sololearn-cmp-box">' +
+      '<div class="sololearn-cmp-title">🔄 Co na wejściu → Co w tabeli wynikowej (COALESCE):</div>' +
+      '<div class="sololearn-cmp-bad">📥 <strong>Wejście:</strong> Kolumna z brakującymi danymi (<code>NULL</code>):<br><code>' + highlightSQL("SELECT id, COALESCE(telefon, 'brak numeru') AS kontakt FROM klienci;") + '</code></div>' +
+      '<div class="sololearn-cmp-good">📤 <strong>Wynik:</strong> W tabeli wynikowej każdy istniejący numer zostaje bez zmian, a puste miejsca <code>NULL</code> zostają zastąpione napisem <b>\'brak numeru\'</b>.</div>' +
+    '</div>';
+  }
+
+  // 11. Funkcje agregujące (COUNT, SUM, AVG, MIN, MAX)
+  if (/\b(COUNT|SUM|AVG|MIN|MAX)\s*\(/.test(combined)) {
+    return '<div class="sololearn-cmp-box">' +
+      '<div class="sololearn-cmp-title">🔄 Co na wejściu → Co w tabeli wynikowej (Agregacja):</div>' +
+      '<div class="sololearn-cmp-bad">📥 <strong>Wejście:</strong> Cała tabela z wieloma wierszami przekazywana do funkcji agregującej:<br><code>' + highlightSQL('SELECT COUNT(*) AS liczba_wierszy, AVG(cena) AS srednia_cena FROM produkty;') + '</code></div>' +
+      '<div class="sololearn-cmp-good">📤 <strong>Wynik:</strong> Wszystkie wiersze zostają przeliczone i zwinięte do <b>jednego wiersza z gotowym podsumowaniem</b> (np. liczbą rekordów, sumą lub średnią).</div>' +
+    '</div>';
+  }
+
+  return '';
+}
+
 function renderTeachFirstBox(newFeature, task, variant) {
   var nf = newFeature;
   var sol = String((variant && variant.sol) || '');
@@ -2428,7 +2596,7 @@ function renderTeachFirstBox(newFeature, task, variant) {
     if (!nf || /\bAS\b/i.test(nf.title)) {
       nf = {
         title: (nf && nf.title) ? nf.title : 'Zmiana nazwy kolumny: AS (alias)',
-        desc: 'Słowo kluczowe AS nadaje kolumnie lub obliczeniu nową, czytelną nazwę w nagłówku wyniku raportu (np. cena * 100 AS grosze).',
+        desc: 'Słowo AS zmienia wyłącznie nazwę nagłówka w tabeli wynikowej. Bez AS baza nazwie wyliczoną kolumnę nieczytelnie (np. ?column?), a po dopisaniu AS nowa_nazwa nagłówek w raporcie będzie czytelny.',
         example: 'SELECT cena * 100 AS grosze FROM produkty;'
       };
     }
@@ -2447,12 +2615,14 @@ function renderTeachFirstBox(newFeature, task, variant) {
   var backtickedDesc = wrapKeywordsInBackticks(safeDesc);
 
   var neutralExample = buildNeutralTeachExample(nf, sol, task);
+  var cmpHtml = buildSoloLearnComparisonHtml(nf, sol, task);
   var isOpen = !!uiState.teachFirstOpen;
   var moreLbl = isOpen ? '(zwiń przykład ▴)' : '(rozwiń przykład ▾)';
   return '<details class="teach-first-box teach-first-pill"' + (isOpen ? ' open' : '') + '>' +
     '<summary class="teach-first-hdr">🆕 Nowy element: <strong>' + esc(nf.title) + '</strong> <span class="teach-first-more">' + moreLbl + '</span></summary>' +
     '<div class="teach-first-body">' +
       '<p class="teach-first-desc">' + formatPrompt(backtickedDesc) + '</p>' +
+      cmpHtml +
       (neutralExample ? '<div class="teach-first-code"><code>' + highlightSQL(neutralExample) + '</code></div>' : '') +
     '</div>' +
   '</details>';
@@ -4116,6 +4286,31 @@ function renderAuthModal() {
   '</div>';
 }
 
+window.closeTopBarModal = function() {
+  var liveTa = document.getElementById('answer');
+  if (liveTa) {
+    state.editorCode = liveTa.value;
+  }
+  uiState.topbarModal = null;
+  var bd = document.querySelector('.topbar-modal-backdrop');
+  if (bd && bd.parentNode) {
+    bd.parentNode.removeChild(bd);
+  }
+};
+
+window.toggleTopBarModal = function(modalType) {
+  var liveTa = document.getElementById('answer');
+  if (liveTa) {
+    state.editorCode = liveTa.value;
+  }
+  if (uiState.topbarModal === modalType) {
+    window.closeTopBarModal();
+  } else {
+    uiState.topbarModal = modalType;
+    render();
+  }
+};
+
 function renderTopbarModal() {
   if (!uiState.topbarModal) return '';
   var modalType = uiState.topbarModal;
@@ -4142,8 +4337,8 @@ function renderTopbarModal() {
         'Gdyby baza nie odpowiadała lub wystąpił błąd pamięci podręcznej, możesz bezpiecznie zresetować pamięć podręczną — Twój postęp nauki (punkty XP i zaliczone zadania) zostanie zachowany.' +
       '</p>' +
       '<div style="display:flex;gap:8px;margin-top:4px;flex-wrap:wrap">' +
-        '<button type="button" class="btn sm warn" data-act="resetDatabase">🔄 Zresetuj bazę danych</button>' +
-        '<button type="button" class="btn sm" data-act="closeTopbarModal">✕ Zamknij</button>' +
+        '<button type="button" class="btn sm warn" style="min-height:38px" data-act="resetDatabase">🔄 Zresetuj bazę danych</button>' +
+        '<button type="button" class="btn sm topbar-modal-action-close" style="min-height:38px" data-act="closeTopbarModal" onclick="window.closeTopBarModal(); event.stopPropagation();">✕ Zamknij</button>' +
       '</div>' +
     '</div>';
   } else if (modalType === 'xp') {
@@ -4205,7 +4400,7 @@ function renderTopbarModal() {
         '💡 Każde rozwiązane zadanie i ukończona rozgrzewka przyznaje punkty XP i podnosi Twoją pozycję w rankingu!' +
       '</p>' +
       '<div style="display:flex;gap:8px;margin-top:4px">' +
-        '<button type="button" class="btn sm primary" data-act="closeTopbarModal">✕ Zamknij</button>' +
+        '<button type="button" class="btn sm primary topbar-modal-action-close" style="min-height:38px" data-act="closeTopbarModal" onclick="window.closeTopBarModal(); event.stopPropagation();">✕ Zamknij</button>' +
       '</div>' +
     '</div>';
   } else if (modalType === 'streak') {
@@ -4221,17 +4416,17 @@ function renderTopbarModal() {
         '<div class="small">📅 Ostatnia aktywność: <strong>' + (state.lastActiveDate || 'dzisiaj') + '</strong></div>' +
         '<div class="small muted" style="margin-top:3px">Rozwiązuj przynajmniej jedno zadanie dziennie, aby Twój płomień nigdy nie wygasł!</div>' +
       '</div>' +
-      '<div style="display:flex;justify-content:center;gap:8px;margin-top:4px">' +
-        '<button type="button" class="btn sm primary" data-act="closeTopbarModal">🚀 Utrzymaj serię i ucz się dalej</button>' +
+      '<div style="display:flex;justify-content:center;gap:8px;margin-top:4px;flex-wrap:wrap">' +
+        '<button type="button" class="btn sm primary topbar-modal-action-close" style="min-height:38px" data-act="closeTopbarModal" onclick="window.closeTopBarModal(); event.stopPropagation();">✕ Zamknij</button>' +
       '</div>' +
     '</div>';
   }
 
-  return '<div class="topbar-modal-backdrop" data-act="closeTopbarModal">' +
-    '<div class="topbar-modal-card" onclick="event.stopPropagation()">' +
+  return '<div class="topbar-modal-backdrop" data-act="closeTopbarModal" onclick="if(event.target === this) window.closeTopBarModal();">' +
+    '<div class="topbar-modal-card">' +
       '<div class="topbar-modal-hdr">' +
         '<h3 style="margin:0;font-size:15px">' + title + '</h3>' +
-        '<button type="button" class="topbar-modal-close" data-act="closeTopbarModal" aria-label="Zamknij">✕</button>' +
+        '<button type="button" class="topbar-modal-close" style="min-height:38px;min-width:38px" data-act="closeTopbarModal" onclick="window.closeTopBarModal(); event.stopPropagation();" aria-label="Zamknij">✕</button>' +
       '</div>' +
       '<div class="topbar-modal-body">' + bodyHtml + '</div>' +
     '</div>' +
@@ -4454,6 +4649,10 @@ document.addEventListener('toggle', function(e) {
 }, true);
 
 window.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape' && uiState.topbarModal) {
+    window.closeTopBarModal();
+    return;
+  }
   if (e.key === 'Enter') {
     if (currentTab === 'diag' && lastFeedback && lastFeedback.diagNext) {
       e.preventDefault();
@@ -4503,22 +4702,10 @@ document.addEventListener('click', async function(e) {
     }
   }
 
-  // Obsługa pigułki kolumny z aliasem/wyliczeniem (wszystkie zadania w aplikacji)
+  // Obsługa pigułki kolumny z aliasem/wyliczeniem (fallback dla delegacji)
   var aliasPill = e.target.closest('.req-col-pill-alias');
   if (aliasPill) {
-    var target = aliasPill.getAttribute('data-alias-target') || '';
-    var source = aliasPill.getAttribute('data-alias-source') || '';
-    var hint = aliasPill.getAttribute('data-alias-hint') || '';
-    if (uiState.activeAliasPopover && uiState.activeAliasPopover.alias === target) {
-      uiState.activeAliasPopover = null;
-    } else {
-      uiState.activeAliasPopover = {
-        alias: target,
-        source: source,
-        hint: hint
-      };
-    }
-    render();
+    window.toggleAliasHelpBox(aliasPill, e);
     return;
   }
 
@@ -4554,12 +4741,11 @@ document.addEventListener('click', async function(e) {
   else if (act === 'insertAlias') {
     var aliasVal = el.dataset.alias || '';
     if (aliasVal) {
-      insertAtCursor('AS ' + aliasVal);
+      insertAtCursor(' AS ' + aliasVal + ' ');
     }
   }
   else if (act === 'closeAliasPopover') {
-    uiState.activeAliasPopover = null;
-    render();
+    window.closeAliasHelpBox(e);
   }
   else if (act === 'toggleTableCols') {
     var tbl = el.dataset.table || '';
@@ -4570,20 +4756,16 @@ document.addEventListener('click', async function(e) {
     }
   }
   else if (act === 'openDbStatusModal') {
-    uiState.topbarModal = 'dbStatus';
-    render();
+    window.toggleTopBarModal('dbStatus');
   }
   else if (act === 'openXpModal') {
-    uiState.topbarModal = 'xp';
-    render();
+    window.toggleTopBarModal('xp');
   }
   else if (act === 'openStreakModal') {
-    uiState.topbarModal = 'streak';
-    render();
+    window.toggleTopBarModal('streak');
   }
   else if (act === 'closeTopbarModal') {
-    uiState.topbarModal = null;
-    render();
+    window.closeTopBarModal();
   }
   else if (act === 'resetDatabase') {
     if (!confirm('Czy na pewno chcesz zresetować pamięć podręczną bazy danych i pobrać ją na nowo? Twój postęp nauki (punkty XP i zaliczone zadania) zostanie zachowany!')) {
