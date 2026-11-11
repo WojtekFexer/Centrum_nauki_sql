@@ -4,7 +4,7 @@
 /* ==========================================================================
    0. KONFIGURACJA CHMURY SUPABASE (REST API — RANKING I PROFILE TESTERÓW)
    ========================================================================== */
-const APP_VERSION = 'v14.5';
+const APP_VERSION = 'v14.8';
 const DEFAULT_SUPABASE_URL = 'https://hpfrcykbzuzucglorpkr.supabase.co';
 const DEFAULT_SUPABASE_KEY = 'sb_publishable_5klYjdIKjT35Zl2OtOyGQA_DGxdJCHh';
 
@@ -467,6 +467,7 @@ function defaultState() {
   return {
     xp: 0,
     streak: 1,
+    lastStreakDate: null,
     theme: 'dark',
     unlockedStage: 1,
     diagDone: false,
@@ -474,7 +475,9 @@ function defaultState() {
     tutorialsDone: {},
     completedTasks: {},
     completedVariants: {},
+    completedDiag: {},
     completedLemur: {},
+    stageQuizzes: {},
     pathMode: 'list',
     lemurMode: 'list',
     lemurSubTab: 'tasks',
@@ -510,23 +513,13 @@ try {
     var parsed = JSON.parse(saved);
     state = Object.assign(defaultState(), parsed);
     if (!state.completedVariants) state.completedVariants = {};
+    if (!state.completedDiag) state.completedDiag = {};
     if (!state.completedLemur) state.completedLemur = {};
+    if (!state.stageQuizzes) state.stageQuizzes = {};
     if (!state.completedTasks) state.completedTasks = {};
     if (!state.tutorialsDone) state.tutorialsDone = {};
     if (!Array.isArray(state.gaps)) state.gaps = defaultState().gaps;
     if (!Array.isArray(state.diagSkipped)) state.diagSkipped = [];
-    // v14.5: jeśli w localStorage została stara wartość startowa 1202 XP bez żadnego rozwiązanego zadania i bez profilu, wyzeruj do 0 XP
-    if (
-      state.xp === 1202 &&
-      !state.userProfile &&
-      !state.diagDone &&
-      Object.keys(state.completedVariants).length === 0 &&
-      Object.keys(state.completedLemur).length === 0 &&
-      Object.keys(state.tutorialsDone).length === 0
-    ) {
-      state.xp = 0;
-      state.streak = 1;
-    }
     // Kompatybilność wsteczna: jeśli z poprzednich sesji zaliczono już zadanie podstawowe 1 (klucz ':0'),
     // automatycznie oznacz rozgrzewkę R1-R2 jako zaliczoną, aby nie blokować dotychczasowego postępu.
     (window.PATH_TASKS || []).forEach(function(pt) {
@@ -553,6 +546,13 @@ function saveState() {
 }
 
 var currentTab = 'path';
+var currentModuleType = 'path';
+var currentLessonId = state.activeTaskId || null;
+var currentTaskId = null;
+var taskOpenedAt = Date.now();
+var taskAttemptCount = 0;
+var taskHintsUsed = 0;
+var taskQuickbarClicks = 0;
 var lastExecResult = null;
 var lastExpectedResult = null;
 var lastFeedback = null;
@@ -572,6 +572,11 @@ var uiState = {
   tutorialSlideIdx: 0,
   quizSelected: null,
   quizPassed: false,
+  stageQuizStage: null,
+  stageQuizQuestionIdx: 0,
+  stageQuizScore: 0,
+  stageQuizAnswered: null,
+  stageQuizFinished: false,
   sqlAnimStep: 0,
   sqlAnimRunning: false,
   // v14.5: odwrócony onboarding — najpierw nick (0 XP w Rankingu), potem 4-kartowy samouczek
@@ -775,6 +780,69 @@ function isLessonCoreCompleted(taskOrId) {
   return countTotalLessonSolved(node || taskOrId) >= getNodeUnlockThreshold(node || taskOrId);
 }
 
+function getLocalDateKey(date) {
+  var d = date || new Date();
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+
+function updateDailyStreak(st) {
+  var target = st || state;
+  var today = getLocalDateKey(new Date());
+  var lastDate = target.lastStreakDate;
+  var yesterdayDate = new Date();
+  yesterdayDate.setDate(yesterdayDate.getDate() - 1);
+  var yesterday = getLocalDateKey(yesterdayDate);
+
+  if (!lastDate) {
+    target.streak = 1;
+    target.lastStreakDate = today;
+  } else if (lastDate === yesterday) {
+    target.streak = (Number(target.streak) || 0) + 1;
+    target.lastStreakDate = today;
+  } else if (lastDate < yesterday) {
+    target.streak = 1;
+    target.lastStreakDate = today;
+  }
+  return target.streak;
+}
+
+window.recalculateRealXP = function(st) {
+  var target = st || state;
+  var total = 0;
+  (window.PATH_TASKS || []).forEach(function(task) {
+    var solvedInLesson = 0;
+    (task.variants || []).forEach(function(variant, idx) {
+      var key = getVariantKey(task, idx);
+      var legacyKey = task.id + '__v' + idx;
+      var isSolved = !!(target.completedVariants && (target.completedVariants[key] || target.completedVariants[legacyKey]));
+      if (!isSolved) return;
+      solvedInLesson++;
+      var isWarmup = variant.isWarmup === true || variant.tier === 'warmup' || idx < getNodeWarmupCount(task);
+      total += Number(variant.xp) || (isWarmup ? 10 : 15);
+    });
+    if (solvedInLesson >= getNodeUnlockThreshold(task)) total += 15;
+  });
+  Object.keys(target.completedDiag || {}).forEach(function(id) {
+    if (target.completedDiag[id]) total += 15;
+  });
+  Object.keys(target.completedLemur || {}).forEach(function(id) {
+    if (target.completedLemur[id]) total += 40;
+  });
+  Object.keys(target.tutorialsDone || {}).forEach(function(id) {
+    if (target.tutorialsDone[id]) total += 15;
+  });
+  Object.keys(target.stageQuizzes || {}).forEach(function(id) {
+    var quiz = target.stageQuizzes[id];
+    if (quiz && quiz.passed === true) total += 50;
+  });
+  target.xp = total;
+  if (target === state) {
+    saveState();
+    if (state.userProfile && state.userProfile.nick) syncProfileToCloud(true);
+  }
+  return total;
+};
+
 function isAdvancedUnlocked(taskOrId) {
   if (state && state.testerUnlockAll) return true;
   return isLessonCoreCompleted(taskOrId);
@@ -839,8 +907,9 @@ function isSupabaseConfigured() {
 
 function getTotalSolvedCount() {
   var vCnt = Object.keys((state && state.completedVariants) || {}).length;
+  var dCnt = Object.keys((state && state.completedDiag) || {}).filter(function(id) { return state.completedDiag[id]; }).length;
   var lCnt = Object.keys((state && state.completedLemur) || {}).length;
-  return vCnt + lCnt;
+  return vCnt + dCnt + lCnt;
 }
 
 function getLocalProfilesMap() {
@@ -868,12 +937,15 @@ function saveLocalProfileEntry() {
       state_json: {
         xp: state.xp,
         streak: state.streak,
+        lastStreakDate: state.lastStreakDate,
         unlockedStage: state.unlockedStage,
         diagDone: state.diagDone,
         tutorialsDone: state.tutorialsDone,
         completedTasks: state.completedTasks,
         completedVariants: state.completedVariants,
+        completedDiag: state.completedDiag,
         completedLemur: state.completedLemur,
+        stageQuizzes: state.stageQuizzes,
         gaps: state.gaps
       },
       updated_at: new Date().toISOString()
@@ -885,13 +957,20 @@ function saveLocalProfileEntry() {
 function mergeRemoteStateIntoCurrent(remoteState) {
   if (!remoteState || typeof remoteState !== 'object') return;
   state.xp = Math.max(state.xp || 0, Number(remoteState.xp) || 0);
-  state.streak = Math.max(state.streak || 1, Number(remoteState.streak) || 1);
+  if (remoteState.lastStreakDate && (!state.userProfile || remoteState.lastStreakDate > (state.lastStreakDate || ''))) {
+    state.streak = Number(remoteState.streak) || 1;
+    state.lastStreakDate = remoteState.lastStreakDate;
+  } else if (remoteState.lastStreakDate && remoteState.lastStreakDate === state.lastStreakDate) {
+    state.streak = Math.max(state.streak || 1, Number(remoteState.streak) || 1);
+  }
   state.unlockedStage = Math.max(state.unlockedStage || 1, Number(remoteState.unlockedStage) || 1);
   state.diagDone = Boolean(state.diagDone || remoteState.diagDone);
   state.tutorialsDone = Object.assign({}, remoteState.tutorialsDone || {}, state.tutorialsDone || {});
   state.completedTasks = Object.assign({}, remoteState.completedTasks || {}, state.completedTasks || {});
   state.completedVariants = Object.assign({}, remoteState.completedVariants || {}, state.completedVariants || {});
+  state.completedDiag = Object.assign({}, remoteState.completedDiag || {}, state.completedDiag || {});
   state.completedLemur = Object.assign({}, remoteState.completedLemur || {}, state.completedLemur || {});
+  state.stageQuizzes = Object.assign({}, remoteState.stageQuizzes || {}, state.stageQuizzes || {});
   if (Array.isArray(remoteState.gaps)) {
     if (!Array.isArray(state.gaps)) state.gaps = [];
     remoteState.gaps.forEach(function(rg) {
@@ -926,12 +1005,15 @@ async function syncProfileToCloud(silent) {
     state_json: {
       xp: state.xp,
       streak: state.streak,
+      lastStreakDate: state.lastStreakDate,
       unlockedStage: state.unlockedStage,
       diagDone: state.diagDone,
       tutorialsDone: state.tutorialsDone,
       completedTasks: state.completedTasks,
       completedVariants: state.completedVariants,
+      completedDiag: state.completedDiag,
       completedLemur: state.completedLemur,
+      stageQuizzes: state.stageQuizzes,
       gaps: state.gaps
     },
     updated_at: nowIso
@@ -991,6 +1073,152 @@ async function fetchLeaderboard() {
   uiState.leaderboard = getDisplayLeaderboard();
   if (currentTab === 'profile') render();
   return uiState.leaderboard;
+}
+
+function getTelemetryNick() {
+  return String(state.nick || (state.userProfile && state.userProfile.nick) || 'anon');
+}
+
+function detectDeviceOS() {
+  var ua = navigator.userAgent || '';
+  if (/Windows/i.test(ua)) return 'Windows';
+  if (/Android/i.test(ua)) return 'Android';
+  if (/iPhone|iPad|iPod/i.test(ua)) return 'iOS';
+  if (/Mac OS X|Macintosh/i.test(ua)) return 'macOS';
+  if (/Linux/i.test(ua)) return 'Linux';
+  return 'Unknown';
+}
+
+function createTelemetrySessionId() {
+  try {
+    if (window.crypto && typeof window.crypto.randomUUID === 'function') return window.crypto.randomUUID();
+  } catch (err) {
+    console.warn('Nie udało się utworzyć identyfikatora sesji:', err);
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(char) {
+    var random = Math.random() * 16 | 0;
+    return (char === 'x' ? random : (random & 3 | 8)).toString(16);
+  });
+}
+
+var SQLTelemetry = (function() {
+  var sessionId = createTelemetrySessionId();
+  var sessionStartedAt = Date.now();
+  var sessionReady = Promise.resolve();
+
+  async function send(method, endpoint, payload) {
+    if (!isSupabaseConfigured()) return;
+    try {
+      var response = await fetch(SUPABASE_CONFIG.url.replace(/\/+$/, '') + endpoint, {
+        method: method,
+        headers: {
+          apikey: SUPABASE_CONFIG.anonKey,
+          Authorization: 'Bearer ' + SUPABASE_CONFIG.anonKey,
+          'Content-Type': 'application/json',
+          Prefer: 'return=minimal'
+        },
+        body: JSON.stringify(payload)
+      });
+      if (!response.ok) throw new Error('HTTP ' + response.status + ' dla ' + endpoint);
+    } catch (err) {
+      console.warn('SQLTelemetry: nie udało się wysłać danych:', err);
+    }
+  }
+
+  function getStandaloneStatus() {
+    return !!((window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || window.navigator.standalone);
+  }
+
+  function start() {
+    var startedAt = new Date().toISOString();
+    sessionReady = send('POST', '/rest/v1/app_sessions', {
+      session_id: sessionId,
+      user_nick: getTelemetryNick(),
+      started_at: startedAt,
+      last_ping_at: startedAt,
+      duration_sec: 0,
+      device_os: detectDeviceOS(),
+      screen_width: window.innerWidth,
+      is_standalone: getStandaloneStatus(),
+      app_version: 'v14.8'
+    });
+    return sessionReady;
+  }
+
+  async function ping() {
+    await sessionReady;
+    var now = new Date().toISOString();
+    await send('PATCH', '/rest/v1/app_sessions?session_id=eq.' + encodeURIComponent(sessionId), {
+      last_ping_at: now,
+      duration_sec: Math.max(0, Math.round((Date.now() - sessionStartedAt) / 1000)),
+      user_nick: getTelemetryNick()
+    });
+  }
+
+  async function recordAttempt(payload) {
+    await send('POST', '/rest/v1/task_attempts', payload);
+  }
+
+  return {
+    sessionId: sessionId,
+    sessionStartedAt: sessionStartedAt,
+    start: start,
+    ping: ping,
+    recordAttempt: recordAttempt
+  };
+})();
+
+function setTaskTelemetryContext(moduleType, lessonId, taskId) {
+  if (currentModuleType === moduleType && currentLessonId === lessonId && String(currentTaskId) === String(taskId)) return;
+  currentModuleType = moduleType;
+  currentLessonId = lessonId || null;
+  currentTaskId = taskId;
+  taskOpenedAt = Date.now();
+  taskAttemptCount = 0;
+  taskHintsUsed = 0;
+  taskQuickbarClicks = 0;
+}
+
+function beginTaskAttempt(moduleType, lessonId, taskId) {
+  setTaskTelemetryContext(moduleType, lessonId, taskId);
+  taskAttemptCount++;
+  return {
+    moduleType: currentModuleType,
+    lessonId: currentLessonId,
+    taskId: currentTaskId,
+    attemptNumber: taskAttemptCount,
+    openedAt: taskOpenedAt,
+    hintsUsed: taskHintsUsed,
+    quickbarClicks: taskQuickbarClicks
+  };
+}
+
+function finishTaskAttempt(attempt, userSql, isPassed, checks, errorCategory) {
+  if (!attempt) return;
+  SQLTelemetry.recordAttempt({
+    session_id: SQLTelemetry.sessionId,
+    user_nick: getTelemetryNick(),
+    module_type: attempt.moduleType,
+    lesson_id: attempt.lessonId || null,
+    task_id: String(attempt.taskId),
+    attempt_number: attempt.attemptNumber,
+    time_spent_sec: Math.max(1, Math.round((Date.now() - attempt.openedAt) / 1000)),
+    is_passed: Boolean(isPassed),
+    check_cols_ok: Boolean(checks && checks.colsOk),
+    check_rows_ok: Boolean(checks && checks.rowsOk),
+    check_vals_ok: Boolean(checks && checks.valsOk),
+    error_category: errorCategory || null,
+    hints_used: attempt.hintsUsed,
+    used_quickbar_cnt: attempt.quickbarClicks,
+    submitted_sql: String(userSql || '').slice(0, 500)
+  });
+}
+
+function getAttemptErrorCategory(result, isPassed) {
+  if (isPassed) return null;
+  var message = String(result && result.error ? result.error : '');
+  if (!message) return 'validation';
+  return /syntax|parse|unexpected|token/i.test(message) ? 'syntax' : 'execution';
 }
 
 function getDisplayLeaderboard() {
@@ -1060,7 +1288,6 @@ async function loginOrRegisterTester(rawNick, rawPin) {
             mergeRemoteStateIntoCurrent(remoteRow.state_json);
           } else {
             state.xp = Math.max(state.xp, Number(remoteRow.xp) || 0);
-            state.streak = Math.max(state.streak, Number(remoteRow.streak) || 1);
           }
         }
       }
@@ -1081,16 +1308,18 @@ async function loginOrRegisterTester(rawNick, rawPin) {
     }
   }
 
+  updateDailyStreak(state);
   state.userProfile = {
     nick: nick,
     pinHash: pinHash,
     updatedAt: new Date().toISOString()
   };
+  state.nick = nick;
   state.nickname = nick;
   uiState.authModalOpen = false;
   uiState.authError = '';
+  window.recalculateRealXP(state);
   saveState();
-  await syncProfileToCloud(true);
   return { ok: true, msg: 'Zalogowano jako ' + nick + '!' };
 }
 
@@ -2366,19 +2595,19 @@ function explainSqlExpressionInPolish(rawExpr, aliasName) {
   // 10. Operacje arytmetyczne: A - B, A * B, A / B, A + B
   var subMatch = /^([a-zA-Z0-9_.'()]+)\s*-\s*([a-zA-Z0-9_.'()]+)$/.exec(cleanExpr);
   if (subMatch) {
-    return 'Odejmij kolumnę <code>' + esc(subMatch[2].trim()) + '</code> od kolumny <code>' + esc(subMatch[1].trim()) + '</code> i nazwij wynik <code>' + safeAlias + '</code>:';
+    return 'Odejmij kolumnę <code class="alias-code-pill">' + esc(subMatch[2].trim()) + '</code> od kolumny <code class="alias-code-pill">' + esc(subMatch[1].trim()) + '</code> i nazwij wynik <code class="alias-code-pill alias-target">' + safeAlias + '</code>:';
   }
   var mulMatch = /^([a-zA-Z0-9_.'()]+)\s*\*\s*([a-zA-Z0-9_.'()]+)$/.exec(cleanExpr);
   if (mulMatch) {
-    return 'Pomnóż kolumnę <code>' + esc(mulMatch[1].trim()) + '</code> przez <code>' + esc(mulMatch[2].trim()) + '</code> i nazwij wynik <code>' + safeAlias + '</code>:';
+    return 'Pomnóż kolumnę <code class="alias-code-pill">' + esc(mulMatch[1].trim()) + '</code> razy <code class="alias-code-pill">' + esc(mulMatch[2].trim()) + '</code> i nazwij wynik <code class="alias-code-pill alias-target">' + safeAlias + '</code>:';
   }
   var divMatch = /^([a-zA-Z0-9_.'()]+)\s*\/\s*([a-zA-Z0-9_.'()]+)$/.exec(cleanExpr);
   if (divMatch) {
-    return 'Podziel <code>' + esc(divMatch[1].trim()) + '</code> przez <code>' + esc(divMatch[2].trim()) + '</code> i nazwij wynik <code>' + safeAlias + '</code>:';
+    return 'Podziel kolumnę <code class="alias-code-pill">' + esc(divMatch[1].trim()) + '</code> przez <code class="alias-code-pill">' + esc(divMatch[2].trim()) + '</code> i nazwij wynik <code class="alias-code-pill alias-target">' + safeAlias + '</code>:';
   }
   var addMatch = /^([a-zA-Z0-9_.'()]+)\s*\+\s*([a-zA-Z0-9_.'()]+)$/.exec(cleanExpr);
   if (addMatch) {
-    return 'Dodaj <code>' + esc(addMatch[1].trim()) + '</code> do <code>' + esc(addMatch[2].trim()) + '</code> i nazwij wynik <code>' + safeAlias + '</code>:';
+    return 'Dodaj <code class="alias-code-pill">' + esc(addMatch[1].trim()) + '</code> do <code class="alias-code-pill">' + esc(addMatch[2].trim()) + '</code> i nazwij wynik <code class="alias-code-pill alias-target">' + safeAlias + '</code>:';
   }
 
   // 11. Domyślne wyjaśnienie (v14.5: bez ujawniania gotowego wyrażenia SQL)
@@ -4089,6 +4318,54 @@ function renderTutorialView(task) {
 }
 
 // ZAKŁADKA 1: ŚCIEŻKA (DYNAMICZNA ARCHITEKTURA ZADAŃ + SLAJDY SOLOLEARN + SEKWENCYJNE BLOKADY)
+function renderStageQuizModal() {
+  var stageId = Number(uiState.stageQuizStage);
+  if (!stageId) return '';
+  var questions = (window.STAGE_QUIZZES && window.STAGE_QUIZZES[stageId]) || [];
+  var questionIdx = uiState.stageQuizQuestionIdx || 0;
+  var quizResult = state.stageQuizzes && state.stageQuizzes[stageId];
+  var content = '';
+
+  if (uiState.stageQuizFinished) {
+    var passed = !!(quizResult && quizResult.passed);
+    content = '<div class="stage-quiz-result">' +
+      '<div class="stage-quiz-result-icon">' + (passed ? '🎉' : '📚') + '</div>' +
+      '<h3>' + (passed ? 'Quiz zaliczony!' : 'Tym razem bez zaliczenia') + '</h3>' +
+      '<p>Wynik: <strong>' + uiState.stageQuizScore + '/5</strong>' + (passed ? ' · <strong>+50 XP</strong>' : ' · wymagane 4/5') + '</p>' +
+      (quizResult && quizResult.passed && uiState.stageQuizScore < 4 ? '<p class="small muted">Wcześniejsze zaliczenie i zdobyte XP pozostają zachowane.</p>' : '') +
+      '<button type="button" class="btn primary" data-act="closeStageQuiz">Gotowe</button>' +
+    '</div>';
+  } else if (questions.length && questions[questionIdx]) {
+    var q = questions[questionIdx];
+    var selected = uiState.stageQuizAnswered;
+    content = '<div class="stage-quiz-progress">Pytanie ' + (questionIdx + 1) + ' z ' + questions.length + '</div>' +
+      '<h3 class="stage-quiz-question">' + esc(q.q) + '</h3>' +
+      '<div class="stage-quiz-options">' + q.options.map(function(option, index) {
+        var cls = 'stage-quiz-option';
+        if (selected !== null && selected !== undefined) {
+          if (index === q.correct) cls += ' correct';
+          else if (index === selected) cls += ' wrong';
+        }
+        return '<button type="button" class="' + cls + '" data-act="answerStageQuiz" data-option="' + index + '"' + (selected !== null && selected !== undefined ? ' disabled' : '') + '>' +
+          '<span class="quiz-letter">' + String.fromCharCode(65 + index) + '</span><span>' + esc(option) + '</span>' +
+        '</button>';
+      }).join('') + '</div>' +
+      (selected !== null && selected !== undefined
+        ? '<div class="stage-quiz-explanation ' + (selected === q.correct ? 'correct' : 'wrong') + '"><strong>' + (selected === q.correct ? '✅ Dobrze!' : '❌ Nie tym razem.') + '</strong> ' + esc(q.explain) + '</div>' +
+          '<button type="button" class="btn primary" data-act="nextStageQuizQuestion">' + (questionIdx + 1 === questions.length ? 'Zobacz wynik →' : 'Następne pytanie →') + '</button>'
+        : '');
+  }
+
+  return '<div class="stage-quiz-backdrop" role="presentation">' +
+    '<section class="stage-quiz-modal" role="dialog" aria-modal="true" aria-labelledby="stageQuizTitle">' +
+      '<header class="stage-quiz-header"><div><span class="stage-quiz-kicker">🎓 PODSUMOWANIE DZIAŁU ' + stageId + '</span><h2 id="stageQuizTitle">Quiz Działu ' + stageId + '</h2></div>' +
+        '<button type="button" class="stage-quiz-close" data-act="closeStageQuiz" aria-label="Zamknij quiz">✕</button>' +
+      '</header>' +
+      '<div class="stage-quiz-content">' + content + '</div>' +
+    '</section>' +
+  '</div>';
+}
+
 function renderPathTab() {
   var activeTask = PATH_TASKS.find(function(t) { return t.id === state.activeTaskId; }) || PATH_TASKS[0];
 
@@ -4251,6 +4528,13 @@ function renderPathTab() {
       '</button>';
     });
     h += '</div></div>';
+    var stageQuizResult = state.stageQuizzes && state.stageQuizzes[st.id];
+    var stageQuizPassed = !!(stageQuizResult && stageQuizResult.passed);
+    h += '<button type="button" class="stage-quiz-card' + (stageQuizPassed ? ' passed' : '') + '" data-act="openStageQuiz" data-stage="' + st.id + '">' +
+      '<span class="stage-quiz-card-icon">🎓</span>' +
+      '<span class="stage-quiz-card-copy"><strong>Quiz Działu ' + st.id + '</strong><small>5 pytań · +50 XP</small></span>' +
+      '<span class="stage-quiz-status">' + (stageQuizPassed ? '✓ Zaliczone (' + Number(stageQuizResult.score || 0) + '/5)' : 'Do zaliczenia') + '</span>' +
+    '</button>';
   });
 
   h += renderPwaInstallBanner();
@@ -4490,7 +4774,53 @@ var SUPABASE_SQL_SNIPPET = [
   '  updated_at TIMESTAMPTZ DEFAULT now()',
   ');',
   'ALTER TABLE public.sql_profiles ENABLE ROW LEVEL SECURITY;',
-  'CREATE POLICY "Public test access" ON public.sql_profiles FOR ALL USING (true) WITH CHECK (true);'
+  'DROP POLICY IF EXISTS "Public test access" ON public.sql_profiles;',
+  'CREATE POLICY "Public test access" ON public.sql_profiles FOR ALL USING (true) WITH CHECK (true);',
+  '',
+  'CREATE TABLE IF NOT EXISTS public.app_sessions (',
+  '  session_id UUID PRIMARY KEY,',
+  '  user_nick TEXT NOT NULL,',
+  '  started_at TIMESTAMPTZ NOT NULL,',
+  '  last_ping_at TIMESTAMPTZ NOT NULL,',
+  '  duration_sec INTEGER NOT NULL DEFAULT 0,',
+  '  device_os TEXT,',
+  '  screen_width INTEGER,',
+  '  is_standalone BOOLEAN NOT NULL DEFAULT false,',
+  '  app_version TEXT',
+  ');',
+  'ALTER TABLE public.app_sessions ENABLE ROW LEVEL SECURITY;',
+  'DROP POLICY IF EXISTS "Public session telemetry insert" ON public.app_sessions;',
+  'DROP POLICY IF EXISTS "Public session telemetry update" ON public.app_sessions;',
+  'DROP POLICY IF EXISTS "Public session telemetry select" ON public.app_sessions;',
+  'CREATE POLICY "Public session telemetry insert" ON public.app_sessions FOR INSERT WITH CHECK (true);',
+  'CREATE POLICY "Public session telemetry update" ON public.app_sessions FOR UPDATE USING (true) WITH CHECK (true);',
+  'CREATE POLICY "Public session telemetry select" ON public.app_sessions FOR SELECT USING (true);',
+  'GRANT INSERT, UPDATE, SELECT ON public.app_sessions TO anon, authenticated;',
+  '',
+  'CREATE TABLE IF NOT EXISTS public.task_attempts (',
+  '  id BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,',
+  '  session_id UUID NOT NULL,',
+  '  user_nick TEXT NOT NULL,',
+  '  module_type TEXT NOT NULL,',
+  '  lesson_id TEXT,',
+  '  task_id TEXT NOT NULL,',
+  '  attempt_number INTEGER NOT NULL,',
+  '  time_spent_sec INTEGER NOT NULL,',
+  '  is_passed BOOLEAN NOT NULL DEFAULT false,',
+  '  check_cols_ok BOOLEAN NOT NULL DEFAULT false,',
+  '  check_rows_ok BOOLEAN NOT NULL DEFAULT false,',
+  '  check_vals_ok BOOLEAN NOT NULL DEFAULT false,',
+  '  error_category TEXT,',
+  '  hints_used INTEGER NOT NULL DEFAULT 0,',
+  '  used_quickbar_cnt INTEGER NOT NULL DEFAULT 0,',
+  '  submitted_sql TEXT,',
+  '  created_at TIMESTAMPTZ NOT NULL DEFAULT now()',
+  ');',
+  'ALTER TABLE public.task_attempts ENABLE ROW LEVEL SECURITY;',
+  'DROP POLICY IF EXISTS "Public task attempt telemetry" ON public.task_attempts;',
+  'CREATE POLICY "Public task attempt telemetry" ON public.task_attempts FOR INSERT WITH CHECK (true);',
+  'GRANT INSERT ON public.task_attempts TO anon, authenticated;',
+  'GRANT USAGE, SELECT ON SEQUENCE public.task_attempts_id_seq TO anon, authenticated;'
 ].join('\n');
 
 function renderOnboardingModal() {
@@ -4663,6 +4993,7 @@ window.closeTopBarModal = function() {
   if (liveTa) {
     state.editorCode = liveTa.value;
   }
+  if (e.target.closest('.quick-chip-btn')) taskQuickbarClicks++;
   uiState.topbarModal = null;
   var bd = document.querySelector('.topbar-modal-backdrop');
   if (bd && bd.parentNode) {
@@ -4985,7 +5316,7 @@ function render() {
                : currentTab === 'lemur' ? renderLemurTab()
                : currentTab === 'schema' ? renderSchemaTab()
                : renderProfileTab();
-  v.innerHTML = mainHtml + renderOnboardingModal() + renderAuthModal() + renderTopbarModal();
+  v.innerHTML = mainHtml + renderOnboardingModal() + renderAuthModal() + renderTopbarModal() + renderStageQuizModal();
 
   // v14.5: Bottom Sheet zadań/lekcji poza kontenerem nagłówka (bezpośrednio w <body>)
   var sheetRoot = document.getElementById('taskSheetRoot');
@@ -5158,9 +5489,62 @@ document.addEventListener('click', async function(e) {
   var el = e.target.closest('[data-act]');
   if (!el) return;
   var act = el.dataset.act;
+  if (act === 'stepHint' || act === 'aiHint' || act === 'lemurTrapHint') taskHintsUsed++;
 
-  if (act === 'tab') {
+  if (act === 'openStageQuiz') {
+    var stageId = Number(el.dataset.stage);
+    if (!window.STAGE_QUIZZES || !window.STAGE_QUIZZES[stageId]) {
+      console.error('Brak pytań quizu dla działu ' + stageId);
+      return;
+    }
+    uiState.stageQuizStage = stageId;
+    uiState.stageQuizQuestionIdx = 0;
+    uiState.stageQuizScore = 0;
+    uiState.stageQuizAnswered = null;
+    uiState.stageQuizFinished = false;
+    render();
+  }
+  else if (act === 'answerStageQuiz') {
+    var answerStageId = Number(uiState.stageQuizStage);
+    var answerQuiz = window.STAGE_QUIZZES && window.STAGE_QUIZZES[answerStageId];
+    var answerIndex = Number(uiState.stageQuizQuestionIdx) || 0;
+    if (uiState.stageQuizAnswered !== null || !answerQuiz || !answerQuiz[answerIndex]) return;
+    var selectedOption = Number(el.dataset.option);
+    uiState.stageQuizAnswered = selectedOption;
+    if (selectedOption === answerQuiz[answerIndex].correct) uiState.stageQuizScore++;
+    render();
+  }
+  else if (act === 'nextStageQuizQuestion') {
+    var nextStageId = Number(uiState.stageQuizStage);
+    var nextQuiz = window.STAGE_QUIZZES && window.STAGE_QUIZZES[nextStageId];
+    if (!nextQuiz || uiState.stageQuizAnswered === null) return;
+    if (uiState.stageQuizQuestionIdx + 1 < nextQuiz.length) {
+      uiState.stageQuizQuestionIdx++;
+      uiState.stageQuizAnswered = null;
+    } else {
+      if (!state.stageQuizzes) state.stageQuizzes = {};
+      var previousQuizResult = state.stageQuizzes[nextStageId] || {};
+      state.stageQuizzes[nextStageId] = {
+        passed: previousQuizResult.passed === true || uiState.stageQuizScore >= 4,
+        score: Math.max(Number(previousQuizResult.score) || 0, uiState.stageQuizScore),
+        total: 5
+      };
+      uiState.stageQuizFinished = true;
+      window.recalculateRealXP(state);
+    }
+    render();
+  }
+  else if (act === 'closeStageQuiz') {
+    uiState.stageQuizStage = null;
+    uiState.stageQuizAnswered = null;
+    uiState.stageQuizFinished = false;
+    render();
+  }
+  else if (act === 'tab') {
     currentTab = el.dataset.tab;
+    if (currentTab === 'diag' && state.diagIdx < DIAG_QUESTIONS.length) {
+      setTaskTelemetryContext('diagnosis', null, 'diag_' + (state.diagIdx + 1));
+    }
     lastFeedback = null;
     lastExecResult = null;
     lastExpectedResult = null;
@@ -5399,6 +5783,7 @@ document.addEventListener('click', async function(e) {
     uiState.taskDropdownOpen = false;
     var t = PATH_TASKS.find(function(x) { return x.id === state.activeTaskId; });
     state.activeVariantIdx = t ? getFirstUnsolvedStepIdx(t) : 0;
+    if (t) setTaskTelemetryContext('path', t.id, getVariantKey(t, state.activeVariantIdx));
     resetTaskContextUi();
     uiState.tutorialSlideIdx = 0;
     uiState.selectedClause = null;
@@ -5424,6 +5809,7 @@ document.addEventListener('click', async function(e) {
     }) || PATH_TASKS.find(function(pt) { return pt.id === state.activeTaskId && isLessonUnlocked(pt.id); }) || PATH_TASKS[0];
     state.activeTaskId = nextTask.id;
     state.activeVariantIdx = getFirstUnsolvedStepIdx(nextTask);
+    setTaskTelemetryContext('path', nextTask.id, getVariantKey(nextTask, state.activeVariantIdx));
     resetTaskContextUi();
     uiState.tutorialSlideIdx = 0;
     uiState.selectedClause = null;
@@ -5503,9 +5889,7 @@ document.addEventListener('click', async function(e) {
       uiState.quizPassed = true;
       if (!state.tutorialsDone[curLesson.id]) {
         state.tutorialsDone[curLesson.id] = true;
-        state.xp += 15;
-        saveState();
-        syncProfileToCloud(true);
+        window.recalculateRealXP(state);
         toast('🎉 Teoria zaliczona! +15 XP');
       }
     }
@@ -5572,6 +5956,8 @@ document.addEventListener('click', async function(e) {
   else if (act === 'prevStep') {
     if (state.activeVariantIdx > 0) {
       state.activeVariantIdx--;
+      var prevTaskTelemetry = PATH_TASKS.find(function(x) { return x.id === state.activeTaskId; }) || PATH_TASKS[0];
+      setTaskTelemetryContext('path', prevTaskTelemetry.id, getVariantKey(prevTaskTelemetry, state.activeVariantIdx));
       uiState.taskDropdownOpen = false;
       resetTaskContextUi();
       state.editorCode = '';
@@ -5594,6 +5980,7 @@ document.addEventListener('click', async function(e) {
         return;
       }
       state.activeVariantIdx = nextIdx;
+      setTaskTelemetryContext('path', curTNext.id, getVariantKey(curTNext, nextIdx));
       uiState.taskDropdownOpen = false;
       resetTaskContextUi();
       state.editorCode = '';
@@ -5618,6 +6005,7 @@ document.addEventListener('click', async function(e) {
       return;
     }
     state.activeVariantIdx = reqIdxJump;
+    setTaskTelemetryContext('path', curTJump.id, getVariantKey(curTJump, reqIdxJump));
     uiState.taskDropdownOpen = false;
     resetTaskContextUi();
     state.editorCode = '';
@@ -5635,6 +6023,7 @@ document.addEventListener('click', async function(e) {
     var nextStepIdx = (state.activeVariantIdx + 1);
     if (nextStepIdx < curTaskStep.variants.length) {
       state.activeVariantIdx = nextStepIdx;
+      setTaskTelemetryContext('path', curTaskStep.id, getVariantKey(curTaskStep, nextStepIdx));
       uiState.taskDropdownOpen = false;
       resetTaskContextUi();
       state.editorCode = '';
@@ -5696,6 +6085,7 @@ document.addEventListener('click', async function(e) {
       nextIdx = unlockedIndices[(curPos + 1) % availLen];
     }
     state.activeVariantIdx = nextIdx;
+    setTaskTelemetryContext('path', curTask.id, getVariantKey(curTask, nextIdx));
     resetTaskContextUi();
     state.editorCode = '';
     lastExecResult = null;
@@ -5713,6 +6103,8 @@ document.addEventListener('click', async function(e) {
     var unlockThresh = getNodeUnlockThreshold(task);
     var vIdx = state.activeVariantIdx % totalTaskVars;
     var variant = task.variants[vIdx];
+    var pathAttempt = beginTaskAttempt('path', task.id, getVariantKey(task, vIdx));
+    var pathSubmittedSql = state.editorCode;
     lastExecResult = await runQuery(state.editorCode);
     var expRes = await runQuery(variant.sol);
     if (expRes && !expRes.error && expRes.columns) {
@@ -5720,6 +6112,7 @@ document.addEventListener('click', async function(e) {
     }
     var cmp = compareResults(lastExecResult, expRes, variant.order, variant.sol);
     lastChecklist = buildValidationChecklist(lastExecResult, expRes, variant.order, variant.sol);
+    finishTaskAttempt(pathAttempt, pathSubmittedSql, cmp.ok, lastChecklist, getAttemptErrorCategory(lastExecResult, cmp.ok));
     if (cmp.ok) {
       lastExpectedResult = null;
       var wasCoreUnlocked = isLessonCoreCompleted(task.id);
@@ -5727,14 +6120,12 @@ document.addEventListener('click', async function(e) {
       var isWarmStep = variant.isWarmup === true || variant.tier === 'warmup' || vIdx < warmupTaskCnt;
       if (!state.completedVariants[vKey]) {
         state.completedVariants[vKey] = true;
-        state.xp += isWarmStep ? 10 : 15;
       }
       var coreAfter = isLessonCoreCompleted(task.id);
       var unlockBonusMsg = '';
       if (coreAfter) {
         if (!state.completedTasks[task.id]) {
           state.completedTasks[task.id] = true;
-          state.xp += 15;
         }
         // Sprawdź czy cały etap ma ukończone lekcje podstawowe, by podbić unlockedStage
         var stageLessons = PATH_TASKS.filter(function(pt) { return pt.stage === task.stage; });
@@ -5755,8 +6146,8 @@ document.addEventListener('click', async function(e) {
       }
       var curStepLbl = getStepSwitchLabel(vIdx, task);
       lastFeedback = { type: 'ok', title: '✅ ' + curStepLbl + ' zaliczone! (+' + (isWarmStep ? 10 : 15) + ' XP)', msg: cmp.msg + unlockBonusMsg };
+      window.recalculateRealXP(state);
       saveState();
-      syncProfileToCloud(true);
     } else {
       lastExpectedResult = lastExecResult.error ? null : expRes;
       var pathTrap = task.detectTrap ? task.detectTrap(state.editorCode, lastExecResult) : null;
@@ -5783,6 +6174,8 @@ document.addEventListener('click', async function(e) {
   }
   else if (act === 'submitDiag') {
     var dq = DIAG_QUESTIONS[state.diagIdx];
+    var diagAttempt = beginTaskAttempt('diagnosis', null, 'diag_' + (state.diagIdx + 1));
+    var diagSubmittedSql = state.editorCode;
     lastExecResult = await runQuery(state.editorCode);
     var dExp = await runQuery(dq.sol);
     if (dExp && !dExp.error && dExp.columns) {
@@ -5790,10 +6183,13 @@ document.addEventListener('click', async function(e) {
     }
     var dCmp = compareResults(lastExecResult, dExp, dq.order, dq.sol);
     lastChecklist = buildValidationChecklist(lastExecResult, dExp, dq.order, dq.sol);
+    finishTaskAttempt(diagAttempt, diagSubmittedSql, dCmp.ok, lastChecklist, getAttemptErrorCategory(lastExecResult, dCmp.ok));
     if (dCmp.ok) {
-      state.diagScore++;
-      state.xp += 15;
-      toast('🎉 Dobrze! Pytanie ' + (state.diagIdx + 1) + '/' + DIAG_QUESTIONS.length + ' zaliczone (+15 XP).');
+      var diagCompletionId = String(state.diagIdx);
+      var isFirstDiagCompletion = !state.completedDiag[diagCompletionId];
+      state.completedDiag[diagCompletionId] = true;
+      if (isFirstDiagCompletion) state.diagScore++;
+      toast('🎉 Dobrze! Pytanie ' + (state.diagIdx + 1) + '/' + DIAG_QUESTIONS.length + ' zaliczone' + (isFirstDiagCompletion ? ' (+15 XP).' : ' (XP przyznano wcześniej).'));
       lastExpectedResult = null;
       var isLast = (state.diagIdx + 1) >= DIAG_QUESTIONS.length;
       var nextBtnText = isLast ? '🏆 Zobacz podsumowanie Diagnozy →' : ('Przejdź do pytania ' + (state.diagIdx + 2) + ' z ' + DIAG_QUESTIONS.length + ' →');
@@ -5804,8 +6200,8 @@ document.addEventListener('click', async function(e) {
         diagNext: true,
         nextBtnText: nextBtnText
       };
+      window.recalculateRealXP(state);
       saveState();
-      syncProfileToCloud(true);
       render();
       scrollToResult();
     } else {
@@ -5823,6 +6219,7 @@ document.addEventListener('click', async function(e) {
     state.diagSkipped.push(sq.lvl);
     registerGapTrap(sq.gap, sq.title, 'Zagadnienie pominięte podczas Diagnozy.');
     state.diagIdx++;
+    if (state.diagIdx < DIAG_QUESTIONS.length) setTaskTelemetryContext('diagnosis', null, 'diag_' + (state.diagIdx + 1));
     resetTaskContextUi();
     lastExecResult = null;
     lastExpectedResult = null;
@@ -5836,6 +6233,7 @@ document.addEventListener('click', async function(e) {
   }
   else if (act === 'nextDiagQuestion') {
     state.diagIdx++;
+    if (state.diagIdx < DIAG_QUESTIONS.length) setTaskTelemetryContext('diagnosis', null, 'diag_' + (state.diagIdx + 1));
     resetTaskContextUi();
     lastExecResult = null;
     lastExpectedResult = null;
@@ -5894,6 +6292,7 @@ document.addEventListener('click', async function(e) {
   }
   else if (act === 'openLemurTask') {
     state.activeLemurId = el.dataset.id;
+    setTaskTelemetryContext('recruitment', null, state.activeLemurId);
     state.lemurMode = 'solve';
     resetTaskContextUi();
     state.editorCode = '';
@@ -5919,6 +6318,8 @@ document.addEventListener('click', async function(e) {
   }
   else if (act === 'checkLemurTask') {
     var lt = LEMUR_TASKS.find(function(x) { return x.id === state.activeLemurId; }) || LEMUR_TASKS[0];
+    var lemurAttempt = beginTaskAttempt('recruitment', null, lt.id);
+    var lemurSubmittedSql = state.editorCode;
     lastExecResult = await runQuery(state.editorCode);
     var lExp = await runQuery(lt.sol);
     if (lExp && !lExp.error && lExp.columns) {
@@ -5926,15 +6327,15 @@ document.addEventListener('click', async function(e) {
     }
     var lCmp = compareResults(lastExecResult, lExp, !!lt.order, lt.sol);
     lastChecklist = buildValidationChecklist(lastExecResult, lExp, !!lt.order, lt.sol);
+    finishTaskAttempt(lemurAttempt, lemurSubmittedSql, lCmp.ok, lastChecklist, getAttemptErrorCategory(lastExecResult, lCmp.ok));
     if (lCmp.ok) {
       lastExpectedResult = null;
       if (!state.completedLemur[lt.id]) {
         state.completedLemur[lt.id] = true;
-        state.xp += 40;
       }
       lastFeedback = { type: 'ok', title: '✅ Zadanie zaliczone! (+40 XP)', msg: lCmp.msg };
+      window.recalculateRealXP(state);
       saveState();
-      syncProfileToCloud(true);
     } else {
       lastExpectedResult = lastExecResult.error ? null : lExp;
       var trapMsg = lt.detectTrap ? lt.detectTrap(state.editorCode, lastExecResult) : null;
@@ -6145,6 +6546,13 @@ document.addEventListener('click', async function(e) {
 if ('scrollRestoration' in history) {
   try { history.scrollRestoration = 'manual'; } catch (e) {}
 }
+updateDailyStreak(state);
+window.recalculateRealXP(state);
+var initialTask = PATH_TASKS.find(function(task) { return task.id === state.activeTaskId; }) || PATH_TASKS[0];
+if (initialTask) setTaskTelemetryContext('path', initialTask.id, getVariantKey(initialTask, state.activeVariantIdx || 0));
+SQLTelemetry.start();
+setInterval(function() { SQLTelemetry.ping(); }, 60000);
+document.addEventListener('visibilitychange', function() { SQLTelemetry.ping(); });
 render();
 window.scrollTo(0, 0);
 if (document.documentElement) document.documentElement.scrollTop = 0;
@@ -6161,7 +6569,7 @@ if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.
   });
 
   window.addEventListener('load', function() {
-    navigator.serviceWorker.register('./sw.js?v=14.5', { updateViaCache: 'none' }).then(function(registration) {
+    navigator.serviceWorker.register('./sw.js?v=14.8', { updateViaCache: 'none' }).then(function(registration) {
       document.addEventListener('visibilitychange', function() {
         if (document.visibilityState === 'visible') {
           registration.update().catch(function() {});
@@ -6171,4 +6579,3 @@ if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.
   });
 }
 })();
-

@@ -2555,6 +2555,65 @@ var LESSON_TUTORIALS = {
   ]
 };
 
+var STAGE_QUIZZES = {
+  1: [
+    { q: "Która klauzula wskazuje kolumny, które mają znaleźć się w wyniku zapytania?", options: ["SELECT", "FROM", "WHERE", "GROUP BY"], correct: 0, explain: "SELECT wybiera kolumny wyniku, a FROM wskazuje tabelę źródłową." },
+    { q: "Jak zwrócić tylko unikalne wartości kolumny city?", options: ["SELECT UNIQUE city", "SELECT DISTINCT city", "SELECT city UNIQUE", "SELECT ONLY city"], correct: 1, explain: "DISTINCT usuwa powtarzające się wiersze z wyniku." },
+    { q: "Jak posortować filmy od najnowszego roku do najstarszego?", options: ["ORDER BY release_year ASC", "SORT release_year DESC", "ORDER BY release_year DESC", "GROUP BY release_year DESC"], correct: 2, explain: "DESC sortuje malejąco, więc najnowsze lata pojawią się na początku." },
+    { q: "Jak ograniczyć wynik do 10 wierszy?", options: ["TOP 10", "LIMIT 10", "ROWS 10", "TAKE 10"], correct: 1, explain: "W PostgreSQL ograniczenie liczby wierszy zapisuje się klauzulą LIMIT." },
+    { q: "Co robi AS w wyrażeniu SELECT amount * 4 AS amount_pln?", options: ["Filtruje wartości amount", "Nadaje kolumnie wynikowej alias amount_pln", "Sortuje wynik", "Łączy tabele"], correct: 1, explain: "AS nadaje wyrażeniu nazwę widoczną jako nagłówek kolumny wyniku." }
+  ],
+  2: [
+    { q: "Która klauzula filtruje pojedyncze wiersze przed grupowaniem?", options: ["HAVING", "WHERE", "ORDER BY", "LIMIT"], correct: 1, explain: "WHERE wybiera wiersze przed etapem agregacji." },
+    { q: "Który warunek wybierze rating G lub R, ale tylko dla filmów długości od 50 do 90 minut?", options: ["rating IN ('G', 'R') AND length BETWEEN 50 AND 90", "rating = 'G' AND rating = 'R' OR length = 50", "rating BETWEEN ('G', 'R')", "rating IN ('G', 'R') OR length NOT BETWEEN 50 AND 90"], correct: 0, explain: "IN sprawdza listę ratingów, BETWEEN obejmuje oba końce zakresu, a AND wymaga spełnienia obu warunków." },
+    { q: "Kiedy warunek a = 1 OR b = 2 jest prawdziwy?", options: ["Tylko gdy oba warunki są prawdziwe", "Gdy co najmniej jeden z warunków jest prawdziwy", "Tylko gdy oba warunki są fałszywe", "Gdy a i b mają ten sam typ"], correct: 1, explain: "OR łączy warunki alternatywne; nawiasy pomagają jawnie określić ich kolejność względem AND." },
+    { q: "Jak znaleźć tekst zawierający literę a bez rozróżniania wielkości liter?", options: ["name LIKE 'a'", "name ILIKE '%a%'", "name = '%a%'", "name IS '%a%'"], correct: 1, explain: "ILIKE dopasowuje tekst bez rozróżniania wielkości liter, a % oznacza dowolny ciąg znaków." },
+    { q: "Jak poprawnie znaleźć wiersze, w których email nie ma wartości?", options: ["email = NULL", "email == NULL", "email IS NULL", "email IN NULL"], correct: 2, explain: "NULL sprawdza się przez IS NULL, a nie operatorem równości." }
+  ],
+  3: [
+    { q: "Co zwraca COUNT(*)?", options: ["Liczbę wszystkich wierszy", "Sumę wszystkich kolumn", "Liczbę różnych kolumn", "Średnią wierszy"], correct: 0, explain: "COUNT(*) liczy wiersze, również te, w których konkretne kolumny zawierają NULL." },
+    { q: "Jak policzyć sumę amount dla każdego customer_id?", options: ["SELECT customer_id, SUM(amount) FROM payment GROUP BY customer_id", "SELECT customer_id, SUM(amount) FROM payment ORDER BY customer_id", "SELECT SUM(amount) FROM payment WHERE customer_id", "SELECT customer_id, COUNT(amount) FROM payment"], correct: 0, explain: "Każda nieagregowana kolumna w wyniku agregacji musi należeć do GROUP BY." },
+    { q: "Która funkcja oblicza średnią wartość kolumny?", options: ["SUM()", "AVG()", "MEAN()", "MID()"], correct: 1, explain: "AVG() oblicza średnią arytmetyczną wartości nie-NULL." },
+    { q: "Czym różnią się MIN() i MAX()?", options: ["MIN liczy wiersze, MAX liczy NULL", "MIN zwraca najmniejszą, a MAX największą wartość", "MIN grupuje, MAX sortuje", "Nie różnią się"], correct: 1, explain: "MIN i MAX zwracają odpowiednio najmniejszą i największą wartość w grupie." },
+    { q: "Która klauzula filtruje grupy po wykonaniu agregacji?", options: ["WHERE", "HAVING", "ON", "LIMIT"], correct: 1, explain: "HAVING filtruje utworzone grupy, często na podstawie wyniku funkcji agregującej." }
+  ],
+  4: [
+    { q: "Jak zamienić tekst w kolumnie name na wielkie litery?", options: ["UPPER(name)", "CAPITAL(name)", "TO_UPPER(name)", "BIG(name)"], correct: 0, explain: "Funkcja UPPER() zwraca tekst zapisany wielkimi literami." },
+    { q: "Który zapis zaokrągla amount do dwóch miejsc po przecinku?", options: ["ROUND(amount, 2)", "CEIL(amount, 2)", "TRUNCATE(amount, 2)", "DECIMAL(amount, 2)"], correct: 0, explain: "ROUND(wartość, liczba_miejsc) zaokrągla liczbę do wskazanej precyzji." },
+    { q: "Jak pobrać rok z daty payment_date w PostgreSQL?", options: ["YEAR(payment_date)", "EXTRACT(YEAR FROM payment_date)", "DATE_YEAR(payment_date)", "GETYEAR payment_date"], correct: 1, explain: "EXTRACT(YEAR FROM data) pobiera rok z wartości daty." },
+    { q: "Co zwróci CASE WHEN amount >= 10 THEN 'duża' ELSE 'mała' END dla amount = 12?", options: ["NULL", "duża", "mała", "Błąd składni"], correct: 1, explain: "Warunek jest prawdziwy, więc CASE zwraca wartość po THEN." },
+    { q: "Które stwierdzenie poprawnie opisuje COALESCE i NULLIF?", options: ["COALESCE zamienia NULL na wartość zapasową, a NULLIF zwraca NULL, gdy argumenty są równe", "COALESCE usuwa wiersz, a NULLIF zawsze zwraca 0", "Obie funkcje sortują wartości NULL na końcu", "NULLIF zastępuje NULL pierwszą wartością z listy"], correct: 0, explain: "COALESCE zwraca pierwszą nie-NULL wartość, a NULLIF(x, y) zwraca NULL, gdy x = y." }
+  ],
+  5: [
+    { q: "Czym zwykle jest klucz obcy?", options: ["Kolumną wskazującą rekord w innej tabeli", "Indeksem sortującym tabelę", "Aliasem tabeli", "Warunkiem WHERE"], correct: 0, explain: "Klucz obcy reprezentuje relację i odwołuje się do klucza w innej tabeli." },
+    { q: "Które wiersze zachowuje INNER JOIN?", options: ["Wszystkie z lewej tabeli", "Tylko wiersze z dopasowaniem po obu stronach", "Wszystkie z prawej tabeli", "Tylko niedopasowane"], correct: 1, explain: "INNER JOIN zwraca wyłącznie rekordy pasujące do warunku łączenia." },
+    { q: "Co zachowuje LEFT JOIN, gdy nie ma dopasowania w prawej tabeli?", options: ["Pomija wiersz lewej tabeli", "Zachowuje wiersz lewej tabeli, a kolumny prawej wypełnia NULL", "Zwraca tylko prawą tabelę", "Zamienia NULL na 0"], correct: 1, explain: "LEFT JOIN zachowuje wszystkie wiersze z lewej strony." },
+    { q: "Gdzie umieścić warunek dopasowania wierszy w JOIN?", options: ["ON", "ORDER BY", "LIMIT", "SELECT"], correct: 0, explain: "ON definiuje kryterium dopasowania łączonych wierszy." },
+    { q: "Dlaczego filtr prawej tabeli w WHERE może zmienić wynik LEFT JOIN?", options: ["WHERE zawsze usuwa duplikaty", "Warunek może odrzucić wiersze z NULL po prawej stronie", "WHERE zamienia tekst w liczbę", "LEFT JOIN nie obsługuje WHERE"], correct: 1, explain: "Wiersze bez dopasowania mają NULL po prawej stronie, więc filtr w WHERE może je usunąć." }
+  ],
+  6: [
+    { q: "Do czego służy podzapytanie?", options: ["Do umieszczenia zapytania wewnątrz innego zapytania", "Do tworzenia indeksu", "Do zmiany typu kolumny", "Do sortowania bez ORDER BY"], correct: 0, explain: "Podzapytanie to zapytanie użyte jako część innego zapytania." },
+    { q: "Co sprawdza EXISTS (subquery)?", options: ["Czy podzapytanie zwróciło co najmniej jeden wiersz", "Czy kolumna istnieje w schemacie", "Czy wynik jest unikalny", "Czy podzapytanie zwraca dokładnie jeden wiersz"], correct: 0, explain: "EXISTS jest prawdziwe, gdy podzapytanie zwróci przynajmniej jeden wiersz." },
+    { q: "Jaki jest podstawowy wymóg UNION?", options: ["Obie tabele muszą mieć identyczne nazwy", "Zapytania muszą zwracać zgodną liczbę kolumn o zgodnych typach", "Oba zapytania muszą mieć ORDER BY", "Wynik zawsze zachowuje duplikaty"], correct: 1, explain: "Każda część UNION musi zwracać tę samą liczbę zgodnych typów kolumn." },
+    { q: "Czym UNION ALL różni się od UNION?", options: ["UNION ALL zachowuje duplikaty", "UNION ALL sortuje malejąco", "UNION ALL działa tylko dla jednej tabeli", "Nie może zwracać NULL"], correct: 0, explain: "UNION usuwa duplikaty, natomiast UNION ALL zachowuje wszystkie wiersze." },
+    { q: "Co wprowadza klauzula WITH?", options: ["Wyrażenie CTE dostępne w głównym zapytaniu", "Warunek filtrowania", "Klucz obcy", "Sortowanie wyniku"], correct: 0, explain: "WITH definiuje nazwany wynik pośredni (CTE), do którego odwołuje się dalsza część zapytania." }
+  ],
+  7: [
+    { q: "Do czego służy klauzula OVER()?", options: ["Definiuje zakres działania funkcji okna", "Usuwa duplikaty", "Łączy tabele", "Ogranicza liczbę wierszy"], correct: 0, explain: "OVER() zmienia funkcję agregującą lub rankingową w funkcję okna działającą na wierszach." },
+    { q: "Co robi PARTITION BY w funkcji okna?", options: ["Dzieli dane na grupy obliczeń bez zwijania wierszy", "Usuwa partycje tabeli", "Sortuje tylko cały wynik", "Filtruje dane przed FROM"], correct: 0, explain: "PARTITION BY wyznacza niezależne grupy, w których funkcja okna liczy wyniki." },
+    { q: "Czym ROW_NUMBER() różni się od RANK() przy remisach?", options: ["ROW_NUMBER nadaje każdemu wierszowi unikalny numer", "ROW_NUMBER usuwa remisy", "RANK zawsze jest unikalny", "Nie różnią się"], correct: 0, explain: "ROW_NUMBER() przypisuje kolejne, unikalne numery nawet w przypadku remisów." },
+    { q: "Która funkcja rankingu nie tworzy przerw po remisie?", options: ["RANK()", "DENSE_RANK()", "ROW_NUMBER()", "LAG()"], correct: 1, explain: "DENSE_RANK() przypisuje remisom tę samą pozycję i nie pomija kolejnej." },
+    { q: "Co zwraca LAG(amount) OVER (ORDER BY payment_date)?", options: ["amount z następnego wiersza", "amount z poprzedniego wiersza w uporządkowanym zbiorze", "sumę wszystkich amount", "numer bieżącego wiersza"], correct: 1, explain: "LAG() pobiera wartość z wcześniejszego wiersza; LEAD() pobiera wartość z kolejnego." }
+  ],
+  8: [
+    { q: "Jak policzyć liczbę płatności spełniających warunek bez odrzucania pozostałych grup?", options: ["COUNT(*) WHERE ...", "COUNT(*) FILTER (WHERE warunek)", "COUNT(*) HAVING warunek", "SUM(*) FILTER BY warunek"], correct: 1, explain: "FILTER (WHERE ...) ogranicza wiersze przekazane do konkretnej agregacji." },
+    { q: "Jaki jest wynik wyrażenia 5 / 2 w PostgreSQL, gdy oba argumenty są całkowite?", options: ["2", "2.5", "3", "NULL"], correct: 0, explain: "Dzielenie dwóch liczb całkowitych obcina część ułamkową. Użyj typu numeric lub wartości dziesiętnej, aby uzyskać 2.5." },
+    { q: "Jak uniknąć dzielenia całkowitego przy obliczaniu procentu?", options: ["COUNT(*) / 100", "SUM(x) * 100.0 / COUNT(*)", "SUM(x) % COUNT(*)", "ROUND(COUNT(*))"], correct: 1, explain: "Wartość 100.0 wymusza arytmetykę z częścią ułamkową." },
+    { q: "Co oznacza ziarno wyniku zapytania?", options: ["Poziom pojedynczego wiersza wyniku, np. jeden wiersz na klienta", "Kolejność klauzul SQL", "Typ indeksu", "Liczbę kolumn w tabeli źródłowej"], correct: 0, explain: "Ziarno opisuje, co reprezentuje jeden wiersz wyniku i musi być jasne przed agregacją oraz JOIN." },
+    { q: "Dlaczego JOIN dwóch tabel szczegółowych może zawyżyć SUM(amount)?", options: ["JOIN automatycznie zaokrągla sumę", "Dopasowania wiele-do-wielu mogą powielić wiersze faktów", "SUM pomija wartości liczbowe", "GROUP BY zawsze usuwa prawidłowe kwoty"], correct: 1, explain: "Wielokrotne dopasowania mogą powielić rekordy przed agregacją. Najpierw ustal ziarno i agreguj do odpowiedniego poziomu." }
+  ]
+};
+
 var DIAG_QUESTIONS = [
   {
     "lvl": 1,
@@ -2669,6 +2728,6 @@ DIAG_QUESTIONS.forEach(function(q) {
 window.STAGES = STAGES;
 window.PATH_TASKS = PATH_TASKS;
 window.DIAG_QUESTIONS = DIAG_QUESTIONS;
+window.STAGE_QUIZZES = STAGE_QUIZZES;
 window.LESSON_TUTORIALS = LESSON_TUTORIALS;
 window.LESSON_WARMUPS = LESSON_WARMUPS;
-
