@@ -486,11 +486,13 @@ input[type=text], input[type=password], select {
 #toast.show { opacity: 1; }
 
 /* SoloLearn Tutorial Slides & SQL Execution Order Pipeline */
-.tut-steps { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin: 10px 0 14px; }
+.tut-steps { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; margin: 10px 0 14px; align-items: stretch; }
 .tut-step-btn {
   border: 1px solid var(--line); background: var(--surface-2); color: var(--muted);
-  border-radius: 9px; padding: 7px 6px; font: 600 11.5px var(--body);
+  border-radius: 9px; padding: 7px 4px; font: 600 11.5px var(--body);
   cursor: pointer; transition: all .15s; text-align: center;
+  display: flex; align-items: center; justify-content: center;
+  white-space: nowrap; min-width: 0;
 }
 .tut-step-btn.visited { border-color: rgba(16, 185, 129, 0.45); color: var(--done); }
 .tut-step-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
@@ -2799,8 +2801,11 @@ details.teach-first-box.teach-first-pill .teach-first-body {
   min-width: 0;
   box-sizing: border-box;
 }
-.top-stats, .brand, .acts, .req-cols-pipeline, .ctx-tabs-bar {
+.acts, .req-cols-pipeline, .ctx-tabs-bar {
   flex-wrap: wrap;
+}
+.topbar, .top-bar, .app-header, .brand, .top-stats {
+  flex-wrap: nowrap;
 }
 .card h2, .card h3, .brand-title {
   word-break: normal;
@@ -3511,4 +3516,71 @@ body.task-sheet-open { overflow: hidden; }
   background: rgba(79, 117, 255, 0.12);
   border-color: var(--accent);
   color: var(--ink);
+}
+
+/* ==========================================================================
+   v15.1: STABILIZACJA MOBILNA 360px–420px, KARTA SAMOUCZKA I PRZEWIJANY RANKING
+   ========================================================================== */
+.tutorial-card-badge,
+.tut-card-inner > .chip {
+  white-space: normal;
+  line-height: 1.35;
+  max-width: 100%;
+  box-sizing: border-box;
+  border-radius: 10px;
+}
+
+.leaderboard-scroll-wrap {
+  max-height: 360px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+@media (max-width: 420px) {
+  .topbar,
+  .top-bar,
+  .app-header {
+    flex-wrap: nowrap;
+    gap: 4px;
+    padding: calc(6px + env(safe-area-inset-top, 0px)) 8px 6px;
+  }
+  .topbar .brand,
+  .app-header .brand {
+    flex-wrap: nowrap;
+    gap: 4px;
+    min-width: 0;
+    flex-shrink: 1;
+  }
+  .topbar .brand-badge,
+  .app-header .brand-badge {
+    width: 24px;
+    height: 24px;
+    font-size: 10.5px;
+    border-radius: 6px;
+  }
+  .topbar .brand-title,
+  .app-header .brand-title {
+    font-size: 13px;
+    white-space: nowrap;
+  }
+  .topbar .top-stats,
+  .app-header .top-stats {
+    flex-wrap: nowrap;
+    gap: 4px;
+    flex-shrink: 0;
+  }
+  .topbar .pill-stat,
+  .topbar .pill-pg,
+  .app-header .pill-stat,
+  .app-header .pill-pg {
+    font-size: 11px;
+    padding: 3px 6px;
+    white-space: nowrap;
+  }
+  .topbar .btn-theme,
+  .app-header .btn-theme {
+    padding: 3px 6px;
+    min-height: 26px;
+    font-size: 12px;
+  }
 }

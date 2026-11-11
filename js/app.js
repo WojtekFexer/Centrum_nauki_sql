@@ -4,7 +4,7 @@
 /* ==========================================================================
    0. KONFIGURACJA CHMURY SUPABASE (REST API — RANKING I PROFILE TESTERÓW)
    ========================================================================== */
-const APP_VERSION = 'v15.0';
+const APP_VERSION = 'v15.1';
 const DEFAULT_SUPABASE_URL = 'https://hpfrcykbzuzucglorpkr.supabase.co';
 const DEFAULT_SUPABASE_KEY = 'sb_publishable_5klYjdIKjT35Zl2OtOyGQA_DGxdJCHh';
 
@@ -471,7 +471,7 @@ var GAP_CATALOG = [
     hint: 'Przed JOIN sprawdź, co jest jednym wierszem w obu tabelach. Przy łączeniu relacji 1:N lub dwóch tabel faktów użyj COUNT(DISTINCT ...) lub osobnych CTE.',
     badExample: 'SELECT c.customer_id, COUNT(p.payment_id) FROM customer c JOIN rental r USING(customer_id) JOIN payment p USING(customer_id) GROUP BY c.customer_id;',
     goodExample: 'SELECT c.customer_id, COUNT(r.rental_id) AS rentals_cnt, COUNT(DISTINCT r.film_id) AS films_cnt FROM customer c LEFT JOIN rental r ON c.customer_id = r.customer_id GROUP BY c.customer_id;',
-    defaultLvl: 2,
+    defaultLvl: 0,
     practice: {
       id: 'gap_g1',
       title: 'Trener Luki g1: Ziarno wyniku i COUNT(DISTINCT)',
@@ -486,17 +486,28 @@ var GAP_CATALOG = [
     id: 'g2',
     name: 'LEFT JOIN: warunek w ON czy w WHERE + NOT IN z NULL',
     hint: 'Filtr na kolumnie prawej tabeli wpisany w WHERE zamienia LEFT JOIN w INNER JOIN i wyrzuca rekordy bez dopasowania. Warunek dla prawej tabeli wpisuj w klauzuli ON (lub użyj IS NULL do Anti-Join).',
-    badExample: 'SELECT c.customer_id, COUNT(r.rental_id) FROM customer c LEFT JOIN rental r ON c.customer_id = r.customer_id WHERE r.rental_date >= \'2026-06-01\' GROUP BY c.customer_id;',
-    goodExample: 'SELECT c.customer_id, COUNT(r.rental_id) AS june_cnt FROM customer c LEFT JOIN rental r ON c.customer_id = r.customer_id AND r.rental_date >= \'2026-06-01\' GROUP BY c.customer_id;',
-    defaultLvl: 2,
+    badExample: 'SELECT c.customer_id, COUNT(r.rental_id) FROM customer c LEFT JOIN rental r ON c.customer_id = r.customer_id WHERE r.rental_date >= \'2005-06-01\' AND r.rental_date < \'2005-07-01\' GROUP BY c.customer_id;',
+    goodExample: 'SELECT c.customer_id, COUNT(r.rental_id) AS june_cnt FROM customer c LEFT JOIN rental r ON c.customer_id = r.customer_id AND r.rental_date >= \'2005-06-01\' AND r.rental_date < \'2005-07-01\' GROUP BY c.customer_id;',
+    defaultLvl: 0,
     practice: {
       id: 'gap_g2',
       title: 'Trener Luki g2: Warunek w LEFT JOIN ON zamiast w WHERE',
       tables: ['customer', 'rental'],
-      prompt: 'Dla KAŻDEGO klienta z `customer` (także tych bez wypożyczeń w czerwcu!) wypisz `customer_id`, `first_name` oraz liczbę jego wypożyczeń od `\'2026-06-01\'` wzwyż jako `june_cnt`. Warunek daty wpisz w `ON`, nie w `WHERE`.',
-      sol: "SELECT c.customer_id, c.first_name, COUNT(r.rental_id) AS june_cnt FROM customer c LEFT JOIN rental r ON c.customer_id = r.customer_id AND r.rental_date >= '2026-06-01' GROUP BY c.customer_id, c.first_name;",
+      prompt: 'Dla KAŻDEGO klienta z `customer` (także tych bez wypożyczeń w czerwcu 2005!) wypisz `customer_id`, `first_name` oraz liczbę jego wypożyczeń w czerwcu 2005 (`r.rental_date >= \'2005-06-01\' AND r.rental_date < \'2005-07-01\'`) jako `june_cnt`. Warunek daty wpisz w `ON`, nie w `WHERE`.',
+      sol: "SELECT c.customer_id, c.first_name, COUNT(r.rental_id) AS june_cnt FROM customer c LEFT JOIN rental r ON c.customer_id = r.customer_id AND r.rental_date >= '2005-06-01' AND r.rental_date < '2005-07-01' GROUP BY c.customer_id, c.first_name;",
       order: false,
-      hint: "Przenieś warunek r.rental_date >= '2026-06-01' z WHERE do LEFT JOIN ... ON ..., inaczej utracisz klientów z zerową liczbą wypożyczeń."
+      hint: "Przenieś warunek r.rental_date >= '2005-06-01' AND r.rental_date < '2005-07-01' z WHERE do LEFT JOIN ... ON ..., inaczej utracisz klientów z zerową liczbą wypożyczeń.",
+      detectTrap: function(sql) {
+        var s = String(sql || '');
+        var hasWhereOnRight = /\bWHERE\b[\s\S]*\b(?:r\.|rental\.|rental_date\b)/i.test(s);
+        if (hasWhereOnRight) {
+          return "Przenieś warunek r.rental_date >= '2005-06-01' AND r.rental_date < '2005-07-01' z WHERE do LEFT JOIN ... ON ..., inaczej utracisz klientów z zerową liczbą wypożyczeń.";
+        }
+        if (/\bLEFT\s+(?:OUTER\s+)?JOIN\b[\s\S]*\bON\b/i.test(s)) {
+          return 'Warunek masz poprawnie w sekcji ON! Sprawdź dokładnie daty w warunku (użyj >= i < zgodnie z treścią zadania) oraz grupowanie.';
+        }
+        return "Przenieś warunek r.rental_date >= '2005-06-01' AND r.rental_date < '2005-07-01' z WHERE do LEFT JOIN ... ON ..., inaczej utracisz klientów z zerową liczbą wypożyczeń.";
+      }
     }
   },
   {
@@ -505,7 +516,7 @@ var GAP_CATALOG = [
     hint: 'COUNT(*) zlicza wszystkie wiersze (łącznie z NULL), a COUNT(kolumna) pomija wartości NULL. Do sprawdzania pustych wartości zawsze używaj IS NULL lub IS NOT NULL zamiast = NULL.',
     badExample: 'SELECT * FROM rental WHERE return_date = NULL;',
     goodExample: 'SELECT COUNT(*) AS all_cnt, COUNT(return_date) AS ret_cnt FROM rental;',
-    defaultLvl: 3,
+    defaultLvl: 0,
     practice: {
       id: 'gap_g3',
       title: 'Trener Luki g3: COUNT(*) kontra COUNT(kolumna) przy NULL',
@@ -522,7 +533,7 @@ var GAP_CATALOG = [
     hint: 'W PostgreSQL przed grupowaniem po miesiącach użyj DATE_TRUNC(\'month\', kolumna::date)::date. Przy kalendarzach z generate_series tabela dat stoi po lewej stronie LEFT JOIN.',
     badExample: 'SELECT payment_date, SUM(amount) FROM payment GROUP BY payment_date;',
     goodExample: 'SELECT DATE_TRUNC(\'month\', payment_date::date)::date AS miesiac, SUM(amount) AS monthly_total FROM payment GROUP BY DATE_TRUNC(\'month\', payment_date::date)::date ORDER BY miesiac;',
-    defaultLvl: 2,
+    defaultLvl: 0,
     practice: {
       id: 'gap_g4',
       title: 'Trener Luki g4: Grupowanie miesięczne z DATE_TRUNC',
@@ -539,7 +550,7 @@ var GAP_CATALOG = [
     hint: 'Funkcje okna LAG() i LEAD() wymagają podania kolejności wewnątrz OVER (ORDER BY ...), aby baza wiedziała, który wiersz jest „poprzedni”.',
     badExample: 'SELECT payment_id, amount, LAG(amount) FROM payment;',
     goodExample: 'SELECT payment_id, amount, LAG(amount) OVER (ORDER BY payment_date, payment_id) AS prev_amount FROM payment WHERE customer_id = 1 ORDER BY payment_date, payment_id;',
-    defaultLvl: 2,
+    defaultLvl: 0,
     practice: {
       id: 'gap_g5',
       title: 'Trener Luki g5: Poprzednia wartość przez LAG() OVER',
@@ -556,7 +567,7 @@ var GAP_CATALOG = [
     hint: 'Sprawdź przecinki na końcu listy kolumn (przed FROM NIE stawiamy przecinka!) oraz między nazwami kolumn (brak przecinka zamienia drugą nazwę w niechciany alias).',
     badExample: 'SELECT title, rating, FROM film;',
     goodExample: 'SELECT title, rating, rental_rate FROM film WHERE rating = \'G\';',
-    defaultLvl: 2,
+    defaultLvl: 0,
     practice: {
       id: 'gap_g6',
       title: 'Trener Luki g6: Czysta składnia SELECT i przecinki',
@@ -573,7 +584,7 @@ var GAP_CATALOG = [
     hint: 'WHERE filtruje pojedyncze wiersze PRZED grupowaniem, a HAVING filtruje całe grupy PO policzeniu agregatu (np. SUM, COUNT). Każda nieagregowana kolumna z SELECT musi być w GROUP BY.',
     badExample: 'SELECT customer_id, SUM(amount) FROM payment WHERE SUM(amount) > 10 GROUP BY customer_id;',
     goodExample: 'SELECT customer_id, SUM(amount) AS total_paid FROM payment GROUP BY customer_id HAVING SUM(amount) > 10.00;',
-    defaultLvl: 2,
+    defaultLvl: 0,
     practice: {
       id: 'gap_g7',
       title: 'Trener Luki g7: Filtrowanie zagregowanych grup przez HAVING',
@@ -590,7 +601,7 @@ var GAP_CATALOG = [
     hint: 'AVG(kolumna) pomija wartości NULL. Jeśli brak aktywności (po LEFT JOIN) ma zaniżać średnią jako 0, owiń wynik lub kolumnę funkcją COALESCE(..., 0).',
     badExample: 'SELECT c.customer_id, AVG(p.amount) AS avg_paid FROM customer c LEFT JOIN payment p USING(customer_id) GROUP BY c.customer_id;',
     goodExample: 'SELECT c.customer_id, COALESCE(AVG(p.amount), 0) AS avg_paid FROM customer c LEFT JOIN payment p ON c.customer_id = p.customer_id GROUP BY c.customer_id;',
-    defaultLvl: 1,
+    defaultLvl: 0,
     practice: {
       id: 'gap_g8',
       title: 'Trener Luki g8: Zabezpieczenie średniej funkcją COALESCE',
@@ -607,7 +618,7 @@ var GAP_CATALOG = [
     hint: 'Funkcji okna nie wolno filtrować bezpośrednio w WHERE w tym samym zapytaniu. Najpierw nadaj ranking w CTE (WITH ... AS (...)), a w zewnętrznym SELECT ustaw WHERE rn = 1 lub <= 3.',
     badExample: 'SELECT title, rating FROM film WHERE ROW_NUMBER() OVER (PARTITION BY rating ORDER BY length DESC) = 1;',
     goodExample: 'WITH ranked AS (SELECT film_id, title, rating, length, ROW_NUMBER() OVER (PARTITION BY rating ORDER BY length DESC, film_id ASC) AS rn FROM film) SELECT film_id, title, rating, length FROM ranked WHERE rn = 1;',
-    defaultLvl: 2,
+    defaultLvl: 0,
     practice: {
       id: 'gap_g9',
       title: 'Trener Luki g9: Ranking ROW_NUMBER() w CTE (WITH)',
@@ -624,7 +635,7 @@ var GAP_CATALOG = [
     hint: 'W PostgreSQL dzielenie dwóch liczb całkowitych (np. 8 / 10) ucina ułamek do 0! Zawsze pomnóż licznik przez 100.0 albo rzutuj na ::numeric przed podzieleniem.',
     badExample: 'SELECT store_id, SUM(active) * 100 / COUNT(*) AS active_pct FROM customer GROUP BY store_id;',
     goodExample: 'SELECT store_id, SUM(CASE WHEN active = 1 THEN 1 ELSE 0 END) * 100.0 / COUNT(*) AS active_pct FROM customer GROUP BY store_id;',
-    defaultLvl: 1,
+    defaultLvl: 0,
     practice: {
       id: 'gap_g10',
       title: 'Trener Luki g10: Procent zmiennoprzecinkowy z * 100.0',
@@ -641,7 +652,7 @@ var GAP_CATALOG = [
     hint: 'Operator AND wiąże silniej niż OR! Gdy łączysz warunek AND z kilkoma wariantami OR (np. length > 100 ORAZ rating = \'PG\' lub \'G\'), obowiązkowo weź część z OR w nawiasy ( ... OR ... ).',
     badExample: 'SELECT film_id, title, rating FROM film WHERE length > 100 AND rating = \'PG\' OR rating = \'G\';',
     goodExample: 'SELECT film_id, title, rating FROM film WHERE length > 100 AND (rating = \'PG\' OR rating = \'G\');',
-    defaultLvl: 2,
+    defaultLvl: 0,
     practice: {
       id: 'gap_g11',
       title: 'Trener Luki g11: Nawiasy wokół operatora OR po AND',
@@ -658,7 +669,7 @@ var GAP_CATALOG = [
     hint: 'SQL sprawdza gałęzie WHEN od góry do dołu i zatrzymuje się na pierwszym spełnionym warunku. Zawsze sprawdzaj najwęższe lub najwyższe progi jako pierwsze.',
     badExample: 'SELECT title, CASE WHEN length >= 80 THEN \'Średni\' WHEN length >= 120 THEN \'Długi\' ELSE \'Krótki\' END FROM film;',
     goodExample: 'SELECT title, length, CASE WHEN length >= 120 THEN \'Długi\' WHEN length >= 80 THEN \'Średni\' ELSE \'Krótki\' END AS kategoria_dlugosci FROM film;',
-    defaultLvl: 2,
+    defaultLvl: 0,
     practice: {
       id: 'gap_g12',
       title: 'Trener Luki g12: Poprawna kolejność progów w CASE WHEN',
@@ -675,7 +686,7 @@ var GAP_CATALOG = [
     hint: 'Gdy łączysz tabelę samą ze sobą (np. film f1 JOIN film f2), nadaj różne aliasy i dodaj warunek f1.id < f2.id, aby nie porównywać rekordu z samym sobą i uniknąć lustrzanych duplikatów (A-B i B-A).',
     badExample: 'SELECT f1.title, f2.title FROM film f1 JOIN film f2 ON f1.rental_rate = f2.rental_rate;',
     goodExample: 'SELECT f1.title AS film_a, f2.title AS film_b, f1.rental_rate FROM film f1 JOIN film f2 ON f1.rental_rate = f2.rental_rate AND f1.rating = f2.rating AND f1.film_id < f2.film_id;',
-    defaultLvl: 2,
+    defaultLvl: 0,
     practice: {
       id: 'gap_g13',
       title: 'Trener Luki g13: Unikalne pary w Self-Join (f1.film_id < f2.film_id)',
@@ -699,8 +710,9 @@ function buildDefaultGapsArray() {
       id: meta.id,
       name: meta.name,
       hint: meta.hint,
-      lvl: meta.defaultLvl,
-      hits: 0
+      lvl: 0,
+      hits: 0,
+      fails: 0
     };
   });
 }
@@ -713,17 +725,20 @@ function ensureAllGapsInState(targetState) {
     st.gaps.forEach(function(item) {
       if (!item || !item.id) return;
       var normId = normalizeGapId(item.id);
+      var parsedHits = Math.max(Number(item.hits) || 0, Number(item.fails) || 0);
       if (!byId[normId]) {
         byId[normId] = {
           id: normId,
           name: item.name,
           hint: item.hint,
-          lvl: Number(item.lvl) >= 0 ? Math.min(4, Number(item.lvl)) : 2,
-          hits: Number(item.hits) || 0
+          lvl: Number(item.lvl) >= 0 ? Math.min(4, Number(item.lvl)) : 0,
+          hits: parsedHits,
+          fails: parsedHits
         };
       } else {
-        byId[normId].lvl = Math.min(byId[normId].lvl, Number(item.lvl) >= 0 ? Number(item.lvl) : byId[normId].lvl);
-        byId[normId].hits = Math.max(byId[normId].hits, Number(item.hits) || 0);
+        byId[normId].lvl = Math.max(byId[normId].lvl, Number(item.lvl) >= 0 ? Math.min(4, Number(item.lvl)) : 0);
+        byId[normId].hits = Math.max(byId[normId].hits, parsedHits);
+        byId[normId].fails = byId[normId].hits;
       }
     });
   } else if (st.gaps && typeof st.gaps === 'object') {
@@ -731,24 +746,28 @@ function ensureAllGapsInState(targetState) {
       var val = st.gaps[k];
       var normId = normalizeGapId(k);
       if (val && typeof val === 'object') {
+        var parsedHitsObj = Math.max(Number(val.hits) || 0, Number(val.fails) || 0);
         byId[normId] = {
           id: normId,
           name: val.name || '',
           hint: val.hint || '',
-          lvl: Number(val.lvl) >= 0 ? Math.min(4, Number(val.lvl)) : 2,
-          hits: Number(val.hits) || 0
+          lvl: Number(val.lvl) >= 0 ? Math.min(4, Number(val.lvl)) : 0,
+          hits: parsedHitsObj,
+          fails: parsedHitsObj
         };
       }
     });
   }
   st.gaps = GAP_CATALOG.map(function(meta) {
     var existing = byId[meta.id];
+    var h = existing ? (Number(existing.hits) || 0) : 0;
     return {
       id: meta.id,
       name: meta.name,
       hint: meta.hint,
-      lvl: existing ? existing.lvl : meta.defaultLvl,
-      hits: existing ? existing.hits : 0
+      lvl: existing ? existing.lvl : 0,
+      hits: h,
+      fails: h
     };
   });
   return st.gaps;
@@ -782,6 +801,7 @@ function defaultState() {
     diagScore: 0,
     diagSkipped: [],
     gaps: buildDefaultGapsArray(),
+    gapsResetToZeroV151: true,
     aiProvider: 'gemini',
     apiKey: '',
     nickname: 'Wojtek_SQL',
@@ -794,6 +814,7 @@ try {
   var saved = localStorage.getItem(STORAGE_KEY);
   if (saved) {
     var parsed = JSON.parse(saved);
+    var hadV151GapReset = Boolean(parsed && parsed.gapsResetToZeroV151);
     state = Object.assign(defaultState(), parsed);
     if (!state.completedVariants) state.completedVariants = {};
     if (!state.completedDiag) state.completedDiag = {};
@@ -804,7 +825,13 @@ try {
     if (!state.nick && state.userProfile && state.userProfile.nick) state.nick = state.userProfile.nick;
     if (!state.userId && state.userProfile && state.userProfile.userId) state.userId = state.userProfile.userId;
     if (state.userId === undefined) state.userId = null;
-    ensureAllGapsInState(state);
+    if (!hadV151GapReset) {
+      state.gaps = buildDefaultGapsArray();
+      state.gapsResetToZeroV151 = true;
+      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (eReset) {}
+    } else {
+      ensureAllGapsInState(state);
+    }
     if (!Array.isArray(state.diagSkipped)) state.diagSkipped = [];
     // Kompatybilność wsteczna: jeśli z poprzednich sesji zaliczono już zadanie podstawowe 1 (klucz ':0'),
     // automatycznie oznacz rozgrzewkę R1-R2 jako zaliczoną, aby nie blokować dotychczasowego postępu.
@@ -893,7 +920,8 @@ var uiState = {
   topbarModal: null,
   gapsSubTab: 'gaps',
   activeGapPractice: null,
-  geminiTestStatus: null
+  geminiTestStatus: null,
+  leaderboardExpanded: false
 };
 
 function resetTaskContextUi() {
@@ -1281,6 +1309,7 @@ function saveLocalProfileEntry() {
       },
       updated_at: new Date().toISOString()
     };
+    map[key].state_json.gapsResetToZeroV151 = true;
     localStorage.setItem(LOCAL_PROFILES_KEY, JSON.stringify(map));
   } catch (e) {}
 }
@@ -1303,17 +1332,19 @@ function mergeRemoteStateIntoCurrent(remoteState) {
   state.completedDiag = Object.assign({}, remoteState.completedDiag || {}, state.completedDiag || {});
   state.completedLemur = Object.assign({}, remoteState.completedLemur || {}, state.completedLemur || {});
   state.stageQuizzes = Object.assign({}, remoteState.stageQuizzes || {}, state.stageQuizzes || {});
-  if (Array.isArray(remoteState.gaps)) {
+  if (Array.isArray(remoteState.gaps) && remoteState.gapsResetToZeroV151) {
     if (!Array.isArray(state.gaps)) state.gaps = [];
     remoteState.gaps.forEach(function(rg) {
       if (!rg || !rg.id) return;
       var normId = normalizeGapId(rg.id);
       var localG = state.gaps.find(function(g) { return g.id === normId; });
+      var rHits = Math.max(Number(rg.hits) || 0, Number(rg.fails) || 0);
       if (localG) {
         localG.lvl = Math.max(localG.lvl || 0, Number(rg.lvl) || 0);
-        localG.hits = Math.max(localG.hits || 0, Number(rg.hits) || 0);
+        localG.hits = Math.max(localG.hits || 0, rHits);
+        localG.fails = localG.hits;
       } else {
-        state.gaps.push(Object.assign({}, rg, { id: normId }));
+        state.gaps.push(Object.assign({}, rg, { id: normId, hits: rHits, fails: rHits }));
       }
     });
   }
@@ -1322,65 +1353,60 @@ function mergeRemoteStateIntoCurrent(remoteState) {
 
 async function syncProfileToCloud(silent) {
   saveLocalProfileEntry();
-  if (!isSupabaseConfigured() || !state.userProfile || !state.userProfile.nick) {
+  var activeNick = (state.userProfile && state.userProfile.nick) || state.nick || '';
+  if (!isSupabaseConfigured() || !activeNick || activeNick.toLowerCase() === 'anon') {
     await fetchLeaderboard();
     return false;
   }
   uiState.syncing = true;
   var baseUrl = SUPABASE_CONFIG.url.replace(/\/+$/, '');
   var nowIso = new Date().toISOString();
-  state.userProfile.updatedAt = nowIso;
+  if (state.userProfile) state.userProfile.updatedAt = nowIso;
   ensureAllGapsInState(state);
   var payload = {
-    nick: state.userProfile.nick,
-    pin_hash: state.userProfile.pinHash,
-    xp: state.xp,
-    rank_name: getRankName(state.xp),
-    streak: state.streak,
+    nick: activeNick,
+    xp: state.xp || 0,
+    streak: state.streak || 1,
     country: 'PL',
     gaps: state.gaps || {},
-    solved_count: getTotalSolvedCount(),
-    state_json: {
-      xp: state.xp,
-      streak: state.streak,
-      lastStreakDate: state.lastStreakDate,
-      unlockedStage: state.unlockedStage,
-      diagDone: state.diagDone,
-      userId: state.userId || null,
-      tutorialsDone: state.tutorialsDone,
-      completedTasks: state.completedTasks,
-      completedVariants: state.completedVariants,
-      completedDiag: state.completedDiag,
-      completedLemur: state.completedLemur,
-      stageQuizzes: state.stageQuizzes,
-      gaps: state.gaps
-    },
-    updated_at: nowIso
+    solved_count: getTotalSolvedCount()
   };
-  if (state.userId) payload.user_id = state.userId;
+  var headers = {
+    'apikey': SUPABASE_CONFIG.anonKey,
+    'Authorization': 'Bearer ' + SUPABASE_CONFIG.anonKey,
+    'Content-Type': 'application/json',
+    'Prefer': 'resolution=merge-duplicates,return=representation'
+  };
   try {
-    var resp = await fetch(baseUrl + '/rest/v1/sql_profiles?on_conflict=nick&select=user_id,nick,xp,rank_name,streak,country,gaps', {
+    var resp = await fetch(baseUrl + '/rest/v1/sql_profiles?on_conflict=nick', {
       method: 'POST',
-      headers: {
-        'apikey': SUPABASE_CONFIG.anonKey,
-        'Authorization': 'Bearer ' + SUPABASE_CONFIG.anonKey,
-        'Content-Type': 'application/json',
-        'Prefer': 'resolution=merge-duplicates,return=representation'
-      },
+      headers: headers,
       body: JSON.stringify(payload)
     });
+    if (resp.status === 400 || !resp.ok) {
+      var minPayload = {
+        nick: activeNick,
+        xp: state.xp || 0,
+        streak: state.streak || 1
+      };
+      resp = await fetch(baseUrl + '/rest/v1/sql_profiles?on_conflict=nick', {
+        method: 'POST',
+        headers: headers,
+        body: JSON.stringify(minPayload)
+      });
+    }
     uiState.syncing = false;
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
     try {
       var upserted = await resp.json();
       if (Array.isArray(upserted) && upserted[0] && upserted[0].user_id) {
         state.userId = upserted[0].user_id;
-        state.userProfile.userId = upserted[0].user_id;
+        if (state.userProfile) state.userProfile.userId = upserted[0].user_id;
       }
     } catch (jsonErr) {}
     if (!state.userId) {
       try {
-        var uidResp = await fetch(baseUrl + '/rest/v1/sql_profiles?nick=eq.' + encodeURIComponent(state.userProfile.nick) + '&select=user_id,nick,xp,rank_name,streak,country,gaps', {
+        var uidResp = await fetch(baseUrl + '/rest/v1/sql_profiles?nick=eq.' + encodeURIComponent(activeNick) + '&select=user_id,nick,xp,streak', {
           method: 'GET',
           headers: {
             'apikey': SUPABASE_CONFIG.anonKey,
@@ -1391,7 +1417,7 @@ async function syncProfileToCloud(silent) {
           var uidRows = await uidResp.json();
           if (Array.isArray(uidRows) && uidRows[0] && uidRows[0].user_id) {
             state.userId = uidRows[0].user_id;
-            state.userProfile.userId = uidRows[0].user_id;
+            if (state.userProfile) state.userProfile.userId = uidRows[0].user_id;
           }
         }
       } catch (e2) {}
@@ -1409,18 +1435,26 @@ async function syncProfileToCloud(silent) {
     return false;
   }
 }
+window.syncProfileToCloud = syncProfileToCloud;
 
 async function fetchLeaderboard() {
   if (isSupabaseConfigured()) {
     try {
       var baseUrl = SUPABASE_CONFIG.url.replace(/\/+$/, '');
-      var resp = await fetch(baseUrl + '/rest/v1/sql_profiles?select=user_id,nick,xp,rank_name,streak,country,gaps,solved_count,updated_at&order=xp.desc&limit=50', {
+      var getHeaders = {
+        'apikey': SUPABASE_CONFIG.anonKey,
+        'Authorization': 'Bearer ' + SUPABASE_CONFIG.anonKey
+      };
+      var resp = await fetch(baseUrl + '/rest/v1/sql_profiles?select=user_id,nick,xp,rank_name,streak,country,gaps,solved_count&order=xp.desc&limit=50', {
         method: 'GET',
-        headers: {
-          'apikey': SUPABASE_CONFIG.anonKey,
-          'Authorization': 'Bearer ' + SUPABASE_CONFIG.anonKey
-        }
+        headers: getHeaders
       });
+      if (resp.status === 400 || !resp.ok) {
+        resp = await fetch(baseUrl + '/rest/v1/sql_profiles?select=nick,xp,streak&order=xp.desc&limit=50', {
+          method: 'GET',
+          headers: getHeaders
+        });
+      }
       if (resp.ok) {
         var rows = await resp.json();
         if (Array.isArray(rows)) {
@@ -1439,6 +1473,8 @@ async function fetchLeaderboard() {
   if (currentTab === 'profile') render();
   return uiState.leaderboard;
 }
+window.fetchLeaderboard = fetchLeaderboard;
+window.fetchCloudLeaderboard = fetchLeaderboard;
 
 function getTelemetryNick() {
   var raw = state.nick || (state.userProfile && state.userProfile.nick) || '';
@@ -1475,7 +1511,7 @@ var SQLTelemetry = (function() {
   var sessionId = null;
   var sessionStartedAt = Date.now();
   var sessionLoginIso = null;
-  var sessionReady = Promise.resolve();
+  var sessionInitPromise = Promise.resolve();
 
   function readStoredSession() {
     try {
@@ -1494,8 +1530,8 @@ var SQLTelemetry = (function() {
     } catch (e) {}
   }
 
-  async function send(method, endpoint, payload, keepalive) {
-    if (!isSupabaseConfigured()) return;
+  async function sendRaw(method, endpoint, payload, keepalive) {
+    if (!isSupabaseConfigured()) return { ok: false, status: 0 };
     try {
       var fetchOpts = {
         method: method,
@@ -1508,11 +1544,21 @@ var SQLTelemetry = (function() {
         body: JSON.stringify(payload)
       };
       if (keepalive) fetchOpts.keepalive = true;
-      var response = await fetch(SUPABASE_CONFIG.url.replace(/\/+$/, '') + endpoint, fetchOpts);
-      if (!response.ok) throw new Error('HTTP ' + response.status + ' dla ' + endpoint);
+      return await fetch(SUPABASE_CONFIG.url.replace(/\/+$/, '') + endpoint, fetchOpts);
     } catch (err) {
       console.warn('SQLTelemetry: nie udało się wysłać danych:', err);
+      return { ok: false, status: 0 };
     }
+  }
+
+  async function sendSession(method, endpoint, payload, keepalive) {
+    var res = await sendRaw(method, endpoint, payload, keepalive);
+    if (res && (res.status === 400 || res.status === 409)) {
+      var fallbackPayload = Object.assign({}, payload);
+      delete fallbackPayload.user_id;
+      res = await sendRaw(method, endpoint, fallbackPayload, keepalive);
+    }
+    return res;
   }
 
   function getStandaloneStatus() {
@@ -1522,8 +1568,8 @@ var SQLTelemetry = (function() {
   function start() {
     var nick = getTelemetryNick();
     if (!nick) {
-      sessionReady = Promise.resolve();
-      return sessionReady;
+      sessionInitPromise = Promise.resolve();
+      return sessionInitPromise;
     }
     var today = getLocalDateKey(new Date());
     var stored = readStoredSession();
@@ -1531,13 +1577,13 @@ var SQLTelemetry = (function() {
       sessionId = stored.sessionId;
       sessionStartedAt = Number(stored.startMs);
       sessionLoginIso = stored.loginIso;
-      sessionReady = send('PATCH', '/rest/v1/app_sessions?session_id=eq.' + encodeURIComponent(sessionId), {
+      sessionInitPromise = sendSession('PATCH', '/rest/v1/app_sessions?session_id=eq.' + encodeURIComponent(sessionId), {
         user_id: state.userId || null,
         user_nick: nick,
         logout_at: new Date().toISOString(),
         duration_sec: Math.max(0, Math.round((Date.now() - sessionStartedAt) / 1000))
       });
-      return sessionReady;
+      return sessionInitPromise;
     }
     sessionId = createTelemetrySessionId();
     sessionStartedAt = Date.now();
@@ -1549,7 +1595,7 @@ var SQLTelemetry = (function() {
       loginIso: sessionLoginIso,
       startMs: sessionStartedAt
     });
-    sessionReady = send('POST', '/rest/v1/app_sessions', {
+    sessionInitPromise = sendSession('POST', '/rest/v1/app_sessions', {
       session_id: sessionId,
       user_id: state.userId || null,
       user_nick: nick,
@@ -1561,7 +1607,7 @@ var SQLTelemetry = (function() {
       is_standalone: getStandaloneStatus(),
       app_version: APP_VERSION
     });
-    return sessionReady;
+    return sessionInitPromise;
   }
 
   async function ping(isUnload) {
@@ -1573,9 +1619,9 @@ var SQLTelemetry = (function() {
       await start();
       return;
     }
-    await sessionReady;
+    await sessionInitPromise;
     var now = new Date().toISOString();
-    await send('PATCH', '/rest/v1/app_sessions?session_id=eq.' + encodeURIComponent(sessionId), {
+    await sendSession('PATCH', '/rest/v1/app_sessions?session_id=eq.' + encodeURIComponent(sessionId), {
       user_id: state.userId || null,
       user_nick: nick,
       logout_at: now,
@@ -1586,23 +1632,37 @@ var SQLTelemetry = (function() {
   async function recordAttempt(payload) {
     var nick = getTelemetryNick();
     if (!nick) return;
-    if (!sessionId) await start();
-    else await sessionReady;
-    if (!sessionId) return;
+    if (!sessionId) start();
+    await sessionInitPromise;
     var finalPayload = Object.assign({}, payload, {
-      session_id: sessionId,
+      session_id: sessionId || null,
       user_id: state.userId || null,
       user_nick: nick
     });
-    await send('POST', '/rest/v1/task_attempts', finalPayload);
+    var res = await sendRaw('POST', '/rest/v1/task_attempts', finalPayload);
+    if (res && (res.status === 400 || res.status === 409)) {
+      var retryNullSession = Object.assign({}, finalPayload, { session_id: null });
+      res = await sendRaw('POST', '/rest/v1/task_attempts', retryNullSession);
+      if (res && (res.status === 400 || res.status === 409)) {
+        var minimalAttempt = Object.assign({}, retryNullSession);
+        delete minimalAttempt.user_id;
+        delete minimalAttempt.task_name;
+        await sendRaw('POST', '/rest/v1/task_attempts', minimalAttempt);
+      }
+    }
   }
 
   function getSessionId() {
     return sessionId;
   }
 
+  function getSessionInitPromise() {
+    return sessionInitPromise;
+  }
+
   return {
     getSessionId: getSessionId,
+    getSessionInitPromise: getSessionInitPromise,
     start: start,
     ping: ping,
     recordAttempt: recordAttempt
@@ -1695,37 +1755,33 @@ function getAttemptErrorCategory(result, isPassed) {
 }
 
 function getDisplayLeaderboard() {
-  if (uiState.leaderboardSource === 'supabase' && Array.isArray(uiState.leaderboard) && uiState.leaderboard.length > 0) {
-    // v14.5: zawsze pokaż bieżącego gracza (także z 0 XP), nawet jeśli nie zmieścił się w pobranej liście
-    var meNick = state.userProfile && state.userProfile.nick;
-    if (meNick && !uiState.leaderboard.some(function(r) { return r.nick && r.nick.toLowerCase() === meNick.toLowerCase(); })) {
-      return uiState.leaderboard.concat([{ nick: meNick, xp: state.xp || 0, streak: state.streak || 1, solved_count: getTotalSolvedCount() }]);
+  var meNick = (state.userProfile && state.userProfile.nick) || state.nick || '';
+  if (Array.isArray(uiState.leaderboard) && uiState.leaderboard.length > 0 && uiState.leaderboardSource === 'supabase') {
+    var list = uiState.leaderboard.slice(0, 50);
+    if (meNick && !list.some(function(r) { return r.nick && r.nick.toLowerCase() === meNick.toLowerCase(); })) {
+      list.push({ nick: meNick, xp: state.xp || 0, streak: state.streak || 1, solved_count: getTotalSolvedCount() });
     }
-    return uiState.leaderboard;
+    return list.sort(function(a, b) {
+      return ((Number(b.xp) || 0) - (Number(a.xp) || 0)) || ((Number(b.solved_count) || 0) - (Number(a.solved_count) || 0));
+    }).slice(0, 50);
   }
-  var demoPlayers = [
-    { nick: 'Ania_Data', xp: 1420, streak: 6, solved_count: 38 },
-    { nick: 'Kamil_BI', xp: 980, streak: 3, solved_count: 24 },
-    { nick: 'Marta_SQL', xp: 640, streak: 2, solved_count: 15 },
-    { nick: 'Tomek_Dev', xp: 410, streak: 1, solved_count: 9 }
-  ];
   var localMap = getLocalProfilesMap();
   var byNick = {};
-  demoPlayers.forEach(function(p) { byNick[p.nick.toLowerCase()] = p; });
   Object.keys(localMap).forEach(function(k) {
     var lp = localMap[k];
-    byNick[k] = { nick: lp.nick, xp: lp.xp, streak: lp.streak, solved_count: lp.solved_count };
+    if (!lp || !lp.nick) return;
+    byNick[k] = { nick: lp.nick, xp: Number(lp.xp) || 0, streak: Number(lp.streak) || 1, solved_count: Number(lp.solved_count) || 0 };
   });
-  var curNick = (state.userProfile && state.userProfile.nick) ? state.userProfile.nick : (state.nickname || 'Ty (Gość)');
+  var curNick = meNick || (state.nickname || 'Ty (Gość)');
   byNick[curNick.toLowerCase()] = {
     nick: curNick,
-    xp: state.xp,
-    streak: state.streak,
+    xp: state.xp || 0,
+    streak: state.streak || 1,
     solved_count: getTotalSolvedCount()
   };
   return Object.keys(byNick).map(function(k) { return byNick[k]; }).sort(function(a, b) {
     return (b.xp - a.xp) || (b.solved_count - a.solved_count);
-  }).slice(0, 20);
+  }).slice(0, 50);
 }
 
 async function loginOrRegisterTester(rawNick, rawPin) {
@@ -1743,13 +1799,20 @@ async function loginOrRegisterTester(rawNick, rawPin) {
   if (isSupabaseConfigured()) {
     try {
       var baseUrl = SUPABASE_CONFIG.url.replace(/\/+$/, '');
-      var checkResp = await fetch(baseUrl + '/rest/v1/sql_profiles?nick=eq.' + encodeURIComponent(nick) + '&select=user_id,nick,pin_hash,xp,rank_name,streak,country,gaps,solved_count,state_json,updated_at', {
+      var checkHeaders = {
+        'apikey': SUPABASE_CONFIG.anonKey,
+        'Authorization': 'Bearer ' + SUPABASE_CONFIG.anonKey
+      };
+      var checkResp = await fetch(baseUrl + '/rest/v1/sql_profiles?nick=eq.' + encodeURIComponent(nick) + '&select=user_id,nick,xp,rank_name,streak,country,gaps,solved_count', {
         method: 'GET',
-        headers: {
-          'apikey': SUPABASE_CONFIG.anonKey,
-          'Authorization': 'Bearer ' + SUPABASE_CONFIG.anonKey
-        }
+        headers: checkHeaders
       });
+      if (checkResp.status === 400 || !checkResp.ok) {
+        checkResp = await fetch(baseUrl + '/rest/v1/sql_profiles?nick=eq.' + encodeURIComponent(nick) + '&select=nick,xp,streak', {
+          method: 'GET',
+          headers: checkHeaders
+        });
+      }
       if (checkResp.ok) {
         var found = await checkResp.json();
         if (Array.isArray(found) && found.length > 0) {
@@ -1764,7 +1827,7 @@ async function loginOrRegisterTester(rawNick, rawPin) {
             state.xp = Math.max(state.xp, Number(remoteRow.xp) || 0);
           }
           if (remoteRow.gaps && (Array.isArray(remoteRow.gaps) || typeof remoteRow.gaps === 'object')) {
-            mergeRemoteStateIntoCurrent({ gaps: remoteRow.gaps });
+            mergeRemoteStateIntoCurrent({ gaps: remoteRow.gaps, gapsResetToZeroV151: true });
           }
         }
       }
@@ -1952,8 +2015,9 @@ function registerGapTrap(gapId, name, hint) {
   if (g) {
     g.lvl = Math.max(0, g.lvl - 1);
     g.hits = (g.hits || 0) + 1;
+    g.fails = g.hits;
   } else {
-    state.gaps.unshift({ id: normId, name: name || normId, hint: hint || '', lvl: 0, hits: 1 });
+    state.gaps.unshift({ id: normId, name: name || normId, hint: hint || '', lvl: 0, hits: 1, fails: 1 });
   }
   saveState();
 }
@@ -4658,7 +4722,7 @@ function renderTutorialView(task) {
   uiState.tutorialSlideIdx = sIdx;
   var slide = slides[sIdx];
   var isDone = !!(state.tutorialsDone && state.tutorialsDone[task.id]);
-  var stepTitles = ['1. Składnia', '2. Kolejność SQL', '3. Przykład', '4. Quiz'];
+  var stepTitles = ['1. Składnia', '2. Kolejność', '3. Przykład', '4. Quiz'];
 
   var stepDots = '<div class="tut-steps">' + slides.map(function(_, idx) {
     var cls = 'tut-step-btn' + (idx === sIdx ? ' active' : '') + (idx < sIdx || isDone ? ' visited' : '');
@@ -4668,7 +4732,7 @@ function renderTutorialView(task) {
   var bodyHtml = '';
   if (sIdx === 0) {
     bodyHtml = '<div class="tut-card-inner">' +
-      '<span class="chip info">Karta 1/4 · Składnia i cel klauzuli</span>' +
+      '<span class="chip info tutorial-card-badge">Karta 1/4 · Składnia i cel klauzuli</span>' +
       '<h3 style="margin:8px 0">' + esc(slide.title) + '</h3>' +
       '<div class="theory-code" style="margin-bottom:12px"><code>' + highlightSQL(slide.syntax) + '</code></div>' +
       '<ul class="tut-list">' + (slide.bullets || []).map(function(b) { return '<li>' + highlightHtmlCodeBlocks(b) + '</li>'; }).join('') + '</ul>' +
@@ -4680,7 +4744,7 @@ function renderTutorialView(task) {
     var clauseInfo = CLAUSE_EXPLANATIONS_PL[activeClauseKey] || CLAUSE_EXPLANATIONS_PL['SELECT'];
 
     bodyHtml = '<div class="tut-card-inner">' +
-      '<span class="chip mid">Karta 2/4 · Architektura silnika PostgreSQL (Progresywny potok)</span>' +
+      '<span class="chip mid tutorial-card-badge">Karta 2/4 · Architektura silnika PostgreSQL (Progresywny potok)</span>' +
       '<h3 style="margin:8px 0">' + esc(slide.title) + '</h3>' +
       '<div class="interactive-hint">👆 Dotknij wybrany klocek poniżej, aby zobaczyć jak działa</div>' +
       '<div class="order-box">' +
@@ -4723,7 +4787,7 @@ function renderTutorialView(task) {
     '</div>';
   } else if (sIdx === 2) {
     bodyHtml = '<div class="tut-card-inner">' +
-      '<span class="chip info">Karta 3/4 · Przykład krok po kroku</span>' +
+      '<span class="chip info tutorial-card-badge">Karta 3/4 · Przykład krok po kroku</span>' +
       '<h3 style="margin:8px 0">' + esc(slide.title) + '</h3>' +
       '<div class="theory-code" style="margin-bottom:12px"><code>' + highlightSQL(slide.code) + '</code></div>' +
       '<div class="tut-lines">' +
@@ -4741,7 +4805,7 @@ function renderTutorialView(task) {
     var passed = uiState.quizPassed || isDone;
     var sampleVar = (task && task.variants && task.variants[0]) ? task.variants[0] : null;
     bodyHtml = '<div class="tut-card-inner">' +
-      '<span class="chip done">Karta 4/4 · Interaktywne sprawdzenie (+15 XP)</span>' +
+      '<span class="chip done tutorial-card-badge">Karta 4/4 · Interaktywne sprawdzenie (+15 XP)</span>' +
       '<h3 style="margin:8px 0">' + esc(slide.title) + '</h3>' +
       '<div class="prompt-box" style="margin-bottom:10px"><strong>❓ Pytanie:</strong> ' + formatPrompt(qz.question) + '</div>' +
       '<div class="interactive-hint">👆 Dotknij wybrany klocek poniżej, aby zobaczyć jak działa</div>' +
@@ -5732,7 +5796,8 @@ function renderProfileTab() {
   var totalAllTasks = totalPathVars + DIAG_QUESTIONS.length + lemurList.length;
   var curNick = (state.userProfile && state.userProfile.nick) ? state.userProfile.nick : (state.nickname || 'Gość (niezalogowany)');
   var sbReady = isSupabaseConfigured();
-  var board = getDisplayLeaderboard();
+  var fullBoard = getDisplayLeaderboard();
+  var board = uiState.leaderboardExpanded ? fullBoard.slice(0, 50) : fullBoard.slice(0, 10);
 
   var boardRows = board.map(function(row, idx) {
     var isMe = row.nick && curNick && row.nick.toLowerCase() === curNick.toLowerCase();
@@ -5779,13 +5844,18 @@ function renderProfileTab() {
     '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:6px">' +
       '<h2 style="margin:0">🏆 Ranking Testerów (SoloLearn Leaderboard)</h2>' +
       '<span class="chip ' + (sbReady ? 'done' : 'info') + '">' +
-        (sbReady ? '🟢 Ranking Chmurowy LIVE (Supabase)' : '📱 Ranking Lokalny / Demo') +
+        (sbReady ? '🟢 Ranking Chmurowy LIVE (Supabase)' : '📱 Ranking Lokalny') +
       '</span>' +
     '</div>' +
     '<p class="small muted">Wspólna tablica wyników znajomych testujących aplikację na Androidzie i iOS (projekt <code>SQLRanking</code> · tabela <code>public.sql_profiles</code>).</p>' +
-    '<div class="tblwrap" style="max-height:320px">' +
+    '<div class="tblwrap leaderboard-scroll-wrap" style="max-height:360px;overflow-y:auto;overscroll-behavior:contain">' +
       '<table><thead><tr><th>#</th><th>Nick</th><th>XP</th><th>Streak</th><th>Zadania</th></tr></thead>' +
       '<tbody>' + boardRows + '</tbody></table>' +
+    '</div>' +
+    '<div style="margin-top:10px;display:flex;justify-content:center">' +
+      '<button type="button" class="btn sm" data-act="toggleFullLeaderboard">' +
+        (uiState.leaderboardExpanded ? '🔼 Zwiń ranking (Pokaż Top 10)' : '🔽 Rozwiń pełny ranking (Pokaż wszystkich)') +
+      '</button>' +
     '</div>' +
     '<details class="helper-fold" style="margin-top:12px"' + (!sbReady ? ' open' : '') + '>' +
       '<summary>☁️ Zaawansowane: własne połączenie Supabase (domyślnie aktywny serwer SQLRanking)</summary>' +
@@ -7187,14 +7257,21 @@ document.addEventListener('click', async function(e) {
       if (gErrCat === 'syntax' && lastExecResult && lastExecResult.error) {
         registerGapTrap('g6', null, lastExecResult.error);
       }
+      var gapTrapMsg = (prTask && typeof prTask.detectTrap === 'function')
+        ? prTask.detectTrap(state.editorCode, lastExecResult)
+        : (prTask.hint || 'Sprawdź 3-punktową checklistę walidacji oraz porównaj swój wynik z wzorcem poniżej.');
       lastFeedback = {
         type: 'trap',
         title: '❌ Wynik niezgodny ze wzorcem',
-        msg: lastExecResult.error ? gCmp.msg : (prTask.hint || 'Sprawdź 3-punktową checklistę walidacji oraz porównaj swój wynik z wzorcem poniżej.')
+        msg: lastExecResult.error ? gCmp.msg : gapTrapMsg
       };
     }
     render();
     scrollToResult();
+  }
+  else if (act === 'toggleFullLeaderboard') {
+    uiState.leaderboardExpanded = !uiState.leaderboardExpanded;
+    render();
   }
   else if (act === 'showGapSol') {
     var prSol = uiState.activeGapPractice;
@@ -7468,7 +7545,7 @@ if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.
   });
 
   window.addEventListener('load', function() {
-    navigator.serviceWorker.register('./sw.js?v=15.0', { updateViaCache: 'none' }).then(function(registration) {
+    navigator.serviceWorker.register('./sw.js?v=15.1', { updateViaCache: 'none' }).then(function(registration) {
       document.addEventListener('visibilitychange', function() {
         if (document.visibilityState === 'visible') {
           registration.update().catch(function() {});
