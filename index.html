@@ -15,7 +15,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="./css/style.css?v=14.0">
+<link rel="stylesheet" href="./css/style.css?v=14.5">
 </head>
 <body>
 <div class="app">
@@ -26,6 +26,7 @@
       <span class="pill-pg" id="dbStatus" data-act="openDbStatusModal" onclick="if(window.toggleTopBarModal){window.toggleTopBarModal('dbStatus');event.stopPropagation();}" title="PostgreSQL 16 WebAssembly (PGlite) — kliknij, aby sprawdzić status" style="cursor:pointer">🟢 PG16</span>
     </div>
     <div class="top-stats">
+      <span class="rank-badge-slot" id="rankBadgeSlot" data-act="tab" data-tab="profile" title="Twoja ranga — kliknij, aby zobaczyć profil"></span>
       <span class="pill-stat" id="xpPill" data-act="openXpModal" onclick="if(window.toggleTopBarModal){window.toggleTopBarModal('xp');event.stopPropagation();}" title="Twój poziom XP — kliknij po szczegóły" style="cursor:pointer">⚡ 0 XP</span>
       <span class="pill-stat" id="streakPill" data-act="openStreakModal" onclick="if(window.toggleTopBarModal){window.toggleTopBarModal('streak');event.stopPropagation();}" title="Twoja seria dni nauki — kliknij po szczegóły" style="cursor:pointer">🔥 1d</span>
       <button class="btn sm btn-theme" data-act="theme" title="Zmień motyw">🌓</button>
@@ -63,9 +64,9 @@
 
 <div id="toast" role="status"></div>
 
-<script src="./js/data-dvdrental.js?v=14.0"></script>
-<script src="./js/data-tasks.js?v=14.0"></script>
-<script src="./js/data-interview.js?v=14.0"></script>
-<script src="./js/app.js?v=14.0"></script>
+<script src="./js/data-dvdrental.js?v=14.5"></script>
+<script src="./js/data-tasks.js?v=14.5"></script>
+<script src="./js/data-interview.js?v=14.5"></script>
+<script src="./js/app.js?v=14.5"></script>
 </body>
 </html>

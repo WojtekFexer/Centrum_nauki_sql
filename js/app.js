@@ -4,7 +4,7 @@
 /* ==========================================================================
    0. KONFIGURACJA CHMURY SUPABASE (REST API — RANKING I PROFILE TESTERÓW)
    ========================================================================== */
-const APP_VERSION = 'v14.0';
+const APP_VERSION = 'v14.5';
 const DEFAULT_SUPABASE_URL = 'https://hpfrcykbzuzucglorpkr.supabase.co';
 const DEFAULT_SUPABASE_KEY = 'sb_publishable_5klYjdIKjT35Zl2OtOyGQA_DGxdJCHh';
 
@@ -303,7 +303,40 @@ async function runQuery(sql) {
   }
 }
 
-function compareResults(userRes, expRes, checkOrder) {
+// v14.5: czy zapytanie wzorcowe ma ORDER BY na najwyższym poziomie (poza nawiasami, np. OVER(...) czy podzapytaniami)
+function solHasTopLevelOrderBy(sol) {
+  var s = String(sol || '').replace(/--.*$/gm, ' ').replace(/'(?:[^']|'')*'/g, "''");
+  var prev;
+  do { prev = s; s = s.replace(/\([^()]*\)/g, ' '); } while (s !== prev);
+  return /\bORDER\s+BY\b/i.test(s);
+}
+
+// v14.5: kolejność wierszy sprawdzamy tylko, gdy wzorzec ma ORDER BY
+function resolveCheckOrder(checkOrder, sol) {
+  if (typeof sol === 'string' && sol.trim().length > 0) {
+    return solHasTopLevelOrderBy(sol);
+  }
+  if (typeof checkOrder === 'string' && /\bSELECT\b/i.test(checkOrder)) {
+    return solHasTopLevelOrderBy(checkOrder);
+  }
+  return !!checkOrder;
+}
+
+// v14.5: ten sam zestaw kolumn, ale w innej kolejności
+function isSameColumnSetDifferentOrder(uCols, eCols) {
+  if (!uCols || !eCols || uCols.length !== eCols.length || uCols.length < 2) return false;
+  var u = uCols.map(function(c) { return String(c).trim().toLowerCase(); });
+  var e = eCols.map(function(c) { return String(c).trim().toLowerCase(); });
+  if (u.join('\u0001') === e.join('\u0001')) return false;
+  return u.slice().sort().join('\u0001') === e.slice().sort().join('\u0001');
+}
+
+function columnOrderMsg(eCols) {
+  return 'Masz wszystkie wymagane kolumny, ale ustaw je w SELECT dokładnie w takiej kolejności, jak w wymaganiach: ' + eCols.join(', ');
+}
+
+function compareResults(userRes, expRes, checkOrder, solSql) {
+  checkOrder = resolveCheckOrder(checkOrder, solSql);
   if (userRes.error) {
     var lnInfo = userRes.errorLine ? ' (Linia ' + userRes.errorLine + (userRes.errorSnippet ? ': `' + userRes.errorSnippet + '`' : '') + ')' : '';
     return { ok: false, reason: 'error', msg: 'Błąd wykonania SQL' + lnInfo + ': ' + userRes.error };
@@ -316,6 +349,9 @@ function compareResults(userRes, expRes, checkOrder) {
       ok: false, reason: 'cols',
       msg: 'Liczba kolumn się nie zgadza: zwróciłeś ' + uCols.length + ' (' + uCols.join(', ') + '), a oczekiwano ' + eCols.length + ' (' + eCols.join(', ') + ').'
     };
+  }
+  if (isSameColumnSetDifferentOrder(uCols, eCols)) {
+    return { ok: false, reason: 'col_order', msg: columnOrderMsg(eCols) };
   }
   for (var cIdx = 0; cIdx < eCols.length; cIdx++) {
     var uColName = String(uCols[cIdx] || '').trim();
@@ -343,25 +379,28 @@ function compareResults(userRes, expRes, checkOrder) {
   }
   function normRow(r) { return r.map(normCell).join('|'); }
 
-  var uNorm = uRows.map(normRow);
-  var eNorm = eRows.map(normRow);
+  // v14.5: bez ORDER BY sortujemy kanonicznie obie tablice wierszy (po JSON.stringify znormalizowanego wiersza)
+  function pairs(rows) { return rows.map(function(r) { return { key: JSON.stringify(r.map(normCell)), raw: r }; }); }
+  var uP = pairs(uRows), eP = pairs(eRows);
   if (!checkOrder) {
-    uNorm = uNorm.slice().sort();
-    eNorm = eNorm.slice().sort();
+    var byKey = function(a, b) { return a.key < b.key ? -1 : (a.key > b.key ? 1 : 0); };
+    uP.sort(byKey);
+    eP.sort(byKey);
   }
-  for (var i = 0; i < eNorm.length; i++) {
-    if (uNorm[i] !== eNorm[i]) {
+  for (var i = 0; i < eP.length; i++) {
+    if (uP[i].key !== eP[i].key) {
       return {
         ok: false, reason: 'values',
-        msg: 'Różnica w wierszu #' + (i + 1) + '. Twój wynik: [' + uRows[i].join(', ') + '], oczekiwano: [' + eRows[i].join(', ') + '].'
+        msg: 'Różnica w wierszu #' + (i + 1) + '. Twój wynik: [' + uP[i].raw.join(', ') + '], oczekiwano: [' + eP[i].raw.join(', ') + '].'
       };
     }
   }
   return { ok: true, msg: 'Brawo! Wynik Twojego zapytania w 100% pokrywa się z wzorcem.' };
 }
 
-function buildValidationChecklist(userRes, expRes, checkOrder) {
+function buildValidationChecklist(userRes, expRes, checkOrder, solSql) {
   if (!userRes || userRes.error || !expRes || !expRes.columns) return null;
+  checkOrder = resolveCheckOrder(checkOrder, solSql);
   var uCols = userRes.columns || [];
   var eCols = expRes.columns || [];
   var uRows = userRes.values || [];
@@ -370,6 +409,7 @@ function buildValidationChecklist(userRes, expRes, checkOrder) {
   var colsOk = (uCols.length === eCols.length) && uCols.every(function(c, idx) {
     return String(c).toLowerCase() === String(eCols[idx]).toLowerCase();
   });
+  var colsWrongOrder = isSameColumnSetDifferentOrder(uCols, eCols);
 
   var rowsOk = uRows.length === eRows.length;
 
@@ -380,7 +420,7 @@ function buildValidationChecklist(userRes, expRes, checkOrder) {
     if (!isNaN(num) && String(v).trim() !== '') return Number(num.toFixed(2)).toString();
     return String(v).trim().toUpperCase();
   }
-  function normRow(r) { return r.map(normCell).join('|'); }
+  function normRow(r) { return JSON.stringify(r.map(normCell)); }
 
   var valsOk = false;
   if (uCols.length === eCols.length && rowsOk) {
@@ -403,7 +443,9 @@ function buildValidationChecklist(userRes, expRes, checkOrder) {
     colsOk: colsOk,
     colsMsg: colsOk
       ? '✅ Zgodne nazwy kolumn (' + eCols.join(', ') + ')'
-      : '❌ Różnica w kolumnach (masz: [' + (uCols.join(', ') || 'brak') + '], oczekiwano: [' + eCols.join(', ') + '])',
+      : (colsWrongOrder
+        ? '❌ ' + columnOrderMsg(eCols)
+        : '❌ Różnica w kolumnach (masz: [' + (uCols.join(', ') || 'brak') + '], oczekiwano: [' + eCols.join(', ') + '])'),
     rowsOk: rowsOk,
     rowsMsg: rowsOk
       ? '✅ Zgodna liczba wierszy (' + eRows.length + ')'
@@ -423,8 +465,8 @@ var LOCAL_PROFILES_KEY = 'sql_master_local_profiles';
 
 function defaultState() {
   return {
-    xp: 1202,
-    streak: 4,
+    xp: 0,
+    streak: 1,
     theme: 'dark',
     unlockedStage: 1,
     diagDone: false,
@@ -473,6 +515,18 @@ try {
     if (!state.tutorialsDone) state.tutorialsDone = {};
     if (!Array.isArray(state.gaps)) state.gaps = defaultState().gaps;
     if (!Array.isArray(state.diagSkipped)) state.diagSkipped = [];
+    // v14.5: jeśli w localStorage została stara wartość startowa 1202 XP bez żadnego rozwiązanego zadania i bez profilu, wyzeruj do 0 XP
+    if (
+      state.xp === 1202 &&
+      !state.userProfile &&
+      !state.diagDone &&
+      Object.keys(state.completedVariants).length === 0 &&
+      Object.keys(state.completedLemur).length === 0 &&
+      Object.keys(state.tutorialsDone).length === 0
+    ) {
+      state.xp = 0;
+      state.streak = 1;
+    }
     // Kompatybilność wsteczna: jeśli z poprzednich sesji zaliczono już zadanie podstawowe 1 (klucz ':0'),
     // automatycznie oznacz rozgrzewkę R1-R2 jako zaliczoną, aby nie blokować dotychczasowego postępu.
     (window.PATH_TASKS || []).forEach(function(pt) {
@@ -520,14 +574,15 @@ var uiState = {
   quizPassed: false,
   sqlAnimStep: 0,
   sqlAnimRunning: false,
-  authModalOpen: hasSeenOnboarding && !(state.userProfile && state.userProfile.nick),
+  // v14.5: odwrócony onboarding — najpierw nick (0 XP w Rankingu), potem 4-kartowy samouczek
+  authModalOpen: !(state.userProfile && state.userProfile.nick),
   authError: '',
   leaderboard: null,
   leaderboardSource: 'local',
   lastSyncTime: null,
   syncing: false,
   taskDropdownOpen: false,
-  onboardingOpen: !hasSeenOnboarding,
+  onboardingOpen: !hasSeenOnboarding && !!(state.userProfile && state.userProfile.nick),
   onboardingSlideIdx: 0,
   clickedClauses: {},
   selectedClause: null,
@@ -556,6 +611,42 @@ function resetTaskContextUi() {
   uiState.tableColsOpen = {};
   uiState.teachFirstOpen = false;
 }
+
+// v14.5: otwórz 4-kartowy Samouczek Powitalny, jeśli użytkownik jeszcze go nie widział
+function openWelcomeTutorialIfNew() {
+  var seen = false;
+  try { seen = localStorage.getItem(ONBOARDING_KEY) === '1'; } catch (e) {}
+  if (!seen) {
+    uiState.onboardingOpen = true;
+    uiState.onboardingSlideIdx = 0;
+  }
+}
+
+// v14.5: 8 rang wg XP -> klasa ramki .rank-frame-1 ... .rank-frame-8
+var RANK_LEVELS = [
+  { min: 0,    name: 'Nowicjusz SQL',      icon: '🔩' },
+  { min: 50,   name: 'Adept SELECT',       icon: '🪙' },
+  { min: 150,  name: 'Łowca filtrów',      icon: '🥈' },
+  { min: 300,  name: 'Mistrz JOIN',        icon: '💠' },
+  { min: 500,  name: 'Mistrz CTE',         icon: '🏅' },
+  { min: 800,  name: 'Władca okien',       icon: '👑' },
+  { min: 1200, name: 'Diament SQL',        icon: '💎' },
+  { min: 1800, name: 'Mistrz SQL',         icon: '🌌' }
+];
+function getRankLevel(xp) {
+  var x = Number(xp) || 0;
+  var lvl = 1;
+  for (var i = 0; i < RANK_LEVELS.length; i++) {
+    if (x >= RANK_LEVELS[i].min) lvl = i + 1;
+  }
+  return lvl;
+}
+function renderRankBadge(xp, extraCls) {
+  var lvl = getRankLevel(xp);
+  var r = RANK_LEVELS[lvl - 1];
+  return '<span class="rank-badge rank-frame-' + lvl + (extraCls ? ' ' + extraCls : '') + '" title="Ranga ' + lvl + '/8: ' + esc(r.name) + '">' + r.icon + '</span>';
+}
+window.getRankLevel = getRankLevel;
 
 function triggerStepFlash() {
   uiState.stepFlashActive = true;
@@ -876,7 +967,7 @@ async function fetchLeaderboard() {
   if (isSupabaseConfigured()) {
     try {
       var baseUrl = SUPABASE_CONFIG.url.replace(/\/+$/, '');
-      var resp = await fetch(baseUrl + '/rest/v1/sql_profiles?select=nick,xp,streak,solved_count,updated_at&order=xp.desc&limit=20', {
+      var resp = await fetch(baseUrl + '/rest/v1/sql_profiles?select=nick,xp,streak,solved_count,updated_at&order=xp.desc&limit=50', {
         method: 'GET',
         headers: {
           'apikey': SUPABASE_CONFIG.anonKey,
@@ -904,6 +995,11 @@ async function fetchLeaderboard() {
 
 function getDisplayLeaderboard() {
   if (uiState.leaderboardSource === 'supabase' && Array.isArray(uiState.leaderboard) && uiState.leaderboard.length > 0) {
+    // v14.5: zawsze pokaż bieżącego gracza (także z 0 XP), nawet jeśli nie zmieścił się w pobranej liście
+    var meNick = state.userProfile && state.userProfile.nick;
+    if (meNick && !uiState.leaderboard.some(function(r) { return r.nick && r.nick.toLowerCase() === meNick.toLowerCase(); })) {
+      return uiState.leaderboard.concat([{ nick: meNick, xp: state.xp || 0, streak: state.streak || 1, solved_count: getTotalSolvedCount() }]);
+    }
     return uiState.leaderboard;
   }
   var demoPlayers = [
@@ -2028,7 +2124,7 @@ function buildDataLemurSpec(item, parentTask) {
   var tblLabel = details.tables.length > 0 ? details.tables.map(esc).join(', ') : 'brak';
   var sortChipHtml = details.orderBy
     ? '<span class="req-meta-chip">↕️ Sortowanie: <b>ORDER BY ' + esc(details.orderBy) + '</b></span>'
-    : '<span class="req-meta-chip">↕️ Kolejność dowolna</span>';
+    : '<span class="req-meta-chip">↕️ Sortowanie wierszy (ORDER BY): <b>dowolne (niewymagane)</b></span>';
 
   var filterCols = extractFilterCols(sol, details.tables);
   var filterChipHtml = filterCols.length > 0
@@ -2285,8 +2381,12 @@ function explainSqlExpressionInPolish(rawExpr, aliasName) {
     return 'Dodaj <code>' + esc(addMatch[1].trim()) + '</code> do <code>' + esc(addMatch[2].trim()) + '</code> i nazwij wynik <code>' + safeAlias + '</code>:';
   }
 
-  // 11. Domyślne wyjaśnienie
-  return 'Wylicz wartość za pomocą wyrażenia <code>' + esc(cleanExpr) + '</code> i nazwij wynik <code>' + safeAlias + '</code>:';
+  // 11. Domyślne wyjaśnienie (v14.5: bez ujawniania gotowego wyrażenia SQL)
+  var defCols = extractExprSourceCols(cleanExpr);
+  if (defCols.length) {
+    return 'Wylicz nową wartość na podstawie kolumn ' + defCols.map(function(c) { return '<code>' + esc(c) + '</code>'; }).join(', ') + ' i nazwij wynik <code>' + safeAlias + '</code>:';
+  }
+  return 'Wylicz nową wartość zgodnie z poleceniem zadania i nazwij wynik <code>' + safeAlias + '</code>:';
 }
 
 function buildAliasHelpBoxHtml(aliasName, expr, sourceColsList, isSimpleRename) {
@@ -2294,28 +2394,28 @@ function buildAliasHelpBoxHtml(aliasName, expr, sourceColsList, isSimpleRename) 
   var exprClean = String(expr || sourceColsList || '').trim();
   if (!exprClean || exprClean === '*') exprClean = aliasName || '';
 
-  var formulaSql = exprClean + ' AS ' + (aliasName || '');
-  var highlightedFormula = highlightSQL(formulaSql);
-  var polishExplanation = explainSqlExpressionInPolish(exprClean, aliasName);
+  // v14.5 (Anty-Spojler): bez gotowej formuły „wyrażenie AS alias” — tylko opis biznesowy po polsku
+  var polishExplanation = String(explainSqlExpressionInPolish(exprClean, aliasName) || '').replace(/:\s*$/, '.');
+  var srcCols = String(sourceColsList || '').trim();
+  var srcHintHtml = (srcCols && srcCols !== '*' && !isSimpleRename)
+    ? '<div class="alias-calc-popover-src small muted">📦 Kolumny bazowe: ' + srcCols.split(/\s*,\s*/).map(function(c) { return '<code>' + esc(c) + '</code>'; }).join(', ') + '</div>'
+    : '';
 
-  var jsSafeFormula = String(formulaSql).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
   var jsSafeAlias = String(aliasName || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
 
   return '<div class="alias-calc-popover">' +
     '<div class="alias-calc-popover-hdr">' +
-      '<span>🧮 <strong>Wzór dla kolumny "' + safeAlias + '"</strong></span>' +
+      '<span>🧮 <strong>Jak wyliczyć kolumnę "' + safeAlias + '"</strong></span>' +
       '<button type="button" class="alias-popover-close" onclick="window.closeAliasHelpBox(event)" aria-label="Zamknij">✕</button>' +
     '</div>' +
     '<div class="alias-calc-popover-txt">' +
       polishExplanation +
     '</div>' +
-    '<pre class="alias-exact-formula">' + highlightedFormula + '</pre>' +
+    srcHintHtml +
+    '<div class="alias-exact-formula alias-no-spoiler small">✍️ Działanie ułóż samodzielnie w <code>SELECT</code>, a na końcu nadaj mu nazwę słowem <code>AS</code>.</div>' +
     '<div class="alias-popover-acts">' +
-      '<button type="button" class="btn sm primary alias-popover-src-btn" onclick="window.insertAtCursor(\'' + esc(jsSafeFormula) + ' \'); event.stopPropagation();">' +
-        '➕ Wstaw "' + esc(formulaSql) + '"' +
-      '</button>' +
-      '<button type="button" class="btn sm alias-popover-insert-btn" onclick="window.insertAtCursor(\' AS ' + esc(jsSafeAlias) + ' \'); event.stopPropagation();">' +
-        '🏷️ Wstaw samo "AS ' + safeAlias + '"' +
+      '<button type="button" class="btn sm primary alias-popover-insert-btn" onclick="window.insertAtCursor(\' AS ' + esc(jsSafeAlias) + ' \'); event.stopPropagation();">' +
+        '🏷️ Wstaw tylko "AS ' + safeAlias + '"' +
       '</button>' +
     '</div>' +
   '</div>';
@@ -3060,12 +3160,50 @@ function renderQuickBar(task, variant) {
     addBtn('📦 ' + t, t, 'Wstaw tabelę ' + t, 'quick-tbl-chip');
   });
 
-  // Kolumny z sol
+  // Kolumny z sol (v14.5 Anty-Spojler: wyrażenia z aliasem rozbijamy na kolumny bazowe, operatory, AS i sam alias)
   var parsed = parseSqlDetails(sol, tbls);
+  var aliasNames = [];
+  function addOperatorsFromExpr(expr) {
+    var ex = String(expr || '').replace(/'(?:[^']|'')*'/g, ' ').replace(/\(\s*\*\s*\)/g, '()');
+    if (/\*/.test(ex)) addBtn('*', ' * ', 'Wstaw operator mnożenia *', 'quick-op-chip');
+    if (/\+/.test(ex)) addBtn('+', ' + ', 'Wstaw operator dodawania +', 'quick-op-chip');
+    if (/(^|[^-])-(?!-)/.test(ex)) addBtn('-', ' - ', 'Wstaw operator odejmowania -', 'quick-op-chip');
+    if (/\//.test(ex)) addBtn('/', ' / ', 'Wstaw operator dzielenia /', 'quick-op-chip');
+    if (/\|\|/.test(ex)) addBtn('||', ' || ', 'Wstaw operator łączenia tekstów ||', 'quick-op-chip');
+    if (/\bROUND\b/i.test(ex)) addBtn('ROUND(, 2)', 'ROUND(, 2)', 'Wstaw ROUND');
+  }
   (parsed.cols || []).forEach(function(c) {
-    if (c.name && c.name !== '*') {
+    if (!c.name || c.name === '*') return;
+    var isIdent = /^[a-zA-Z_]\w*$/.test(String(c.name));
+    if (c.hasAlias) {
+      extractExprSourceCols(c.expr).forEach(function(bc) {
+        addBtn(bc, bc, 'Wstaw kolumnę bazową ' + bc, 'quick-col-chip');
+      });
+      addOperatorsFromExpr(c.expr);
+      if (isIdent) aliasNames.push(c.name);
+    } else if (isIdent) {
       addBtn(c.name, c.name, 'Wstaw kolumnę ' + c.name, 'quick-col-chip');
+    } else {
+      extractExprSourceCols(c.name).forEach(function(bc) {
+        addBtn(bc, bc, 'Wstaw kolumnę ' + bc, 'quick-col-chip');
+      });
+      addOperatorsFromExpr(c.name);
     }
+  });
+  if (aliasNames.length) {
+    addBtn('AS', ' AS ', 'Wstaw AS', 'kw-as');
+    aliasNames.forEach(function(an) {
+      addBtn('🏷️ ' + an, an, 'Wstaw samą nazwę aliasu ' + an, 'quick-col-chip quick-alias-chip');
+    });
+  }
+
+  // Usuń duplikaty pigułek (ta sama etykieta)
+  var seenLbl = {};
+  buttons = buttons.filter(function(b) {
+    var k = String(b.label).toLowerCase();
+    if (seenLbl[k]) return false;
+    seenLbl[k] = true;
+    return true;
   });
 
   return '<div class="sql-quick-bar-wrap">' +
@@ -3981,29 +4119,8 @@ function renderPathTab() {
     var hasPrev = vIdx > 0;
     var hasNext = (vIdx + 1 < totalSteps) && isStepUnlocked(task, vIdx + 1);
 
+    // v14.5: lista zadań i pod-lekcji renderuje się jako niezależny Bottom Sheet w <body> (renderTaskSwitcherSheet)
     var dropdownHtml = '';
-    if (uiState.taskDropdownOpen) {
-      dropdownHtml = '<div class="task-dropdown-menu">' +
-        '<div class="task-dropdown-hdr">' +
-          '<span>📋 Zadania w tej pod-lekcji (' + solvedInLesson + '/' + totalSteps + '):</span>' +
-          '<button type="button" class="task-dropdown-close" data-act="toggleTaskDropdown">✕</button>' +
-        '</div>' +
-        '<div class="task-dropdown-items">' +
-          task.variants.map(function(v, idx) {
-            var isCur = idx === vIdx;
-            var isSolved = isStepSolved(task, idx);
-            var isUnlocked = isStepUnlocked(task, idx);
-            var icon = isCur ? '▶' : (isSolved ? '✅' : (isUnlocked ? '🔓' : '🔒'));
-            var cls = 'task-dd-item' + (isCur ? ' active' : '') + (!isUnlocked ? ' locked' : '');
-            var shortTitle = getVariantShortTitle(task, v, idx);
-            return '<button type="button" class="' + cls + '" data-act="jumpToVariant" data-vidx="' + idx + '"' + (!isUnlocked ? ' disabled' : '') + '>' +
-              '<span class="task-dd-icon">' + icon + '</span>' +
-              '<span class="task-dd-text">' + esc(shortTitle) + '</span>' +
-            '</button>';
-          }).join('') +
-        '</div>' +
-      '</div>';
-    }
 
     var flashCls = uiState.stepFlashActive ? ' task-step-flash' : '';
 
@@ -4136,7 +4253,31 @@ function renderPathTab() {
     h += '</div></div>';
   });
 
+  h += renderPwaInstallBanner();
   return h;
+}
+
+// v14.5: dyskretny baner „Dodaj do ekranu głównego” (tylko telefon, poza trybem standalone)
+var PWA_BANNER_KEY = 'sql_master_pwa_banner_closed';
+function renderPwaInstallBanner() {
+  try {
+    if (localStorage.getItem(PWA_BANNER_KEY) === '1') return '';
+    var standalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || window.navigator.standalone === true;
+    if (standalone) return '';
+    var ua = navigator.userAgent || '';
+    var isIos = /iPhone|iPad|iPod/i.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    var isAndroid = /Android/i.test(ua);
+    if (!isIos && !isAndroid) return '';
+    var msg = isIos
+      ? '📲 Dodaj aplikację do ekranu: w Safari stuknij <strong>Udostępnij</strong> → <strong>Do ekranu początkowego</strong>.'
+      : '📲 Dodaj aplikację do ekranu: w Chrome stuknij <strong>Menu ⋮</strong> → <strong>Dodaj do ekranu głównego</strong>.';
+    return '<div class="pwa-install-banner" role="note">' +
+      '<span class="pwa-install-txt">' + msg + '</span>' +
+      '<button type="button" class="pwa-install-close" data-act="closePwaBanner" aria-label="Zamknij podpowiedź">✕</button>' +
+    '</div>';
+  } catch (e) {
+    return '';
+  }
 }
 
 // ZAKŁADKA 2: DIAGNOZA (10 ZADAŃ Z PRZYCISKIEM POMIŃ)
@@ -4353,7 +4494,7 @@ var SUPABASE_SQL_SNIPPET = [
 ].join('\n');
 
 function renderOnboardingModal() {
-  if (!uiState.onboardingOpen) return '';
+  if (!uiState.onboardingOpen || uiState.authModalOpen) return '';
   var idx = Math.max(0, Math.min(3, uiState.onboardingSlideIdx || 0));
   uiState.onboardingSlideIdx = idx;
 
@@ -4499,7 +4640,7 @@ function renderAuthModal() {
         '<span class="chip info">👥 Konto Testera · Android & iOS</span>' +
         '<button type="button" class="btn sm" data-act="closeAuthModal">✕ Pomiń</button>' +
       '</div>' +
-      '<h2 id="authModalTitle" style="margin-top:4px">Dołącz do testów SQL Master!</h2>' +
+      '<h2 id="authModalTitle" style="margin-top:4px">Wybierz swój nick i dołącz do Rankingu</h2>' +
       '<p class="small muted">Podaj swój <strong>Nick</strong> (np. Wojtek) oraz <strong>4-cyfrowy PIN</strong> (do odzyskania konta na innym telefonie i zapisu wyniku w Rankingu).</p>' +
       '<div style="margin-top:10px">' +
         '<label class="small" for="authNickInp">Twój Nick gracza (2–24 znaki)</label>' +
@@ -4582,30 +4723,18 @@ function renderTopbarModal() {
     var lemurDone = Object.keys(state.completedLemur || {}).length;
     var lemurTotal = window.INTERVIEW_TASKS ? window.INTERVIEW_TASKS.length : 60;
 
-    var rank = 'Nowicjusz SQL';
-    var nextRank = 'Adept Zapytań (100 XP)';
-    var xpPct = Math.min(100, Math.round((xp / 100) * 100));
-    if (xp >= 1000) {
-      rank = 'Arcymistrz PostgreSQL 👑';
-      nextRank = 'Maksymalna ranga osiągnięta!';
-      xpPct = 100;
-    } else if (xp >= 500) {
-      rank = 'Ekspert Baz Danych 💎';
-      nextRank = 'Arcymistrz PostgreSQL (1000 XP)';
-      xpPct = Math.round(((xp - 500) / 500) * 100);
-    } else if (xp >= 250) {
-      rank = 'Zaawansowany Analityk 🚀';
-      nextRank = 'Ekspert Baz Danych (500 XP)';
-      xpPct = Math.round(((xp - 250) / 250) * 100);
-    } else if (xp >= 100) {
-      rank = 'Adept Zapytań ⭐';
-      nextRank = 'Zaawansowany Analityk (250 XP)';
-      xpPct = Math.round(((xp - 100) / 150) * 100);
-    }
+    var rLvl = getRankLevel(xp);
+    var curRankObj = RANK_LEVELS[rLvl - 1];
+    var nextRankObj = RANK_LEVELS[rLvl] || null;
+    var rank = curRankObj.name + ' (Ranga ' + rLvl + '/8)';
+    var nextRank = nextRankObj ? (nextRankObj.name + ' (' + nextRankObj.min + ' XP)') : 'Maksymalna ranga 8/8 osiągnięta!';
+    var xpPct = nextRankObj
+      ? Math.min(100, Math.max(0, Math.round(((xp - curRankObj.min) / Math.max(1, nextRankObj.min - curRankObj.min)) * 100)))
+      : 100;
 
     bodyHtml = '<div style="display:flex;flex-direction:column;gap:12px">' +
-      '<div style="display:flex;align-items:center;justify-content:space-between">' +
-        '<div><div class="small muted">Aktualna Ranga:</div><div style="font-size:16px;font-weight:700">' + esc(rank) + '</div></div>' +
+      '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px">' +
+        '<div style="display:flex;align-items:center;gap:10px">' + renderRankBadge(xp) + '<div><div class="small muted">Aktualna Ranga:</div><div style="font-size:15px;font-weight:700">' + esc(rank) + '</div></div></div>' +
         '<div style="font-size:20px;font-weight:700;color:var(--accent)">' + xp + ' XP</div>' +
       '</div>' +
       '<div>' +
@@ -4678,7 +4807,7 @@ function renderProfileTab() {
     var medal = idx === 0 ? '🥇 1' : idx === 1 ? '🥈 2' : idx === 2 ? '🥉 3' : String(idx + 1);
     return '<tr class="' + (isMe ? 'lb-me' : '') + '">' +
       '<td><strong>' + medal + '</strong></td>' +
-      '<td><strong>' + esc(row.nick) + '</strong>' + (isMe ? ' <span class="chip done" style="font-size:10px;padding:1px 6px">Ty</span>' : '') + '</td>' +
+      '<td>' + renderRankBadge(row.xp, 'rank-badge-sm') + ' <strong>' + esc(row.nick) + '</strong>' + (isMe ? ' <span class="chip done" style="font-size:10px;padding:1px 6px">Ty</span>' : '') + '</td>' +
       '<td>⚡ <strong>' + Number(row.xp || 0) + '</strong></td>' +
       '<td>🔥 ' + Number(row.streak || 1) + 'd</td>' +
       '<td>✅ ' + Number(row.solved_count || 0) + '</td>' +
@@ -4693,7 +4822,8 @@ function renderProfileTab() {
           '<span class="chip info">📱 Wersja aplikacji: ' + esc(APP_VERSION) + '</span>' +
           '<button type="button" class="btn sm warn" data-act="forceRefreshApp">🔄 Odśwież do najnowszej wersji (' + esc(APP_VERSION) + ')</button>' +
         '</div>' +
-        '<h2 style="margin:6px 0 2px">Gracz: ' + esc(curNick) + '</h2>' +
+        '<h2 style="margin:6px 0 2px;display:flex;align-items:center;gap:8px">' + renderRankBadge(state.xp) + '<span>Gracz: ' + esc(curNick) + '</span></h2>' +
+        '<p class="small" style="margin:0 0 2px">Ranga ' + getRankLevel(state.xp) + '/8: <strong>' + esc(RANK_LEVELS[getRankLevel(state.xp) - 1].name) + '</strong></p>' +
         '<p class="small muted" style="margin:0">XP: <strong>' + state.xp + '</strong> · Rozwiązane zadania: <strong>' + getTotalSolvedCount() + '</strong>' +
         (uiState.lastSyncTime ? ' · Ost. sync: <strong>' + esc(uiState.lastSyncTime) + '</strong>' : '') + '</p>' +
       '</div>' +
@@ -4774,6 +4904,8 @@ function updateHeader() {
   var bdg = document.getElementById('gapBdg');
   var pathTabLbl = document.getElementById('pathTabLabel');
   if (xpEl) xpEl.textContent = '⚡ ' + state.xp + ' XP';
+  var rankSlot = document.getElementById('rankBadgeSlot');
+  if (rankSlot) rankSlot.innerHTML = renderRankBadge(state.xp, 'rank-badge-sm');
   if (stEl) stEl.textContent = '🔥 ' + state.streak + 'd';
   var openGaps = state.gaps.filter(function(g) { return g.lvl <= 1; }).length;
   if (bdg) bdg.innerHTML = openGaps ? '<span class="bdg-cnt">' + openGaps + '</span>' : '';
@@ -4788,6 +4920,61 @@ function updateHeader() {
   }
 }
 
+// v14.5: Bottom Sheet przełącznika zadań i pod-lekcji (renderowany bezpośrednio w <body>, poza sticky nagłówkiem)
+function renderTaskSwitcherSheet() {
+  var task = PATH_TASKS.find(function(t) { return t.id === state.activeTaskId; }) || PATH_TASKS[0];
+  if (!task) return '';
+  var totalSteps = getNodeTotalTasks(task);
+  var vIdx = state.activeVariantIdx % totalSteps;
+  var solvedInLesson = countTotalLessonSolved(task.id);
+
+  var tasksHtml = task.variants.map(function(v, idx) {
+    var isCur = idx === vIdx;
+    var isSolved = isStepSolved(task, idx);
+    var isUnlocked = isStepUnlocked(task, idx);
+    var icon = isCur ? '▶' : (isSolved ? '✅' : (isUnlocked ? '🔓' : '🔒'));
+    var cls = 'task-dd-item' + (isCur ? ' active' : '') + (!isUnlocked ? ' locked' : '');
+    return '<button type="button" class="' + cls + '" data-act="jumpToVariant" data-vidx="' + idx + '"' + (!isUnlocked ? ' disabled' : '') + '>' +
+      '<span class="task-dd-icon">' + icon + '</span>' +
+      '<span class="task-dd-text">' + esc(getVariantShortTitle(task, v, idx)) + '</span>' +
+    '</button>';
+  }).join('');
+
+  var lessonsHtml = STAGES.map(function(st) {
+    var inStage = PATH_TASKS.filter(function(t) { return t.stage === st.id; });
+    if (!inStage.length) return '';
+    return '<div class="task-sheet-stage">' + esc(st.name) + '</div>' +
+      inStage.map(function(t) {
+        var open = isLessonUnlocked(t.id);
+        var isCur = t.id === task.id;
+        var done = isLessonCoreCompleted(t.id);
+        var icon = isCur ? '▶' : (done ? '✅' : (open ? '🔓' : '🔒'));
+        var cls = 'task-dd-item' + (isCur ? ' active' : '') + (!open ? ' locked' : '');
+        return '<button type="button" class="' + cls + '" data-act="openPathTask" data-id="' + esc(t.id) + '"' + (!open || isCur ? ' disabled' : '') + '>' +
+          '<span class="task-dd-icon">' + icon + '</span>' +
+          '<span class="task-dd-text">' + esc(t.title) + '</span>' +
+          '<span class="task-sheet-cnt">' + countTotalLessonSolved(t.id) + '/' + getNodeTotalTasks(t) + '</span>' +
+        '</button>';
+      }).join('');
+  }).join('');
+
+  return '<div class="task-sheet-backdrop" role="dialog" aria-modal="true" aria-label="Wybór zadania i lekcji">' +
+    '<div class="task-sheet-card">' +
+      '<div class="task-sheet-grip" aria-hidden="true"></div>' +
+      '<div class="task-dropdown-hdr">' +
+        '<span>📋 ' + esc(task.title) + ' (' + solvedInLesson + '/' + totalSteps + ')</span>' +
+        '<button type="button" class="task-dropdown-close" data-act="toggleTaskDropdown" aria-label="Zamknij">✕</button>' +
+      '</div>' +
+      '<div class="task-sheet-scroll">' +
+        '<div class="task-sheet-section">🎯 Zadania w tej pod-lekcji</div>' +
+        '<div class="task-dropdown-items">' + tasksHtml + '</div>' +
+        '<div class="task-sheet-section">🗺️ Skocz do innej pod-lekcji</div>' +
+        '<div class="task-dropdown-items">' + lessonsHtml + '</div>' +
+      '</div>' +
+    '</div>' +
+  '</div>';
+}
+
 function render() {
   document.documentElement.setAttribute('data-theme', state.theme || 'dark');
   updateHeader();
@@ -4799,6 +4986,18 @@ function render() {
                : currentTab === 'schema' ? renderSchemaTab()
                : renderProfileTab();
   v.innerHTML = mainHtml + renderOnboardingModal() + renderAuthModal() + renderTopbarModal();
+
+  // v14.5: Bottom Sheet zadań/lekcji poza kontenerem nagłówka (bezpośrednio w <body>)
+  var sheetRoot = document.getElementById('taskSheetRoot');
+  if (!sheetRoot) {
+    sheetRoot = document.createElement('div');
+    sheetRoot.id = 'taskSheetRoot';
+    document.body.appendChild(sheetRoot);
+  }
+  var sheetOpen = currentTab === 'path' && state.pathMode === 'solve' && !!uiState.taskDropdownOpen;
+  if (!sheetOpen) uiState.taskDropdownOpen = false;
+  sheetRoot.innerHTML = sheetOpen ? renderTaskSwitcherSheet() : '';
+  document.body.classList.toggle('task-sheet-open', sheetOpen);
 
   document.querySelectorAll('.tab').forEach(function(b) {
     if (b.dataset.tab === currentTab) b.setAttribute('aria-current', 'page');
@@ -4935,7 +5134,7 @@ document.addEventListener('click', async function(e) {
   }
 
   // Zamknij rozwijaną listę zadań, jeśli kliknięto poza dropdown
-  if (uiState.taskDropdownOpen && !e.target.closest('.task-dropdown-menu') && !e.target.closest('[data-act="toggleTaskDropdown"]')) {
+  if (uiState.taskDropdownOpen && !e.target.closest('.task-dropdown-menu') && !e.target.closest('.task-sheet-card') && !e.target.closest('[data-act="toggleTaskDropdown"]')) {
     uiState.taskDropdownOpen = false;
     if (!e.target.closest('[data-act]') && !e.target.closest('[data-insert-sql]')) {
       render();
@@ -5123,11 +5322,7 @@ document.addEventListener('click', async function(e) {
   else if (act === 'closeOnboarding') {
     uiState.onboardingOpen = false;
     try { localStorage.setItem(ONBOARDING_KEY, '1'); } catch (err) {}
-    var hasNick = state.userProfile && state.userProfile.nick && state.userProfile.nick.trim().length > 0;
-    if (!hasNick) {
-      uiState.authModalOpen = true;
-      uiState.authError = '';
-    }
+    // v14.5: nick wybierany jest przed samouczkiem, więc tu już nie otwieramy okna logowania
     render();
   }
   else if (act === 'onbInspectCol') {
@@ -5201,6 +5396,7 @@ document.addEventListener('click', async function(e) {
       return;
     }
     state.activeTaskId = targetId;
+    uiState.taskDropdownOpen = false;
     var t = PATH_TASKS.find(function(x) { return x.id === state.activeTaskId; });
     state.activeVariantIdx = t ? getFirstUnsolvedStepIdx(t) : 0;
     resetTaskContextUi();
@@ -5522,8 +5718,8 @@ document.addEventListener('click', async function(e) {
     if (expRes && !expRes.error && expRes.columns) {
       expectedOutputCache[String(variant.sol || '').trim()] = expRes;
     }
-    var cmp = compareResults(lastExecResult, expRes, variant.order);
-    lastChecklist = buildValidationChecklist(lastExecResult, expRes, variant.order);
+    var cmp = compareResults(lastExecResult, expRes, variant.order, variant.sol);
+    lastChecklist = buildValidationChecklist(lastExecResult, expRes, variant.order, variant.sol);
     if (cmp.ok) {
       lastExpectedResult = null;
       var wasCoreUnlocked = isLessonCoreCompleted(task.id);
@@ -5579,7 +5775,7 @@ document.addEventListener('click', async function(e) {
     state.editorCode = formatSqlPretty(variant2.sol);
     lastExecResult = await runQuery(variant2.sol);
     lastExpectedResult = null;
-    lastChecklist = buildValidationChecklist(lastExecResult, lastExecResult, variant2.order);
+    lastChecklist = buildValidationChecklist(lastExecResult, lastExecResult, variant2.order, variant2.sol);
     lastFeedback = { type: 'warn', title: '💡 Wczytano wzorcowe rozwiązanie', msg: 'Przeanalizuj kod, a następnie przełącz się na kolejne zadanie, aby napisać podobne zapytanie samodzielnie.' };
     saveState();
     render();
@@ -5592,8 +5788,8 @@ document.addEventListener('click', async function(e) {
     if (dExp && !dExp.error && dExp.columns) {
       expectedOutputCache[String(dq.sol || '').trim()] = dExp;
     }
-    var dCmp = compareResults(lastExecResult, dExp, dq.order);
-    lastChecklist = buildValidationChecklist(lastExecResult, dExp, dq.order);
+    var dCmp = compareResults(lastExecResult, dExp, dq.order, dq.sol);
+    lastChecklist = buildValidationChecklist(lastExecResult, dExp, dq.order, dq.sol);
     if (dCmp.ok) {
       state.diagScore++;
       state.xp += 15;
@@ -5728,8 +5924,8 @@ document.addEventListener('click', async function(e) {
     if (lExp && !lExp.error && lExp.columns) {
       expectedOutputCache[String(lt.sol || '').trim()] = lExp;
     }
-    var lCmp = compareResults(lastExecResult, lExp, !!lt.order);
-    lastChecklist = buildValidationChecklist(lastExecResult, lExp, !!lt.order);
+    var lCmp = compareResults(lastExecResult, lExp, !!lt.order, lt.sol);
+    lastChecklist = buildValidationChecklist(lastExecResult, lExp, !!lt.order, lt.sol);
     if (lCmp.ok) {
       lastExpectedResult = null;
       if (!state.completedLemur[lt.id]) {
@@ -5765,7 +5961,7 @@ document.addEventListener('click', async function(e) {
     state.editorCode = formatSqlPretty(lt2.sol);
     lastExecResult = await runQuery(lt2.sol);
     lastExpectedResult = null;
-    lastChecklist = buildValidationChecklist(lastExecResult, lastExecResult, !!lt2.order);
+    lastChecklist = buildValidationChecklist(lastExecResult, lastExecResult, !!lt2.order, lt2.sol);
     lastFeedback = { type: 'warn', title: '💡 Wzorcowe rozwiązanie (' + lt2.title + ')', msg: lt2.hint || lt2.gapHint };
     saveState();
     render();
@@ -5808,9 +6004,15 @@ document.addEventListener('click', async function(e) {
     uiState.authError = '';
     render();
   }
+  else if (act === 'closePwaBanner') {
+    try { localStorage.setItem(PWA_BANNER_KEY, '1'); } catch (err) {}
+    var pwaBn = document.querySelector('.pwa-install-banner');
+    if (pwaBn && pwaBn.parentNode) pwaBn.parentNode.removeChild(pwaBn);
+  }
   else if (act === 'closeAuthModal') {
     uiState.authModalOpen = false;
     uiState.authError = '';
+    openWelcomeTutorialIfNew();
     render();
   }
   else if (act === 'submitAuthModal') {
@@ -5824,6 +6026,8 @@ document.addEventListener('click', async function(e) {
       render();
     } else {
       toast('👋 ' + res.msg);
+      // v14.5: po zatwierdzeniu nicku uruchom 4-kartowy Samouczek Powitalny
+      openWelcomeTutorialIfNew();
       render();
     }
   }
@@ -5957,7 +6161,7 @@ if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.
   });
 
   window.addEventListener('load', function() {
-    navigator.serviceWorker.register('./sw.js?v=14', { updateViaCache: 'none' }).then(function(registration) {
+    navigator.serviceWorker.register('./sw.js?v=14.5', { updateViaCache: 'none' }).then(function(registration) {
       document.addEventListener('visibilitychange', function() {
         if (document.visibilityState === 'visible') {
           registration.update().catch(function() {});
