@@ -1,4 +1,4 @@
-﻿/* ==========================================================================
+/* ==========================================================================
    3. ŚCIEŻKA NAUKI: 8 DZIAŁÓW, 27 POD-LEKCJI (STANDARD v14 SOLOLEARN)
    ========================================================================== */
 var STAGES = [
@@ -71,21 +71,21 @@ var PATH_TASKS = [
       },
       {
         "stepCode": "1", "keySuffix": "0", "isWarmup": false, "tier": "basic",
-        "goal": "Pobierz ze słownika kategorii filmowych wszystkie dostępne kolumny za pomocą symbolu gwiazdki.",
-        "prompt": "Pobierz ze słownika kategorii filmowych wszystkie dostępne kolumny za pomocą symbolu gwiazdki.",
+        "goal": "Wyświetl całą tabelę kategorii filmowych (wszystkie kolumny naraz).",
+        "prompt": "Pobierz ze słownika kategorii filmowych wszystkie dostępne kolumny za pomocą symbolu gwiazdki (`*`).",
         "sol": "SELECT * FROM category;", "order": false, "tables": ["category"], "hint": "Użyj gwiazdki: SELECT * FROM category;",
         "newFeature": { "title": "Gwiazdka * (wszystkie kolumny)", "desc": "Zamiast wpisywać każdą kolumnę, wpisz *, aby wyświetlić całą zawartość tabeli.", "example": "SELECT * FROM category;" }
       },
       {
         "stepCode": "2", "keySuffix": "1", "isWarmup": false, "tier": "basic",
-        "goal": "Pobierz z katalogu filmów tytuły oraz ceny wypożyczenia wszystkich filmów.",
-        "prompt": "Pobierz z katalogu filmów tytuły oraz ceny wypożyczenia wszystkich filmów.",
+        "goal": "Przygotuj prosty cennik wypożyczeń z katalogu filmów.",
+        "prompt": "Pobierz z tabeli `film` tytuły (`title`) oraz ceny wypożyczenia (`rental_rate`) wszystkich filmów.",
         "sol": "SELECT title, rental_rate FROM film;", "order": false, "tables": ["film"], "hint": "Wpisz po SELECT: title, rental_rate", "newFeature": null
       },
       {
         "stepCode": "3", "keySuffix": "2", "isWarmup": false, "tier": "basic",
-        "goal": "Pobierz z bazy klientów imiona, nazwiska oraz adresy e-mail wszystkich klientów.",
-        "prompt": "Pobierz z bazy klientów imiona, nazwiska oraz adresy e-mail wszystkich klientów.",
+        "goal": "Zbierz dane kontaktowe wszystkich klientów wypożyczalni.",
+        "prompt": "Pobierz z bazy klientów (`customer`) imiona (`first_name`), nazwiska (`last_name`) oraz adresy e-mail (`email`).",
         "sol": "SELECT first_name, last_name, email FROM customer;", "order": false, "tables": ["customer"], "hint": "Wybierz: first_name, last_name, email", "newFeature": null
       },
       {
@@ -102,9 +102,9 @@ var PATH_TASKS = [
       },
       {
         "stepCode": "6", "keySuffix": "5", "isWarmup": false, "tier": "adv",
-        "goal": "Pobierz z katalogu filmów identyfikator filmu, tytuł, rok wydania oraz kategorię wiekową.",
-        "prompt": "Pobierz z katalogu filmów identyfikator filmu, tytuł, rok wydania oraz kategorię wiekową.",
-        "sol": "SELECT film_id, title, release_year, rating FROM film;", "order": false, "tables": ["film"], "hint": "Wybierz 4 kolumny z tabeli film", "newFeature": null
+        "goal": "Przygotuj zestawienie podstawowych informacji o każdym filmie w katalogu.",
+        "prompt": "Pobierz z katalogu filmów (`film`) identyfikator filmu, tytuł, rok wydania oraz kategorię wiekową (`film_id, title, release_year, rating`).",
+        "sol": "SELECT film_id, title, release_year, rating FROM film;", "order": false, "tables": ["film"], "hint": "Wybierz 4 kolumny z tabeli film: film_id, title, release_year, rating", "newFeature": null
       }
     ]
   },
@@ -140,32 +140,32 @@ var PATH_TASKS = [
       },
       {
         "stepCode": "2", "keySuffix": "1", "isWarmup": false, "tier": "basic",
-        "goal": "Kwoty w kolumnie amount są wyrażone w euro (np. 4.99). Pobierz identyfikator płatności payment_id, kwotę oryginalną amount oraz kwotę przeliczoną na centy (amount * 100) pod aliasem amount_cents.",
+        "goal": "Przelicz kwoty płatności z euro na centy dla systemu księgowego.",
         "prompt": "Kwoty w kolumnie amount są wyrażone w euro (np. 4.99). Pobierz identyfikator płatności payment_id, kwotę oryginalną amount oraz kwotę przeliczoną na centy (amount * 100) pod aliasem amount_cents.",
         "sol": "SELECT payment_id, amount, amount * 100 AS amount_cents FROM payment;", "order": false, "tables": ["payment"], "hint": "Pomnóż kwotę przez 100: amount * 100 AS amount_cents",
         "newFeature": { "title": "Obliczenia arytmetyczne (+, -, *, /)", "desc": "W SELECT możesz wykonywać działania bezpośrednio na kolumnach liczbowych i nadać im czytelną nazwę przez AS.", "example": "SELECT cena * 100 AS grosze FROM produkty;" }
       },
       {
         "stepCode": "3", "keySuffix": "2", "isWarmup": false, "tier": "basic",
-        "goal": "Pobierz z katalogu filmów tytuł, cenę wypożyczenia oraz nową stawkę powiększoną o opłatę 2 pod aliasem new_rate.",
+        "goal": "Sprawdź, jak zmienią się stawki filmów po doliczeniu stałej opłaty serwisowej.",
         "prompt": "Pobierz z katalogu filmów tytuł, cenę wypożyczenia oraz nową stawkę powiększoną o opłatę 2 pod aliasem new_rate.",
         "sol": "SELECT title, rental_rate, rental_rate + 2 AS new_rate FROM film;", "order": false, "tables": ["film"], "hint": "Dodaj 2: rental_rate + 2 AS new_rate", "newFeature": null
       },
       {
         "stepCode": "4", "keySuffix": "3", "isWarmup": false, "tier": "adv",
-        "goal": "Pobierz tytuł, długość filmu w minutach oraz długość w godzinach (length podzielone przez 60.0) pod aliasem duration_hours.",
+        "goal": "Przelicz czas trwania każdego filmu z minut na godziny.",
         "prompt": "Pobierz tytuł, długość filmu w minutach oraz długość w godzinach (length podzielone przez 60.0) pod aliasem duration_hours.",
         "sol": "SELECT title, length, length / 60.0 AS duration_hours FROM film;", "order": false, "tables": ["film"], "hint": "Podziel przez 60.0: length / 60.0 AS duration_hours", "newFeature": null
       },
       {
         "stepCode": "5", "keySuffix": "4", "isWarmup": false, "tier": "adv",
-        "goal": "Pobierz tytuł, koszt odtworzenia, cenę wypożyczenia oraz różnicę kosztu i ceny pod aliasem cost_diff.",
+        "goal": "Oblicz różnicę między kosztem zakupu płyty a ceną pojedynczego wypożyczenia.",
         "prompt": "Pobierz tytuł, koszt odtworzenia, cenę wypożyczenia oraz różnicę kosztu i ceny pod aliasem cost_diff.",
         "sol": "SELECT title, replacement_cost, rental_rate, replacement_cost - rental_rate AS cost_diff FROM film;", "order": false, "tables": ["film"], "hint": "Odejmij cenę od kosztu: replacement_cost - rental_rate AS cost_diff", "newFeature": null
       },
       {
         "stepCode": "6", "keySuffix": "5", "isWarmup": false, "tier": "adv",
-        "goal": "Pobierz identyfikator klienta customer_id, datę płatności payment_date, kwotę amount oraz kwotę przeliczoną na złotówki (amount * 4) pod aliasem amount_pln.",
+        "goal": "Przelicz wszystkie wpłaty klientów na złotówki po stałym kursie.",
         "prompt": "Pobierz identyfikator klienta customer_id, datę płatności payment_date, kwotę amount oraz kwotę przeliczoną na złotówki (amount * 4) pod aliasem amount_pln.",
         "sol": "SELECT customer_id, payment_date, amount, amount * 4 AS amount_pln FROM payment;", "order": false, "tables": ["payment"], "hint": "Pomnóż kwotę przez 4: amount * 4 AS amount_pln", "newFeature": null
       }
@@ -822,7 +822,7 @@ var PATH_TASKS = [
       },
       {
         "stepCode": "3", "keySuffix": "2", "isWarmup": false, "tier": "adv",
-        "goal": "Wygeneruj adres e-mail pracownika na podstawie imienia i nazwiska.",
+        "goal": "Wygeneruj adres e-mail aktora na podstawie imienia i nazwiska.",
         "prompt": "Z tabeli actor pobierz first_name, last_name oraz wygenerowany adres e-mail w małych literach pod aliasem generated_email w formacie: imie.nazwisko@dvdrental.com (użyj LOWER i ||).",
         "sol": "SELECT first_name, last_name, LOWER(first_name || '.' || last_name || '@dvdrental.com') AS generated_email FROM actor;", "order": false, "tables": ["actor"], "hint": "LOWER(first_name || '.' || last_name || '@dvdrental.com') AS generated_email", "newFeature": null
       },
@@ -974,21 +974,21 @@ var PATH_TASKS = [
     "unlockAt": 3,
     "title": "6.2 Obsługa NULL: COALESCE oraz NULLIF",
     "tables": ["rental", "customer", "film"],
-    "cols": ["SELECT", "FROM", "WHERE", "AS", "COALESCE", "NULLIF", "rental_id", "return_date", "safe_return_date", "customer_id", "status_opis", "email", "verified_email", "film_id", "rental_rate", "adjusted_rate"],
-    "theory": "<ul><li><strong><code>COALESCE(w1, w2, ...)</code>:</strong> zwraca pierwszą niepustą (nie-NULL) wartość z listy. Idealne do zastępowania NULL wartością domyślną.</li><li><strong><code>NULLIF(a, b)</code>:</strong> zwraca NULL, jeśli a = b (przydatne np. do ochrony przed dzieleniem przez zero).</li></ul><div class=\"theory-code\"><code>SELECT rental_id, COALESCE(return_date, 'W toku') AS status\nFROM rental;</code></div>",
+    "cols": ["SELECT", "FROM", "WHERE", "AS", "COALESCE", "NULLIF", "::text", "rental_id", "return_date", "safe_return_date", "customer_id", "status_opis", "email", "verified_email", "film_id", "rental_rate", "adjusted_rate"],
+    "theory": "<ul><li><strong><code>COALESCE(w1, w2, ...)</code>:</strong> zwraca pierwszą niepustą (nie-NULL) wartość z listy. Idealne do zastępowania NULL wartością domyślną (w PostgreSQL argumenty muszą mieć ten sam typ — np. datę zamieniamy przez <code>return_date::text</code>).</li><li><strong><code>NULLIF(a, b)</code>:</strong> zwraca NULL, jeśli a = b (przydatne np. do ochrony przed dzieleniem przez zero).</li></ul><div class=\"theory-code\"><code>SELECT rental_id, COALESCE(return_date::text, 'W toku') AS status\nFROM rental;</code></div>",
     "variants": [
       {
         "stepCode": "R1", "keySuffix": "r1", "isWarmup": true, "tier": "warmup",
         "goal": "Zastąp brak daty zwrotu czytelnym napisem 'W toku'.",
-        "prompt": "Pobierz rental_id oraz kolumnę safe_return_date, która zwraca return_date, a w przypadku NULL wyświetla tekst 'W toku' (użyj COALESCE).",
-        "sol": "SELECT rental_id, COALESCE(return_date, 'W toku') AS safe_return_date FROM rental;", "order": false, "tables": ["rental"], "hint": "COALESCE(return_date, 'W toku') AS safe_return_date",
-        "newFeature": { "title": "Zastępowanie braków: COALESCE()", "desc": "COALESCE zwraca pierwszy argument, który nie jest NULL. Pozwala zastąpić brakujące dane domyślnym tekstem lub liczbą.", "example": "SELECT COALESCE(telefon, 'brak') FROM klienci;" }
+        "prompt": "Pobierz rental_id oraz kolumnę safe_return_date, która zwraca return_date jako tekst (`return_date::text`), a w przypadku NULL wyświetla napis `'W toku'` (użyj `COALESCE`).",
+        "sol": "SELECT rental_id, COALESCE(return_date::text, 'W toku') AS safe_return_date FROM rental;", "order": false, "tables": ["rental"], "hint": "COALESCE(return_date::text, 'W toku') AS safe_return_date",
+        "newFeature": { "title": "Zastępowanie braków: COALESCE()", "desc": "COALESCE zwraca pierwszy argument, który nie jest NULL. Pozwala zastąpić brakujące dane domyślnym tekstem lub liczbą (w PostgreSQL rzutuj daty przez ::text przed połączeniem z tekstem).", "example": "SELECT COALESCE(data_zwrotu::text, 'brak') FROM wypozyczenia;" }
       },
       {
         "stepCode": "1", "keySuffix": "0", "isWarmup": false, "tier": "basic",
         "goal": "Zastosuj COALESCE dla wypożyczeń klienta numer 2.",
-        "prompt": "Dla klienta customer_id = 2 pobierz rental_id oraz status_opis z wartością return_date lub tekstem 'Brak zwrotu' gdy brak daty.",
-        "sol": "SELECT rental_id, COALESCE(return_date, 'Brak zwrotu') AS status_opis FROM rental WHERE customer_id = 2;", "order": false, "tables": ["rental"], "hint": "WHERE customer_id = 2;", "newFeature": null
+        "prompt": "Dla klienta customer_id = 2 pobierz rental_id oraz status_opis z wartością `return_date::text` lub tekstem `'Brak zwrotu'` gdy brak daty.",
+        "sol": "SELECT rental_id, COALESCE(return_date::text, 'Brak zwrotu') AS status_opis FROM rental WHERE customer_id = 2;", "order": false, "tables": ["rental"], "hint": "SELECT rental_id, COALESCE(return_date::text, 'Brak zwrotu') AS status_opis FROM rental WHERE customer_id = 2;", "newFeature": null
       },
       {
         "stepCode": "2", "keySuffix": "1", "isWarmup": false, "tier": "basic",
@@ -1346,7 +1346,7 @@ var PATH_TASKS = [
         "goal": "Ponumeruj 5 najdłuższych filmów w katalogu.",
         "prompt": "Pobierz tytuł, długość filmu oraz kolejny numer jako rn za pomocą funkcji ROW_NUMBER() posortowanej malejąco po długości i rosnąco po tytule. Ogranicz wynik do 5 wierszy.",
         "sol": "SELECT title, length, ROW_NUMBER() OVER (ORDER BY length DESC, title ASC) AS rn FROM film LIMIT 5;",
-        "order": true,
+        "order": false,
         "tables": ["film"],
         "hint": "Użyj ROW_NUMBER() OVER (ORDER BY length DESC, title ASC) AS rn LIMIT 5;",
         "newFeature": { "title": "Funkcja okna: ROW_NUMBER()", "desc": "ROW_NUMBER() przydziela kolejny unikalny numer wiersza w zdefiniowanym porządku okna.", "example": "SELECT nazwa, ROW_NUMBER() OVER (ORDER BY pensja DESC) AS ranking FROM pracownicy;" }
@@ -1359,7 +1359,7 @@ var PATH_TASKS = [
         "goal": "Ustal pozycję filmów w rankingach cenowych w ramach każdej kategorii wiekowej bez powstawania luk.",
         "prompt": "Pobierz rating, title, rental_rate oraz pozycję w rankingu jako rk za pomocą funkcji DENSE_RANK() z podziałem na grupy wiekowe (PARTITION BY rating) i sortowaniem malejąco po cenie wypożyczenia i alfabetycznie po tytule. Pobierz 10 wierszy.",
         "sol": "SELECT rating, title, rental_rate, DENSE_RANK() OVER (PARTITION BY rating ORDER BY rental_rate DESC, title ASC) AS rk FROM film LIMIT 10;",
-        "order": true,
+        "order": false,
         "tables": ["film"],
         "hint": "Użyj DENSE_RANK() OVER (PARTITION BY rating ORDER BY rental_rate DESC, title ASC) AS rk LIMIT 10;",
         "newFeature": { "title": "Gęsty ranking: DENSE_RANK()", "desc": "DENSE_RANK() przyznaje te same miejsca przy jednakowych wartościach i nie pomija kolejnych numerów.", "example": "SELECT kategoria, produkt, DENSE_RANK() OVER (PARTITION BY kategoria ORDER BY cena DESC) FROM cennik;" }
@@ -1372,7 +1372,7 @@ var PATH_TASKS = [
         "goal": "Sporządź klasyczny ranking długości filmów w ramach grup wiekowych (z uwzględnieniem luk przy remisach).",
         "prompt": "Pobierz rating, title, length oraz pozycję jako rnk za pomocą funkcji RANK() partycjonowanej po rating i sortowanej malejąco po długości oraz rosnąco po tytule. Ogranicz do 10 wierszy.",
         "sol": "SELECT rating, title, length, RANK() OVER (PARTITION BY rating ORDER BY length DESC, title ASC) AS rnk FROM film LIMIT 10;",
-        "order": true,
+        "order": false,
         "tables": ["film"],
         "hint": "Zastosuj RANK() OVER (PARTITION BY rating ORDER BY length DESC, title ASC) AS rnk LIMIT 10;",
         "newFeature": { "title": "Klasyczny ranking sportowy: RANK()", "desc": "RANK() przy remisie przypisuje to samo miejsce, ale tworzy lukę o liczbie powtórzonych pozycji.", "example": "SELECT dzial, pracownik, RANK() OVER (PARTITION BY dzial ORDER BY premia DESC) FROM kadry;" }
@@ -1398,7 +1398,7 @@ var PATH_TASKS = [
         "goal": "Ponumeruj chronologicznie transakcje każdego klienta od jego pierwszej wizyty.",
         "prompt": "Pobierz customer_id, amount, payment_date oraz kolejny numer wpłaty danego klienta jako transakcja_nr za pomocą funkcji ROW_NUMBER() partycjonowanej po customer_id i posortowanej chronologicznie po payment_date oraz payment_id. Pobierz 10 wierszy.",
         "sol": "SELECT customer_id, amount, payment_date, ROW_NUMBER() OVER (PARTITION BY customer_id ORDER BY payment_date ASC, payment_id ASC) AS transakcja_nr FROM payment LIMIT 10;",
-        "order": true,
+        "order": false,
         "tables": ["payment"],
         "hint": "Użyj ROW_NUMBER() OVER (PARTITION BY customer_id ORDER BY payment_date ASC, payment_id ASC) AS transakcja_nr LIMIT 10;",
         "newFeature": { "title": "Numeracja zdarzeń w czasie", "desc": "Partycjonowanie po ID klienta i sortowanie po dacie pozwala natychmiast zidentyfikować 1., 2. i n-tą transakcję użytkownika.", "example": "SELECT user_id, data, ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY data) FROM logi;" }
@@ -1422,7 +1422,7 @@ var PATH_TASKS = [
         "goal": "Sprawdź poprzednią kwotę wpłaconą przez klienta, aby wykryć zmiany w zachowaniu zakupowym.",
         "prompt": "Dla każdego wpisu pobierz payment_id, customer_id, amount oraz wartość poprzedniej wpłaty danego klienta jako prev_amount za pomocą funkcji LAG() partycjonowanej po customer_id i posortowanej po payment_date oraz payment_id. Pobierz 10 wierszy.",
         "sol": "SELECT payment_id, customer_id, amount, LAG(amount) OVER (PARTITION BY customer_id ORDER BY payment_date, payment_id) AS prev_amount FROM payment LIMIT 10;",
-        "order": true,
+        "order": false,
         "tables": ["payment"],
         "hint": "Użyj LAG(amount) OVER (PARTITION BY customer_id ORDER BY payment_date, payment_id) AS prev_amount LIMIT 10;",
         "newFeature": { "title": "Funkcja LAG(): odczyt poprzedniego wiersza", "desc": "LAG(kolumna) zwraca wartość z poprzedniego wiersza w ramach partycji i sortowania.", "example": "SELECT data, utarg, LAG(utarg) OVER (ORDER BY data) AS utarg_wczoraj FROM raport;" }
@@ -1435,7 +1435,7 @@ var PATH_TASKS = [
         "goal": "Oblicz sumę kroczącą (narastającą) wydatków każdego klienta wraz z kolejnymi płatnościami.",
         "prompt": "Pobierz payment_id, customer_id, amount oraz sumę kroczącą jako running_total za pomocą funkcji SUM(amount) OVER partycjonowanej po customer_id i sortowanej po payment_date i payment_id. Pobierz 10 wierszy.",
         "sol": "SELECT payment_id, customer_id, amount, SUM(amount) OVER (PARTITION BY customer_id ORDER BY payment_date, payment_id) AS running_total FROM payment LIMIT 10;",
-        "order": true,
+        "order": false,
         "tables": ["payment"],
         "hint": "Użyj SUM(amount) OVER (PARTITION BY customer_id ORDER BY payment_date, payment_id) AS running_total LIMIT 10;",
         "newFeature": { "title": "Suma krocząca (Running Total)", "desc": "SUM() z klauzulą ORDER BY w oknie sumuje wartości narastająco wiersz po wierszu.", "example": "SELECT data, wplata, SUM(wplata) OVER (ORDER BY data) AS saldo FROM konto;" }
@@ -1448,7 +1448,7 @@ var PATH_TASKS = [
         "goal": "Podejrzyj kwotę kolejnej transakcji w systemie.",
         "prompt": "Pobierz payment_id, amount oraz kwotę następnej zarejestrowanej płatności jako next_amount za pomocą funkcji LEAD(amount) posortowanej chronologicznie po payment_date i payment_id. Pobierz 5 wierszy.",
         "sol": "SELECT payment_id, amount, LEAD(amount) OVER (ORDER BY payment_date, payment_id) AS next_amount FROM payment LIMIT 5;",
-        "order": true,
+        "order": false,
         "tables": ["payment"],
         "hint": "Zastosuj LEAD(amount) OVER (ORDER BY payment_date, payment_id) AS next_amount LIMIT 5;",
         "newFeature": { "title": "Funkcja LEAD(): odczyt kolejnego wiersza", "desc": "LEAD(kolumna) zwraca wartość z następnego wiersza w oknie.", "example": "SELECT tura, wynik, LEAD(wynik) OVER (ORDER BY tura) AS nastepny_wynik FROM gra;" }
@@ -1583,7 +1583,7 @@ var LESSON_TUTORIALS = {
       "title": "Przykład: Unikalne stawki wypożyczeń",
       "code": "SELECT DISTINCT rental_rate\nFROM film;",
       "lines": [
-        { "line": "FROM film;", "desc": "Pobiera 1000 filmów." },
+        { "line": "FROM film;", "desc": "Otwiera tabelę film." },
         { "line": "SELECT DISTINCT rental_rate", "desc": "Zwraca tylko unikalne wartości stawek (np. 0.99, 2.99, 4.99)." }
       ]
     },
@@ -1900,11 +1900,11 @@ var LESSON_TUTORIALS = {
       "note": "Silnik PostgreSQL porównuje daty chronologicznie: '2026-05-01' jest większe niż '2026-01-01'."
     },
     {
-      "title": "Przykład: Wypożyczenia z maja 2005",
-      "code": "SELECT rental_id, rental_date\nFROM rental\nWHERE rental_date >= '2005-05-01'\n  AND rental_date < '2005-06-01';",
+      "title": "Przykład: Wypożyczenia z maja 2026",
+      "code": "SELECT rental_id, rental_date\nFROM rental\nWHERE rental_date >= '2026-05-01'\n  AND rental_date < '2026-06-01';",
       "lines": [
-        { "line": "rental_date >= '2005-05-01'", "desc": "Początek miesiąca od północy." },
-        { "line": "AND rental_date < '2005-06-01'", "desc": "Koniec miesiąca (przed północą 1 czerwca)." }
+        { "line": "rental_date >= '2026-05-01'", "desc": "Początek miesiąca od północy." },
+        { "line": "AND rental_date < '2026-06-01'", "desc": "Koniec miesiąca (przed północą 1 czerwca)." }
       ]
     },
     {
@@ -1942,7 +1942,7 @@ var LESSON_TUTORIALS = {
       "title": "Przykład: Statystyka filmów",
       "code": "SELECT COUNT(*) AS total_films, COUNT(DISTINCT rating) AS ratings_cnt\nFROM film;",
       "lines": [
-        { "line": "COUNT(*)", "desc": "Zlicza wszystkie 1000 filmów." },
+        { "line": "COUNT(*)", "desc": "Zlicza wszystkie filmy w tabeli." },
         { "line": "COUNT(DISTINCT rating)", "desc": "Zwraca 5 (liczba unikalnych kategorii wiekowych: G, PG, PG-13, R, NC-17)." }
       ]
     },
@@ -2217,7 +2217,7 @@ var LESSON_TUTORIALS = {
       "title": "Przykład: Miesięczne podsumowanie",
       "code": "SELECT DATE_TRUNC('month', payment_date::timestamp)::date AS miesiac, SUM(amount) AS utarg\nFROM payment\nGROUP BY 1\nORDER BY miesiac ASC;",
       "lines": [
-        { "line": "DATE_TRUNC('month', ...)", "desc": "Sprowadza daty np. 2005-05-14 do 2005-05-01." },
+        { "line": "DATE_TRUNC('month', ...)", "desc": "Sprowadza daty np. 2026-05-14 do 2026-05-01." },
         { "line": "GROUP BY 1", "desc": "Grupuje po pierwszej kolumnie w SELECT." }
       ]
     },
@@ -2529,7 +2529,7 @@ var LESSON_TUTORIALS = {
       "title": "Nawigacja między wierszami",
       "focusWrite": ["SELECT", "LAG", "LEAD", "SUM", "OVER", "ORDER BY"],
       "focusExec": [1, 5],
-      "note": "LAG i LEAD eliminują konieczność robienia skomplikowanych złączeń tabeli ze samą sobą (Self-Join)!"
+      "note": "LAG i LEAD eliminują konieczność robienia skomplikowanych złączeń tabeli z samą sobą (Self-Join)!"
     },
     {
       "title": "Przykład: Historia transakcji klienta",
@@ -2557,60 +2557,60 @@ var LESSON_TUTORIALS = {
 
 var STAGE_QUIZZES = {
   1: [
-    { q: "Która klauzula wskazuje kolumny, które mają znaleźć się w wyniku zapytania?", options: ["SELECT", "FROM", "WHERE", "GROUP BY"], correct: 0, explain: "SELECT wybiera kolumny wyniku, a FROM wskazuje tabelę źródłową." },
-    { q: "Jak zwrócić tylko unikalne wartości kolumny city?", options: ["SELECT UNIQUE city", "SELECT DISTINCT city", "SELECT city UNIQUE", "SELECT ONLY city"], correct: 1, explain: "DISTINCT usuwa powtarzające się wiersze z wyniku." },
-    { q: "Jak posortować filmy od najnowszego roku do najstarszego?", options: ["ORDER BY release_year ASC", "SORT release_year DESC", "ORDER BY release_year DESC", "GROUP BY release_year DESC"], correct: 2, explain: "DESC sortuje malejąco, więc najnowsze lata pojawią się na początku." },
-    { q: "Jak ograniczyć wynik do 10 wierszy?", options: ["TOP 10", "LIMIT 10", "ROWS 10", "TAKE 10"], correct: 1, explain: "W PostgreSQL ograniczenie liczby wierszy zapisuje się klauzulą LIMIT." },
-    { q: "Co robi AS w wyrażeniu SELECT amount * 4 AS amount_pln?", options: ["Filtruje wartości amount", "Nadaje kolumnie wynikowej alias amount_pln", "Sortuje wynik", "Łączy tabele"], correct: 1, explain: "AS nadaje wyrażeniu nazwę widoczną jako nagłówek kolumny wyniku." }
+    { q: "Które słowo w SQL wybiera kolumny, które chcesz zobaczyć na ekranie?", options: ["SELECT", "FROM", "WHERE", "GROUP BY"], correct: 0, explain: "SELECT wybiera kolumny do pokazania w wyniku, a FROM wskazuje tabelę, z której bierzemy dane." },
+    { q: "Jak wyświetlić tylko niepowtarzające się nazwy miast z kolumny city (bez duplikatów)?", options: ["SELECT UNIQUE city", "SELECT DISTINCT city", "SELECT city UNIQUE", "SELECT ONLY city"], correct: 1, explain: "Słowo DISTINCT po SELECT usuwa powtarzające się wiersze i zostawia same unikalne wartości." },
+    { q: "Jak ułożyć filmy na liście od najnowszego roku do najstarszego?", options: ["ORDER BY release_year ASC", "SORT release_year DESC", "ORDER BY release_year DESC", "GROUP BY release_year DESC"], correct: 2, explain: "ORDER BY z dopiskiem DESC układa wynik malejąco, więc najnowsze lata będą na samej górze." },
+    { q: "Jak ograniczyć wynik zapytania do pierwszych 10 wierszy?", options: ["TOP 10", "LIMIT 10", "ROWS 10", "TAKE 10"], correct: 1, explain: "W PostgreSQL na końcu zapytania dopisujemy LIMIT 10, aby zobaczyć tylko pierwszych 10 wierszy." },
+    { q: "Co robi słowo AS w zapisie SELECT amount * 4 AS amount_pln?", options: ["Filtruje wiersze z tabeli", "Zmienia wyświetlaną nazwę kolumny w wyniku na amount_pln (nadaje jej czytelny nagłówek)", "Sortuje wynik rosnąco", "Łączy dwie tabele"], correct: 1, explain: "Słowo AS nadaje wyliczonej kolumnie czytelną nazwę w nagłówku tabeli wynikowej." }
   ],
   2: [
-    { q: "Która klauzula filtruje pojedyncze wiersze przed grupowaniem?", options: ["HAVING", "WHERE", "ORDER BY", "LIMIT"], correct: 1, explain: "WHERE wybiera wiersze przed etapem agregacji." },
-    { q: "Który warunek wybierze rating G lub R, ale tylko dla filmów długości od 50 do 90 minut?", options: ["rating IN ('G', 'R') AND length BETWEEN 50 AND 90", "rating = 'G' AND rating = 'R' OR length = 50", "rating BETWEEN ('G', 'R')", "rating IN ('G', 'R') OR length NOT BETWEEN 50 AND 90"], correct: 0, explain: "IN sprawdza listę ratingów, BETWEEN obejmuje oba końce zakresu, a AND wymaga spełnienia obu warunków." },
-    { q: "Kiedy warunek a = 1 OR b = 2 jest prawdziwy?", options: ["Tylko gdy oba warunki są prawdziwe", "Gdy co najmniej jeden z warunków jest prawdziwy", "Tylko gdy oba warunki są fałszywe", "Gdy a i b mają ten sam typ"], correct: 1, explain: "OR łączy warunki alternatywne; nawiasy pomagają jawnie określić ich kolejność względem AND." },
-    { q: "Jak znaleźć tekst zawierający literę a bez rozróżniania wielkości liter?", options: ["name LIKE 'a'", "name ILIKE '%a%'", "name = '%a%'", "name IS '%a%'"], correct: 1, explain: "ILIKE dopasowuje tekst bez rozróżniania wielkości liter, a % oznacza dowolny ciąg znaków." },
-    { q: "Jak poprawnie znaleźć wiersze, w których email nie ma wartości?", options: ["email = NULL", "email == NULL", "email IS NULL", "email IN NULL"], correct: 2, explain: "NULL sprawdza się przez IS NULL, a nie operatorem równości." }
+    { q: "Które słowo w SQL służy do wybrania tylko tych wierszy, które spełniają podany warunek (np. cena > 5)?", options: ["HAVING", "WHERE", "ORDER BY", "LIMIT"], correct: 1, explain: "WHERE działa jak sito na pojedyncze wiersze tabeli — zostawia tylko te, które spełniają warunek." },
+    { q: "Jak wybrać filmy o kategorii wiekowej G lub R, które trwają od 50 do 90 minut włącznie?", options: ["rating IN ('G', 'R') AND length BETWEEN 50 AND 90", "rating = 'G' AND rating = 'R' OR length = 50", "rating BETWEEN ('G', 'R')", "rating IN ('G', 'R') OR length NOT BETWEEN 50 AND 90"], correct: 0, explain: "IN sprawdza pasującą listę wartości, BETWEEN obejmuje przedział od 50 do 90 włącznie, a AND wymaga obu warunków naraz." },
+    { q: "Kiedy warunek a = 1 OR b = 2 przepuści wiersz do wyniku?", options: ["Tylko gdy oba warunki są prawdziwe jednocześnie", "Gdy prawdziwy jest przynajmniej jeden z tych dwóch warunków", "Tylko gdy oba warunki są fałszywe", "Gdy kolumny a i b mają ten sam typ"], correct: 1, explain: "Słowo OR oznacza „lub” — wystarczy, że spełniony jest pierwszy warunek albo drugi (lub oba)." },
+    { q: "Jak wyszukać nazwę zawierającą literę a w dowolnym miejscu, nie przejmując się wielkością liter?", options: ["name LIKE 'a'", "name ILIKE '%a%'", "name = '%a%'", "name IS '%a%'"], correct: 1, explain: "ILIKE nie zwraca uwagi na wielkość liter, a znak % po obu stronach oznacza dowolne litery przed i po „a”." },
+    { q: "Jak poprawnie znaleźć wiersze, w których brakuje adresu e-mail (puste pole NULL)?", options: ["email = NULL", "email == NULL", "email IS NULL", "email IN NULL"], correct: 2, explain: "Brak wartości (NULL) sprawdzamy zawsze przez IS NULL (nigdy przez znak równości =)." }
   ],
   3: [
-    { q: "Co zwraca COUNT(*)?", options: ["Liczbę wszystkich wierszy", "Sumę wszystkich kolumn", "Liczbę różnych kolumn", "Średnią wierszy"], correct: 0, explain: "COUNT(*) liczy wiersze, również te, w których konkretne kolumny zawierają NULL." },
-    { q: "Jak policzyć sumę amount dla każdego customer_id?", options: ["SELECT customer_id, SUM(amount) FROM payment GROUP BY customer_id", "SELECT customer_id, SUM(amount) FROM payment ORDER BY customer_id", "SELECT SUM(amount) FROM payment WHERE customer_id", "SELECT customer_id, COUNT(amount) FROM payment"], correct: 0, explain: "Każda nieagregowana kolumna w wyniku agregacji musi należeć do GROUP BY." },
-    { q: "Która funkcja oblicza średnią wartość kolumny?", options: ["SUM()", "AVG()", "MEAN()", "MID()"], correct: 1, explain: "AVG() oblicza średnią arytmetyczną wartości nie-NULL." },
-    { q: "Czym różnią się MIN() i MAX()?", options: ["MIN liczy wiersze, MAX liczy NULL", "MIN zwraca najmniejszą, a MAX największą wartość", "MIN grupuje, MAX sortuje", "Nie różnią się"], correct: 1, explain: "MIN i MAX zwracają odpowiednio najmniejszą i największą wartość w grupie." },
-    { q: "Która klauzula filtruje grupy po wykonaniu agregacji?", options: ["WHERE", "HAVING", "ON", "LIMIT"], correct: 1, explain: "HAVING filtruje utworzone grupy, często na podstawie wyniku funkcji agregującej." }
+    { q: "Co policzy funkcja COUNT(*)?", options: ["Liczbę wszystkich wierszy w wyniku", "Sumę wszystkich liczb w tabeli", "Liczbę kolumn w tabeli", "Średnią długość tekstu"], correct: 0, explain: "COUNT(*) liczy wszystkie wiersze pasujące do zapytania — nawet jeśli niektóre pola są puste (NULL)." },
+    { q: "Jak policzyć łączną kwotę wpłat (amount) osobno dla każdego klienta (customer_id)?", options: ["SELECT customer_id, SUM(amount) FROM payment GROUP BY customer_id", "SELECT customer_id, SUM(amount) FROM payment ORDER BY customer_id", "SELECT SUM(amount) FROM payment WHERE customer_id", "SELECT customer_id, COUNT(amount) FROM payment"], correct: 0, explain: "Gdy podsumowujesz dane dla każdego klienta osobno, potrzebujesz funkcji SUM() oraz GROUP BY customer_id." },
+    { q: "Która funkcja policzy średnią ze wszystkich liczb w kolumnie?", options: ["SUM()", "AVG()", "MEAN()", "MID()"], correct: 1, explain: "AVG() (od angielskiego average) oblicza średnią arytmetyczną, pomijając puste pola NULL." },
+    { q: "Co zwracają funkcje MIN() i MAX()?", options: ["MIN liczy wiersze, a MAX liczy puste pola NULL", "MIN znajduje najmniejszą wartość, a MAX największą", "MIN dzieli na grupy, a MAX sortuje", "Obie działają tak samo"], correct: 1, explain: "MIN() wyciąga z kolumny najmniejszą liczbę lub najwcześniejszą datę, a MAX() — największą lub najnowszą." },
+    { q: "Które słowo pozwala zostawić tylko te grupy po GROUP BY, które spełniają warunek (np. mają ponad 5 wpłat)?", options: ["WHERE", "HAVING", "ON", "LIMIT"], correct: 1, explain: "HAVING filtruje gotowe grupy utworzone przez GROUP BY — w WHERE nie można używać funkcji takich jak COUNT() czy SUM()." }
   ],
   4: [
-    { q: "Jak zamienić tekst w kolumnie name na wielkie litery?", options: ["UPPER(name)", "CAPITAL(name)", "TO_UPPER(name)", "BIG(name)"], correct: 0, explain: "Funkcja UPPER() zwraca tekst zapisany wielkimi literami." },
-    { q: "Który zapis zaokrągla amount do dwóch miejsc po przecinku?", options: ["ROUND(amount, 2)", "CEIL(amount, 2)", "TRUNCATE(amount, 2)", "DECIMAL(amount, 2)"], correct: 0, explain: "ROUND(wartość, liczba_miejsc) zaokrągla liczbę do wskazanej precyzji." },
-    { q: "Jak pobrać rok z daty payment_date w PostgreSQL?", options: ["YEAR(payment_date)", "EXTRACT(YEAR FROM payment_date)", "DATE_YEAR(payment_date)", "GETYEAR payment_date"], correct: 1, explain: "EXTRACT(YEAR FROM data) pobiera rok z wartości daty." },
-    { q: "Co zwróci CASE WHEN amount >= 10 THEN 'duża' ELSE 'mała' END dla amount = 12?", options: ["NULL", "duża", "mała", "Błąd składni"], correct: 1, explain: "Warunek jest prawdziwy, więc CASE zwraca wartość po THEN." },
-    { q: "Które stwierdzenie poprawnie opisuje COALESCE i NULLIF?", options: ["COALESCE zamienia NULL na wartość zapasową, a NULLIF zwraca NULL, gdy argumenty są równe", "COALESCE usuwa wiersz, a NULLIF zawsze zwraca 0", "Obie funkcje sortują wartości NULL na końcu", "NULLIF zastępuje NULL pierwszą wartością z listy"], correct: 0, explain: "COALESCE zwraca pierwszą nie-NULL wartość, a NULLIF(x, y) zwraca NULL, gdy x = y." }
+    { q: "Jak zamienić cały tekst w kolumnie name na WIELKIE LITERY?", options: ["UPPER(name)", "CAPITAL(name)", "TO_UPPER(name)", "BIG(name)"], correct: 0, explain: "Funkcja UPPER() zmienia wszystkie litery w tekście na wielkie (a LOWER() na małe)." },
+    { q: "Jak zaokrąglić kwotę amount do 2 miejsc po przecinku?", options: ["ROUND(amount, 2)", "CEIL(amount, 2)", "TRUNCATE(amount, 2)", "DECIMAL(amount, 2)"], correct: 0, explain: "ROUND(liczba, miejsca) zaokrągla wynik do podanej liczby cyfr po przecinku." },
+    { q: "Jak wyciągnąć sam numer roku z daty payment_date w PostgreSQL?", options: ["YEAR(payment_date)", "EXTRACT(YEAR FROM payment_date)", "DATE_YEAR(payment_date)", "GETYEAR payment_date"], correct: 1, explain: "Funkcja EXTRACT(YEAR FROM data) wyjmuje z daty sam rok (podobnie można wyciągnąć MONTH lub DAY)." },
+    { q: "Co wyświetli zapis CASE WHEN amount >= 10 THEN 'duża' ELSE 'mała' END, gdy kwota amount wynosi 12?", options: ["Puste pole (NULL)", "duża", "mała", "Błąd zapytania"], correct: 1, explain: "Ponieważ 12 jest większe lub równe 10, warunek jest prawdziwy i SQL zwraca napis po słowie THEN, czyli 'duża'." },
+    { q: "Co robią funkcje COALESCE i NULLIF?", options: ["COALESCE wstawia wartość zastępczą zamiast braku danych (NULL), a NULLIF zwraca NULL, gdy dwie wartości są takie same", "COALESCE usuwa cały wiersz, a NULLIF zawsze wpisuje 0", "Obie funkcje służą do sortowania dat", "NULLIF zamienia każde zero na liczbę 1"], correct: 0, explain: "COALESCE chroni przed pustymi polami (np. zamienia NULL na 0), a NULLIF(a, b) daje NULL przy równości, co chroni np. przed dzieleniem przez zero." }
   ],
   5: [
-    { q: "Czym zwykle jest klucz obcy?", options: ["Kolumną wskazującą rekord w innej tabeli", "Indeksem sortującym tabelę", "Aliasem tabeli", "Warunkiem WHERE"], correct: 0, explain: "Klucz obcy reprezentuje relację i odwołuje się do klucza w innej tabeli." },
-    { q: "Które wiersze zachowuje INNER JOIN?", options: ["Wszystkie z lewej tabeli", "Tylko wiersze z dopasowaniem po obu stronach", "Wszystkie z prawej tabeli", "Tylko niedopasowane"], correct: 1, explain: "INNER JOIN zwraca wyłącznie rekordy pasujące do warunku łączenia." },
-    { q: "Co zachowuje LEFT JOIN, gdy nie ma dopasowania w prawej tabeli?", options: ["Pomija wiersz lewej tabeli", "Zachowuje wiersz lewej tabeli, a kolumny prawej wypełnia NULL", "Zwraca tylko prawą tabelę", "Zamienia NULL na 0"], correct: 1, explain: "LEFT JOIN zachowuje wszystkie wiersze z lewej strony." },
-    { q: "Gdzie umieścić warunek dopasowania wierszy w JOIN?", options: ["ON", "ORDER BY", "LIMIT", "SELECT"], correct: 0, explain: "ON definiuje kryterium dopasowania łączonych wierszy." },
-    { q: "Dlaczego filtr prawej tabeli w WHERE może zmienić wynik LEFT JOIN?", options: ["WHERE zawsze usuwa duplikaty", "Warunek może odrzucić wiersze z NULL po prawej stronie", "WHERE zamienia tekst w liczbę", "LEFT JOIN nie obsługuje WHERE"], correct: 1, explain: "Wiersze bez dopasowania mają NULL po prawej stronie, więc filtr w WHERE może je usunąć." }
+    { q: "Co to jest tzw. klucz obcy (np. customer_id w tabeli płatności)?", options: ["Kolumna z numerem ID, która wskazuje na konkretny wiersz w drugiej tabeli", "Specjalne hasło do odblokowania bazy", "Nowa nazwa nadana przez AS", "Warunek w klauzuli WHERE"], correct: 0, explain: "Klucz obcy łączy dwie tabele — np. customer_id przy płatności mówi, który klient z tabeli customer ją wykonał." },
+    { q: "Które wiersze trafią do wyniku przy zwykłym INNER JOIN?", options: ["Wszystkie z pierwszej tabeli, nawet bez pary", "Tylko te wiersze, które znalazły pasującą parę w obu tabelach", "Wszystkie z drugiej tabeli", "Tylko wiersze bez dopasowania"], correct: 1, explain: "INNER JOIN zostawia wyłącznie rekordy, które mają dopasowanie po obu stronach połączenia." },
+    { q: "Co zrobi LEFT JOIN, jeśli wiersz z lewej tabeli nie ma żadnego pasującego wpisu w prawej?", options: ["Usunie ten wiersz z wyniku", "Zachowa wiersz z lewej tabeli, a w brakujących kolumnach z prawej wstawi NULL", "Pokaże tylko prawą tabelę", "Wpisze automatycznie zero zamiast tekstu"], correct: 1, explain: "LEFT JOIN nigdy nie gubi wierszy z lewej tabeli — jeśli nie ma dla nich pary po prawej, uzupełnia puste miejsca wartością NULL." },
+    { q: "Po jakim słowie wpisujemy warunek łączący dwie tabele (np. c.customer_id = p.customer_id)?", options: ["ON", "ORDER BY", "LIMIT", "SELECT"], correct: 0, explain: "Słowo ON po nazwie łączonej tabeli wskazuje, które kolumny mają do siebie pasować." },
+    { q: "Dlaczego warunek dotyczący prawej tabeli wpisany w WHERE może popsuć LEFT JOIN?", options: ["Bo WHERE zawsze usuwa liczby", "Bo niedopasowane wiersze mają z prawej strony NULL i filtr w WHERE nieświadomie je wyrzuci", "Bo WHERE zamienia tekst na datę", "Bo przy LEFT JOIN nie wolno używać WHERE"], correct: 1, explain: "Jeśli w prawej tabeli jest NULL (brak dopasowania), warunek typu prawa.status = 'ok' w WHERE go odrzuci. Takie warunki wpisuj w ON!" }
   ],
   6: [
-    { q: "Do czego służy podzapytanie?", options: ["Do umieszczenia zapytania wewnątrz innego zapytania", "Do tworzenia indeksu", "Do zmiany typu kolumny", "Do sortowania bez ORDER BY"], correct: 0, explain: "Podzapytanie to zapytanie użyte jako część innego zapytania." },
-    { q: "Co sprawdza EXISTS (subquery)?", options: ["Czy podzapytanie zwróciło co najmniej jeden wiersz", "Czy kolumna istnieje w schemacie", "Czy wynik jest unikalny", "Czy podzapytanie zwraca dokładnie jeden wiersz"], correct: 0, explain: "EXISTS jest prawdziwe, gdy podzapytanie zwróci przynajmniej jeden wiersz." },
-    { q: "Jaki jest podstawowy wymóg UNION?", options: ["Obie tabele muszą mieć identyczne nazwy", "Zapytania muszą zwracać zgodną liczbę kolumn o zgodnych typach", "Oba zapytania muszą mieć ORDER BY", "Wynik zawsze zachowuje duplikaty"], correct: 1, explain: "Każda część UNION musi zwracać tę samą liczbę zgodnych typów kolumn." },
-    { q: "Czym UNION ALL różni się od UNION?", options: ["UNION ALL zachowuje duplikaty", "UNION ALL sortuje malejąco", "UNION ALL działa tylko dla jednej tabeli", "Nie może zwracać NULL"], correct: 0, explain: "UNION usuwa duplikaty, natomiast UNION ALL zachowuje wszystkie wiersze." },
-    { q: "Co wprowadza klauzula WITH?", options: ["Wyrażenie CTE dostępne w głównym zapytaniu", "Warunek filtrowania", "Klucz obcy", "Sortowanie wyniku"], correct: 0, explain: "WITH definiuje nazwany wynik pośredni (CTE), do którego odwołuje się dalsza część zapytania." }
+    { q: "Co to jest podzapytanie w SQL?", options: ["Jedno zapytanie SELECT wpisane w nawiasie wewnątrz innego zapytania", "Narzędzie do zakładania nowej tabeli", "Skrót do zmiany typu kolumny", "Sposób na sortowanie bez ORDER BY"], correct: 0, explain: "Podzapytanie to mniejsze zapytanie umieszczone wewnątrz głównego (np. w WHERE albo FROM), żeby policzyć dane pomocnicze." },
+    { q: "Co sprawdza warunek EXISTS (podzapytanie)?", options: ["Czy zapytanie w środku znalazło chociaż jeden pasujący wiersz", "Czy tabela istnieje na dysku", "Czy wynik nie zawiera duplikatów", "Czy podzapytanie zwróciło dokładnie jedną liczbę"], correct: 0, explain: "EXISTS daje prawdę wtedy, gdy zapytanie w nawiasie zwróci choćby jeden rekord — i jest odporne na pułapki z NULL." },
+    { q: "Co musi się zgadzać, żeby połączyć wyniki dwóch zapytań jeden pod drugim przez UNION?", options: ["Obie tabele muszą mieć tę samą nazwę", "Oba zapytania muszą zwracać tyle samo kolumn o pasujących typach danych", "Oba zapytania muszą mieć swoje ORDER BY", "Oba zapytania muszą zwracać tyle samo wierszy"], correct: 1, explain: "Aby skleić dwie listy wiersz pod wierszem, oba SELECT-y muszą mieć taką samą liczbę kolumn i zgodne typy (np. tekst z tekstem)." },
+    { q: "Czym różni się UNION ALL od zwykłego UNION?", options: ["UNION ALL zostawia wszystkie powtarzające się wiersze, a UNION usuwa duplikaty", "UNION ALL sortuje wynik od końca", "UNION ALL działa tylko na jednej tabeli", "UNION ALL nie wyświetla wartości NULL"], correct: 0, explain: "UNION ALL po prostu skleja dwie listy (dlatego jest szybsze), natomiast zwykłe UNION dodatkowo usuwa identyczne wiersze." },
+    { q: "Do czego służy słowo WITH na początku zapytania (tzw. CTE)?", options: ["Tworzy tymczasową, nazwaną tabelę pomocniczą widoczną w głównym zapytaniu poniżej", "Włącza filtrowanie wierszy jak WHERE", "Tworzy klucz główny tabeli", "Sortuje wynik alfabetycznie"], correct: 0, explain: "Blok WITH (CTE) pozwala rozbić trudne zadanie na prostsze kroki i odwołać się do wyniku pośredniego jak do zwykłej tabeli." }
   ],
   7: [
-    { q: "Do czego służy klauzula OVER()?", options: ["Definiuje zakres działania funkcji okna", "Usuwa duplikaty", "Łączy tabele", "Ogranicza liczbę wierszy"], correct: 0, explain: "OVER() zmienia funkcję agregującą lub rankingową w funkcję okna działającą na wierszach." },
-    { q: "Co robi PARTITION BY w funkcji okna?", options: ["Dzieli dane na grupy obliczeń bez zwijania wierszy", "Usuwa partycje tabeli", "Sortuje tylko cały wynik", "Filtruje dane przed FROM"], correct: 0, explain: "PARTITION BY wyznacza niezależne grupy, w których funkcja okna liczy wyniki." },
-    { q: "Czym ROW_NUMBER() różni się od RANK() przy remisach?", options: ["ROW_NUMBER nadaje każdemu wierszowi unikalny numer", "ROW_NUMBER usuwa remisy", "RANK zawsze jest unikalny", "Nie różnią się"], correct: 0, explain: "ROW_NUMBER() przypisuje kolejne, unikalne numery nawet w przypadku remisów." },
-    { q: "Która funkcja rankingu nie tworzy przerw po remisie?", options: ["RANK()", "DENSE_RANK()", "ROW_NUMBER()", "LAG()"], correct: 1, explain: "DENSE_RANK() przypisuje remisom tę samą pozycję i nie pomija kolejnej." },
-    { q: "Co zwraca LAG(amount) OVER (ORDER BY payment_date)?", options: ["amount z następnego wiersza", "amount z poprzedniego wiersza w uporządkowanym zbiorze", "sumę wszystkich amount", "numer bieżącego wiersza"], correct: 1, explain: "LAG() pobiera wartość z wcześniejszego wiersza; LEAD() pobiera wartość z kolejnego." }
+    { q: "Po co dopisujemy OVER() po funkcji takiej jak SUM() lub ROW_NUMBER()?", options: ["Aby policzyć wynik obok każdego wiersza bez sklejania całej tabeli w jeden wiersz", "Aby usunąć wszystkie duplikaty", "Aby połączyć dwie tabele", "Aby ograniczyć wynik do 10 wierszy"], correct: 0, explain: "W przeciwieństwie do GROUP BY, funkcja okna z OVER() nie zwija wierszy — dopisuje wyliczoną wartość do każdego z nich." },
+    { q: "Co robi PARTITION BY wewnątrz nawiasu OVER(...)?", options: ["Dzieli wiersze na osobne grupy (np. osobne działy), w których funkcja liczy wynik od nowa", "Dzieli tabelę na osobne pliki", "Sortuje całą tabelę od końca", "Odrzuca wiersze jak WHERE"], correct: 0, explain: "PARTITION BY działa jak licznik resetujący się dla każdej grupy (np. ranking numerowany od 1 w każdym dziale osobno)." },
+    { q: "Czym różni się ROW_NUMBER() od RANK(), gdy dwie osoby mają ten sam wynik (remis)?", options: ["ROW_NUMBER zawsze daje każdemu kolejny numer (1, 2, 3), a RANK daje im to samo miejsce", "ROW_NUMBER usuwa jedną z remisujących osób", "RANK zawsze daje różne numery", "Obie funkcje działają identycznie"], correct: 0, explain: "ROW_NUMBER() numeruje wiersze kolejno bez powtórzeń (1, 2, 3), a RANK() przy remisie daje takie samo miejsce (np. dwa razy 1)." },
+    { q: "Która funkcja rankingowa przy remisie daje takie samo miejsce i NIE zostawia przerw w numeracji (np. 1, 2, 2, 3)?", options: ["RANK()", "DENSE_RANK()", "ROW_NUMBER()", "LAG()"], correct: 1, explain: "DENSE_RANK() po dwóch drugich miejscach nadaje miejsce 3 (bez luki), podczas gdy zwykłe RANK() przeskoczy na 4." },
+    { q: "Co pobierze zapis LAG(amount) OVER (ORDER BY payment_date)?", options: ["Kwotę z następnego wiersza", "Kwotę z poprzedniego wiersza ułożonego po dacie płatności", "Sumę wszystkich wpłat w tabeli", "Numer bieżącego wiersza"], correct: 1, explain: "LAG() zagląda o jeden wiersz wstecz (do poprzedniej płatności), a LEAD() — o jeden wiersz w przód." }
   ],
   8: [
-    { q: "Jak policzyć liczbę płatności spełniających warunek bez odrzucania pozostałych grup?", options: ["COUNT(*) WHERE ...", "COUNT(*) FILTER (WHERE warunek)", "COUNT(*) HAVING warunek", "SUM(*) FILTER BY warunek"], correct: 1, explain: "FILTER (WHERE ...) ogranicza wiersze przekazane do konkretnej agregacji." },
-    { q: "Jaki jest wynik wyrażenia 5 / 2 w PostgreSQL, gdy oba argumenty są całkowite?", options: ["2", "2.5", "3", "NULL"], correct: 0, explain: "Dzielenie dwóch liczb całkowitych obcina część ułamkową. Użyj typu numeric lub wartości dziesiętnej, aby uzyskać 2.5." },
-    { q: "Jak uniknąć dzielenia całkowitego przy obliczaniu procentu?", options: ["COUNT(*) / 100", "SUM(x) * 100.0 / COUNT(*)", "SUM(x) % COUNT(*)", "ROUND(COUNT(*))"], correct: 1, explain: "Wartość 100.0 wymusza arytmetykę z częścią ułamkową." },
-    { q: "Co oznacza ziarno wyniku zapytania?", options: ["Poziom pojedynczego wiersza wyniku, np. jeden wiersz na klienta", "Kolejność klauzul SQL", "Typ indeksu", "Liczbę kolumn w tabeli źródłowej"], correct: 0, explain: "Ziarno opisuje, co reprezentuje jeden wiersz wyniku i musi być jasne przed agregacją oraz JOIN." },
-    { q: "Dlaczego JOIN dwóch tabel szczegółowych może zawyżyć SUM(amount)?", options: ["JOIN automatycznie zaokrągla sumę", "Dopasowania wiele-do-wielu mogą powielić wiersze faktów", "SUM pomija wartości liczbowe", "GROUP BY zawsze usuwa prawidłowe kwoty"], correct: 1, explain: "Wielokrotne dopasowania mogą powielić rekordy przed agregacją. Najpierw ustal ziarno i agreguj do odpowiedniego poziomu." }
+    { q: "Jak w PostgreSQL policzyć tylko wybrane wiersze w jednym podsumowaniu (np. liczbę opłaconych faktur), nie usuwając pozostałych grup?", options: ["COUNT(*) WHERE ...", "COUNT(*) FILTER (WHERE warunek)", "COUNT(*) HAVING warunek", "SUM(*) FILTER BY warunek"], correct: 1, explain: "FILTER (WHERE ...) ogranicza wiersze tylko dla tej jednej funkcji COUNT lub SUM, nie wycinając reszty raportu." },
+    { q: "Jaki wynik da w PostgreSQL dzielenie dwóch liczb całkowitych 5 / 2?", options: ["2 (baza obetnie resztę po przecinku)", "2.5", "3", "Puste pole (NULL)"], correct: 0, explain: "W PostgreSQL dzielenie dwóch liczb całkowitych ucina ułamek! Aby dostać 2.5, zapisz 5.0 / 2 lub 5::numeric / 2." },
+    { q: "Jak policzyć procent w PostgreSQL, żeby baza nie obcięła części dziesiętnej?", options: ["COUNT(*) / 100", "SUM(x) * 100.0 / COUNT(*)", "SUM(x) % COUNT(*)", "ROUND(COUNT(*))"], correct: 1, explain: "Pomnożenie licznika przez 100.0 (z kropką i zerem) zamienia wynik na liczbę dziesiętną i zachowuje ułamki." },
+    { q: "Co oznacza pojęcie „ziarno wyniku” w analizie danych?", options: ["Co dokładnie reprezentuje jeden wiersz w gotowej tabeli (np. 1 wiersz = 1 klient lub 1 płatność)", "Kolejność pisania słów SELECT i FROM", "Szybkość wykonania zapytania", "Liczbę wszystkich kolumn w bazie"], correct: 0, explain: "Zanim napiszesz JOIN lub SUM, musisz wiedzieć, co oznacza pojedynczy wiersz w Twojej tabeli (np. jeden klient czy jedno zamówienie)." },
+    { q: "Dlaczego złączenie (JOIN) dwóch dużych tabel ze zdarzeniami potrafi sztucznie zawyżyć wynik SUM(amount)?", options: ["Bo JOIN automatycznie podwaja każdą liczbę", "Bo jedna płatność może dopasować się do wielu zdarzeń i zostać policzona kilkukrotnie", "Bo SUM pomija liczby całkowite", "Bo GROUP BY nie działa z JOIN"], correct: 1, explain: "Gdy jeden klient ma 2 płatności i 3 zdarzenia, bezpośredni JOIN robi z tego 6 wierszy. Najpierw policz sumy osobno w blokach WITH (CTE)!" }
   ]
 };
 
@@ -2638,7 +2638,7 @@ var DIAG_QUESTIONS = [
     "stage": 2,
     "gap": "g3",
     "title": "3/10 Agregacja i NULL w COUNT",
-    "prompt": "Z tabeli `rental` zwróć w jednym wierszu dwie kolumny: liczbę wszystkich wierszy (`COUNT(*)`) oraz liczbę wypożyczeń z uzupełnioną datą zwrotu (`COUNT(return_date)`).",
+    "prompt": "Z tabeli `rental` zwróć w jednym wierszu dwie kolumny: liczbę wszystkich wierszy (`COUNT(*)`) jako `all_cnt` oraz liczbę wypożyczeń z uzupełnioną datą zwrotu (`COUNT(return_date)`) jako `ret_cnt`.",
     "sol": "SELECT COUNT(*) AS all_cnt, COUNT(return_date) AS ret_cnt FROM rental;",
     "order": false
   },
@@ -2647,7 +2647,7 @@ var DIAG_QUESTIONS = [
     "stage": 2,
     "gap": "g7",
     "title": "4/10 Grupowanie i filtr po agregacji (HAVING)",
-    "prompt": "Z tabeli `payment` wypisz `customer_id` oraz sumę płatności (`SUM(amount)`) tylko dla tych klientów, którzy wydali łącznie co najmniej `8.00`.",
+    "prompt": "Z tabeli `payment` wypisz `customer_id` oraz sumę płatności (`SUM(amount)`) jako `total` tylko dla tych klientów, którzy wydali łącznie co najmniej `8.00`.",
     "sol": "SELECT customer_id, SUM(amount) AS total FROM payment GROUP BY customer_id HAVING SUM(amount) >= 8.00;",
     "order": false
   },
@@ -2656,7 +2656,7 @@ var DIAG_QUESTIONS = [
     "stage": 3,
     "gap": "g1",
     "title": "5/10 INNER JOIN po 3 tabelach",
-    "prompt": "Połącz `category`, `film_category` i `film`. Zwróć nazwę kategorii (`name`) oraz liczbę przypisanych do niej filmów (`COUNT(f.film_id)`).",
+    "prompt": "Połącz `category`, `film_category` i `film`. Zwróć nazwę kategorii (`name`) oraz liczbę przypisanych do niej filmów (`COUNT(f.film_id)`) jako `cnt`.",
     "sol": "SELECT c.name, COUNT(f.film_id) AS cnt FROM category c JOIN film_category fc ON c.category_id = fc.category_id JOIN film f ON fc.film_id = f.film_id GROUP BY c.name;",
     "order": false
   },
@@ -2665,7 +2665,7 @@ var DIAG_QUESTIONS = [
     "stage": 3,
     "gap": "g2",
     "title": "6/10 LEFT JOIN + COALESCE (wszyscy klienci, także z 0)",
-    "prompt": "Dla KAŻDEGO klienta z tabeli `customer` (również tych bez płatności!) wypisz `customer_id`, `first_name` oraz sumę z tabeli `payment` (zamień `NULL` na `0`).",
+    "prompt": "Dla KAŻDEGO klienta z tabeli `customer` (również tych bez płatności!) wypisz `customer_id`, `first_name` oraz sumę z tabeli `payment` jako `total_paid` (zamień `NULL` na `0`).",
     "sol": "SELECT c.customer_id, c.first_name, COALESCE(SUM(p.amount), 0) AS total_paid FROM customer c LEFT JOIN payment p ON c.customer_id = p.customer_id GROUP BY c.customer_id, c.first_name;",
     "order": false
   },
@@ -2683,7 +2683,7 @@ var DIAG_QUESTIONS = [
     "stage": 4,
     "gap": "g10",
     "title": "8/10 Agregacja warunkowa i procenty (* 100.0)",
-    "prompt": "Dla każdego sklepu (`store_id`) w tabeli `customer` policz procent aktywnych klientów (`active = 1`). Zwróć `store_id` oraz dokładny procent z ułamkiem.",
+    "prompt": "Dla każdego sklepu (`store_id`) w tabeli `customer` policz procent aktywnych klientów (`active = 1`). Zwróć `store_id` oraz dokładny procent z ułamkiem jako `active_pct`.",
     "sol": "SELECT store_id, SUM(CASE WHEN active = 1 THEN 1 ELSE 0 END) * 100.0 / COUNT(*) AS active_pct FROM customer GROUP BY store_id;",
     "order": false
   },
@@ -2701,7 +2701,7 @@ var DIAG_QUESTIONS = [
     "stage": 5,
     "gap": "g5",
     "title": "10/10 Porównanie z poprzednim okresem (LAG)",
-    "prompt": "Dla płatności klienta `customer_id = 1` w `payment` wypisz `payment_id`, `amount` oraz kwotę poprzedniej płatności (`LAG(amount) OVER (ORDER BY payment_date, payment_id)`).",
+    "prompt": "Dla płatności klienta `customer_id = 1` w `payment` wypisz `payment_id`, `amount` oraz kwotę poprzedniej płatności jako `prev_amt` (`LAG(amount) OVER (ORDER BY payment_date, payment_id)`). Posortuj chronologicznie po `payment_date, payment_id`.",
     "sol": "SELECT payment_id, amount, LAG(amount) OVER (ORDER BY payment_date, payment_id) AS prev_amt FROM payment WHERE customer_id = 1 ORDER BY payment_date, payment_id;",
     "order": true
   }

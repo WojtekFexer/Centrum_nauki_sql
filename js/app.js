@@ -4,7 +4,7 @@
 /* ==========================================================================
    0. KONFIGURACJA CHMURY SUPABASE (REST API — RANKING I PROFILE TESTERÓW)
    ========================================================================== */
-const APP_VERSION = 'v14.8';
+const APP_VERSION = 'v15.0';
 const DEFAULT_SUPABASE_URL = 'https://hpfrcykbzuzucglorpkr.supabase.co';
 const DEFAULT_SUPABASE_KEY = 'sb_publishable_5klYjdIKjT35Zl2OtOyGQA_DGxdJCHh';
 
@@ -214,6 +214,7 @@ async function initDatabase() {
         await instance.exec(window.INTERVIEW_SEED_SQL);
       }
       db = instance;
+      window._pgliteInstance = instance;
       dbReady = true;
       for (var i = 0; i < ALL_SCHEMA_META.length; i++) {
         var tblName = ALL_SCHEMA_META[i].table;
@@ -463,8 +464,300 @@ function buildValidationChecklist(userRes, expRes, checkOrder, solSql) {
 var STORAGE_KEY = 'sqlmaster_dvd_v1';
 var LOCAL_PROFILES_KEY = 'sql_master_local_profiles';
 
+var GAP_CATALOG = [
+  {
+    id: 'g1',
+    name: 'Ziarno wyniku i mnożenie wierszy po JOIN',
+    hint: 'Przed JOIN sprawdź, co jest jednym wierszem w obu tabelach. Przy łączeniu relacji 1:N lub dwóch tabel faktów użyj COUNT(DISTINCT ...) lub osobnych CTE.',
+    badExample: 'SELECT c.customer_id, COUNT(p.payment_id) FROM customer c JOIN rental r USING(customer_id) JOIN payment p USING(customer_id) GROUP BY c.customer_id;',
+    goodExample: 'SELECT c.customer_id, COUNT(r.rental_id) AS rentals_cnt, COUNT(DISTINCT r.film_id) AS films_cnt FROM customer c LEFT JOIN rental r ON c.customer_id = r.customer_id GROUP BY c.customer_id;',
+    defaultLvl: 2,
+    practice: {
+      id: 'gap_g1',
+      title: 'Trener Luki g1: Ziarno wyniku i COUNT(DISTINCT)',
+      tables: ['customer', 'rental'],
+      prompt: 'Dla każdego klienta z `customer` wypisz `customer_id`, `first_name`, liczbę jego wypożyczeń jako `rentals_cnt` oraz liczbę różnych wypożyczonych filmów jako `films_cnt` (`COUNT(DISTINCT r.film_id)`). Użyj `LEFT JOIN`.',
+      sol: 'SELECT c.customer_id, c.first_name, COUNT(r.rental_id) AS rentals_cnt, COUNT(DISTINCT r.film_id) AS films_cnt FROM customer c LEFT JOIN rental r ON c.customer_id = r.customer_id GROUP BY c.customer_id, c.first_name;',
+      order: false,
+      hint: 'Użyj LEFT JOIN customer z rental, następnie policz COUNT(r.rental_id) oraz COUNT(DISTINCT r.film_id).'
+    }
+  },
+  {
+    id: 'g2',
+    name: 'LEFT JOIN: warunek w ON czy w WHERE + NOT IN z NULL',
+    hint: 'Filtr na kolumnie prawej tabeli wpisany w WHERE zamienia LEFT JOIN w INNER JOIN i wyrzuca rekordy bez dopasowania. Warunek dla prawej tabeli wpisuj w klauzuli ON (lub użyj IS NULL do Anti-Join).',
+    badExample: 'SELECT c.customer_id, COUNT(r.rental_id) FROM customer c LEFT JOIN rental r ON c.customer_id = r.customer_id WHERE r.rental_date >= \'2026-06-01\' GROUP BY c.customer_id;',
+    goodExample: 'SELECT c.customer_id, COUNT(r.rental_id) AS june_cnt FROM customer c LEFT JOIN rental r ON c.customer_id = r.customer_id AND r.rental_date >= \'2026-06-01\' GROUP BY c.customer_id;',
+    defaultLvl: 2,
+    practice: {
+      id: 'gap_g2',
+      title: 'Trener Luki g2: Warunek w LEFT JOIN ON zamiast w WHERE',
+      tables: ['customer', 'rental'],
+      prompt: 'Dla KAŻDEGO klienta z `customer` (także tych bez wypożyczeń w czerwcu!) wypisz `customer_id`, `first_name` oraz liczbę jego wypożyczeń od `\'2026-06-01\'` wzwyż jako `june_cnt`. Warunek daty wpisz w `ON`, nie w `WHERE`.',
+      sol: "SELECT c.customer_id, c.first_name, COUNT(r.rental_id) AS june_cnt FROM customer c LEFT JOIN rental r ON c.customer_id = r.customer_id AND r.rental_date >= '2026-06-01' GROUP BY c.customer_id, c.first_name;",
+      order: false,
+      hint: "Przenieś warunek r.rental_date >= '2026-06-01' z WHERE do LEFT JOIN ... ON ..., inaczej utracisz klientów z zerową liczbą wypożyczeń."
+    }
+  },
+  {
+    id: 'g3',
+    name: 'NULL w agregatach (COUNT(*) vs COUNT(col)) i IS NULL',
+    hint: 'COUNT(*) zlicza wszystkie wiersze (łącznie z NULL), a COUNT(kolumna) pomija wartości NULL. Do sprawdzania pustych wartości zawsze używaj IS NULL lub IS NOT NULL zamiast = NULL.',
+    badExample: 'SELECT * FROM rental WHERE return_date = NULL;',
+    goodExample: 'SELECT COUNT(*) AS all_cnt, COUNT(return_date) AS ret_cnt FROM rental;',
+    defaultLvl: 3,
+    practice: {
+      id: 'gap_g3',
+      title: 'Trener Luki g3: COUNT(*) kontra COUNT(kolumna) przy NULL',
+      tables: ['rental'],
+      prompt: 'Z tabeli `rental` zwróć w jednym wierszu dwie kolumny: liczbę wszystkich wypożyczeń jako `all_cnt` (`COUNT(*)`) oraz liczbę wypożyczeń z uzupełnioną datą zwrotu jako `ret_cnt` (`COUNT(return_date)`).',
+      sol: 'SELECT COUNT(*) AS all_cnt, COUNT(return_date) AS ret_cnt FROM rental;',
+      order: false,
+      hint: 'W tym samym SELECT użyj COUNT(*) AS all_cnt oraz COUNT(return_date) AS ret_cnt.'
+    }
+  },
+  {
+    id: 'g4',
+    name: 'Daty i osie czasu: DATE_TRUNC, INTERVAL, generate_series',
+    hint: 'W PostgreSQL przed grupowaniem po miesiącach użyj DATE_TRUNC(\'month\', kolumna::date)::date. Przy kalendarzach z generate_series tabela dat stoi po lewej stronie LEFT JOIN.',
+    badExample: 'SELECT payment_date, SUM(amount) FROM payment GROUP BY payment_date;',
+    goodExample: 'SELECT DATE_TRUNC(\'month\', payment_date::date)::date AS miesiac, SUM(amount) AS monthly_total FROM payment GROUP BY DATE_TRUNC(\'month\', payment_date::date)::date ORDER BY miesiac;',
+    defaultLvl: 2,
+    practice: {
+      id: 'gap_g4',
+      title: 'Trener Luki g4: Grupowanie miesięczne z DATE_TRUNC',
+      tables: ['payment'],
+      prompt: 'Z tabeli `payment` oblicz sumę płatności (`SUM(amount)`) jako `monthly_total` dla każdego miesiąca (`DATE_TRUNC(\'month\', payment_date::date)::date` jako `miesiac`). Posortuj po `miesiac` rosnąco.',
+      sol: "SELECT DATE_TRUNC('month', payment_date::date)::date AS miesiac, SUM(amount) AS monthly_total FROM payment GROUP BY DATE_TRUNC('month', payment_date::date)::date ORDER BY miesiac;",
+      order: true,
+      hint: "Rzutuj payment_date::date i użyj DATE_TRUNC('month', payment_date::date)::date zarówno w SELECT, jak i w GROUP BY."
+    }
+  },
+  {
+    id: 'g5',
+    name: 'LAG() i porównania okresowe MoM',
+    hint: 'Funkcje okna LAG() i LEAD() wymagają podania kolejności wewnątrz OVER (ORDER BY ...), aby baza wiedziała, który wiersz jest „poprzedni”.',
+    badExample: 'SELECT payment_id, amount, LAG(amount) FROM payment;',
+    goodExample: 'SELECT payment_id, amount, LAG(amount) OVER (ORDER BY payment_date, payment_id) AS prev_amount FROM payment WHERE customer_id = 1 ORDER BY payment_date, payment_id;',
+    defaultLvl: 2,
+    practice: {
+      id: 'gap_g5',
+      title: 'Trener Luki g5: Poprzednia wartość przez LAG() OVER',
+      tables: ['payment'],
+      prompt: 'Dla płatności klienta `customer_id = 1` w `payment` wypisz `payment_id`, `amount` oraz kwotę poprzedniej płatności jako `prev_amount` (`LAG(amount) OVER (ORDER BY payment_date, payment_id)`). Posortuj chronologicznie po `payment_date, payment_id`.',
+      sol: 'SELECT payment_id, amount, LAG(amount) OVER (ORDER BY payment_date, payment_id) AS prev_amount FROM payment WHERE customer_id = 1 ORDER BY payment_date, payment_id;',
+      order: true,
+      hint: 'Użyj WHERE customer_id = 1, a kolumnę prev_amount zbuduj przez LAG(amount) OVER (ORDER BY payment_date, payment_id).'
+    }
+  },
+  {
+    id: 'g6',
+    name: 'Błędy składni SQL (przecinki przed FROM, brak przecinka, literówki)',
+    hint: 'Sprawdź przecinki na końcu listy kolumn (przed FROM NIE stawiamy przecinka!) oraz między nazwami kolumn (brak przecinka zamienia drugą nazwę w niechciany alias).',
+    badExample: 'SELECT title, rating, FROM film;',
+    goodExample: 'SELECT title, rating, rental_rate FROM film WHERE rating = \'G\';',
+    defaultLvl: 2,
+    practice: {
+      id: 'gap_g6',
+      title: 'Trener Luki g6: Czysta składnia SELECT i przecinki',
+      tables: ['film'],
+      prompt: 'Z tabeli `film` wypisz dokładnie 3 kolumny: `title`, `rating` oraz `rental_rate` dla filmów o kategorii wiekowej `rating = \'G\'` (upewnij się, że między kolumnami są przecinki, a przed `FROM` nie ma żadnego przecinka).',
+      sol: "SELECT title, rating, rental_rate FROM film WHERE rating = 'G';",
+      order: false,
+      hint: "Wypisz: SELECT title, rating, rental_rate FROM film WHERE rating = 'G';"
+    }
+  },
+  {
+    id: 'g7',
+    name: 'GROUP BY i filtrowanie grup w HAVING',
+    hint: 'WHERE filtruje pojedyncze wiersze PRZED grupowaniem, a HAVING filtruje całe grupy PO policzeniu agregatu (np. SUM, COUNT). Każda nieagregowana kolumna z SELECT musi być w GROUP BY.',
+    badExample: 'SELECT customer_id, SUM(amount) FROM payment WHERE SUM(amount) > 10 GROUP BY customer_id;',
+    goodExample: 'SELECT customer_id, SUM(amount) AS total_paid FROM payment GROUP BY customer_id HAVING SUM(amount) > 10.00;',
+    defaultLvl: 2,
+    practice: {
+      id: 'gap_g7',
+      title: 'Trener Luki g7: Filtrowanie zagregowanych grup przez HAVING',
+      tables: ['payment'],
+      prompt: 'Z tabeli `payment` wypisz `customer_id` oraz sumę wpłat (`SUM(amount)`) jako `total_paid` wyłącznie dla klientów, których łączna suma płatności jest większa niż `10.00`.',
+      sol: 'SELECT customer_id, SUM(amount) AS total_paid FROM payment GROUP BY customer_id HAVING SUM(amount) > 10.00;',
+      order: false,
+      hint: 'Najpierw pogrupuj po customer_id (GROUP BY customer_id), a warunek na sumę (SUM(amount) > 10.00) wpisz w HAVING.'
+    }
+  },
+  {
+    id: 'g8',
+    name: 'AVG vs SUM/COUNT przy wartościach NULL i COALESCE',
+    hint: 'AVG(kolumna) pomija wartości NULL. Jeśli brak aktywności (po LEFT JOIN) ma zaniżać średnią jako 0, owiń wynik lub kolumnę funkcją COALESCE(..., 0).',
+    badExample: 'SELECT c.customer_id, AVG(p.amount) AS avg_paid FROM customer c LEFT JOIN payment p USING(customer_id) GROUP BY c.customer_id;',
+    goodExample: 'SELECT c.customer_id, COALESCE(AVG(p.amount), 0) AS avg_paid FROM customer c LEFT JOIN payment p ON c.customer_id = p.customer_id GROUP BY c.customer_id;',
+    defaultLvl: 1,
+    practice: {
+      id: 'gap_g8',
+      title: 'Trener Luki g8: Zabezpieczenie średniej funkcją COALESCE',
+      tables: ['customer', 'payment'],
+      prompt: 'Dla KAŻDEGO klienta z `customer` wypisz `customer_id` oraz jego średnią kwotę płatności jako `avg_paid` (`COALESCE(AVG(p.amount), 0)`), aby klienci bez płatności otrzymali `0` zamiast `NULL`.',
+      sol: 'SELECT c.customer_id, COALESCE(AVG(p.amount), 0) AS avg_paid FROM customer c LEFT JOIN payment p ON c.customer_id = p.customer_id GROUP BY c.customer_id;',
+      order: false,
+      hint: 'Połącz customer i payment przez LEFT JOIN, a na wyniku AVG(p.amount) zastosuj COALESCE(AVG(p.amount), 0) AS avg_paid.'
+    }
+  },
+  {
+    id: 'g9',
+    name: 'Funkcje okna: ROW_NUMBER / DENSE_RANK i filtrowanie w CTE',
+    hint: 'Funkcji okna nie wolno filtrować bezpośrednio w WHERE w tym samym zapytaniu. Najpierw nadaj ranking w CTE (WITH ... AS (...)), a w zewnętrznym SELECT ustaw WHERE rn = 1 lub <= 3.',
+    badExample: 'SELECT title, rating FROM film WHERE ROW_NUMBER() OVER (PARTITION BY rating ORDER BY length DESC) = 1;',
+    goodExample: 'WITH ranked AS (SELECT film_id, title, rating, length, ROW_NUMBER() OVER (PARTITION BY rating ORDER BY length DESC, film_id ASC) AS rn FROM film) SELECT film_id, title, rating, length FROM ranked WHERE rn = 1;',
+    defaultLvl: 2,
+    practice: {
+      id: 'gap_g9',
+      title: 'Trener Luki g9: Ranking ROW_NUMBER() w CTE (WITH)',
+      tables: ['film'],
+      prompt: 'Używając CTE (`WITH`) oraz `ROW_NUMBER() OVER (PARTITION BY rating ORDER BY length DESC, film_id ASC)` zwróć `film_id`, `title`, `rating` i `length` wyłącznie najdłuższego filmu dla każdego `rating` z tabeli `film`.',
+      sol: 'WITH ranked AS (SELECT film_id, title, rating, length, ROW_NUMBER() OVER (PARTITION BY rating ORDER BY length DESC, film_id ASC) AS rn FROM film) SELECT film_id, title, rating, length FROM ranked WHERE rn = 1;',
+      order: false,
+      hint: 'Policz ROW_NUMBER() OVER (PARTITION BY rating ORDER BY length DESC, film_id ASC) AS rn wewnątrz CTE WITH ranked AS (...), a na zewnątrz przefiltruj WHERE rn = 1.'
+    }
+  },
+  {
+    id: 'g10',
+    name: 'Dzielenie całkowite (* 100.0 i ::numeric)',
+    hint: 'W PostgreSQL dzielenie dwóch liczb całkowitych (np. 8 / 10) ucina ułamek do 0! Zawsze pomnóż licznik przez 100.0 albo rzutuj na ::numeric przed podzieleniem.',
+    badExample: 'SELECT store_id, SUM(active) * 100 / COUNT(*) AS active_pct FROM customer GROUP BY store_id;',
+    goodExample: 'SELECT store_id, SUM(CASE WHEN active = 1 THEN 1 ELSE 0 END) * 100.0 / COUNT(*) AS active_pct FROM customer GROUP BY store_id;',
+    defaultLvl: 1,
+    practice: {
+      id: 'gap_g10',
+      title: 'Trener Luki g10: Procent zmiennoprzecinkowy z * 100.0',
+      tables: ['customer'],
+      prompt: 'Dla każdego sklepu (`store_id`) w `customer` policz procent aktywnych klientów (`active = 1`) jako `active_pct`. Pamiętaj o mnożeniu przez `100.0`, aby PostgreSQL nie uciął części dziesiętnej.',
+      sol: 'SELECT store_id, SUM(CASE WHEN active = 1 THEN 1 ELSE 0 END) * 100.0 / COUNT(*) AS active_pct FROM customer GROUP BY store_id;',
+      order: false,
+      hint: 'Użyj SUM(CASE WHEN active = 1 THEN 1 ELSE 0 END) * 100.0 / COUNT(*) AS active_pct.'
+    }
+  },
+  {
+    id: 'g11',
+    name: 'Priorytet AND / OR, nawiasy i wzorce ILIKE',
+    hint: 'Operator AND wiąże silniej niż OR! Gdy łączysz warunek AND z kilkoma wariantami OR (np. length > 100 ORAZ rating = \'PG\' lub \'G\'), obowiązkowo weź część z OR w nawiasy ( ... OR ... ).',
+    badExample: 'SELECT film_id, title, rating FROM film WHERE length > 100 AND rating = \'PG\' OR rating = \'G\';',
+    goodExample: 'SELECT film_id, title, rating FROM film WHERE length > 100 AND (rating = \'PG\' OR rating = \'G\');',
+    defaultLvl: 2,
+    practice: {
+      id: 'gap_g11',
+      title: 'Trener Luki g11: Nawiasy wokół operatora OR po AND',
+      tables: ['film'],
+      prompt: 'Z tabeli `film` wypisz `film_id`, `title` oraz `rating` dla filmów spełniających OBA warunki naraz: `length > 100` oraz `rating` równy `\'PG\'` albo `\'G\'` (pamiętaj o nawiasach wokół `OR`!).',
+      sol: "SELECT film_id, title, rating FROM film WHERE length > 100 AND (rating = 'PG' OR rating = 'G');",
+      order: false,
+      hint: "Wpisz: WHERE length > 100 AND (rating = 'PG' OR rating = 'G')."
+    }
+  },
+  {
+    id: 'g12',
+    name: 'CASE WHEN — kolejność warunków i segmentacja',
+    hint: 'SQL sprawdza gałęzie WHEN od góry do dołu i zatrzymuje się na pierwszym spełnionym warunku. Zawsze sprawdzaj najwęższe lub najwyższe progi jako pierwsze.',
+    badExample: 'SELECT title, CASE WHEN length >= 80 THEN \'Średni\' WHEN length >= 120 THEN \'Długi\' ELSE \'Krótki\' END FROM film;',
+    goodExample: 'SELECT title, length, CASE WHEN length >= 120 THEN \'Długi\' WHEN length >= 80 THEN \'Średni\' ELSE \'Krótki\' END AS kategoria_dlugosci FROM film;',
+    defaultLvl: 2,
+    practice: {
+      id: 'gap_g12',
+      title: 'Trener Luki g12: Poprawna kolejność progów w CASE WHEN',
+      tables: ['film'],
+      prompt: 'Z tabeli `film` wypisz `title`, `length` oraz kolumnę `kategoria_dlugosci`: `\'Długi\'` gdy `length >= 120`, `\'Średni\'` gdy `length >= 80`, a dla pozostałych `\'Krótki\'`.',
+      sol: "SELECT title, length, CASE WHEN length >= 120 THEN 'Długi' WHEN length >= 80 THEN 'Średni' ELSE 'Krótki' END AS kategoria_dlugosci FROM film;",
+      order: false,
+      hint: 'Rozpocznij CASE od najwyższego warunku: WHEN length >= 120 THEN \'Długi\', potem >= 80 THEN \'Średni\', na końcu ELSE \'Krótki\'.'
+    }
+  },
+  {
+    id: 'g13',
+    name: 'Self-join (łączenie tabeli samej ze sobą) i pary bez duplikatów',
+    hint: 'Gdy łączysz tabelę samą ze sobą (np. film f1 JOIN film f2), nadaj różne aliasy i dodaj warunek f1.id < f2.id, aby nie porównywać rekordu z samym sobą i uniknąć lustrzanych duplikatów (A-B i B-A).',
+    badExample: 'SELECT f1.title, f2.title FROM film f1 JOIN film f2 ON f1.rental_rate = f2.rental_rate;',
+    goodExample: 'SELECT f1.title AS film_a, f2.title AS film_b, f1.rental_rate FROM film f1 JOIN film f2 ON f1.rental_rate = f2.rental_rate AND f1.rating = f2.rating AND f1.film_id < f2.film_id;',
+    defaultLvl: 2,
+    practice: {
+      id: 'gap_g13',
+      title: 'Trener Luki g13: Unikalne pary w Self-Join (f1.film_id < f2.film_id)',
+      tables: ['film'],
+      prompt: 'Połącz tabelę `film` samą ze sobą (jako `f1` i `f2`), aby znaleźć unikalne pary różnych filmów o tym samym `rental_rate` i tym samym `rating` (`f1.film_id < f2.film_id`). Wypisz `f1.title` jako `film_a`, `f2.title` jako `film_b` i `f1.rental_rate`.',
+      sol: 'SELECT f1.title AS film_a, f2.title AS film_b, f1.rental_rate FROM film f1 JOIN film f2 ON f1.rental_rate = f2.rental_rate AND f1.rating = f2.rating AND f1.film_id < f2.film_id;',
+      order: false,
+      hint: 'Użyj JOIN film f2 ON f1.rental_rate = f2.rental_rate AND f1.rating = f2.rating AND f1.film_id < f2.film_id.'
+    }
+  }
+];
+
+function normalizeGapId(gapId) {
+  if (gapId === 't5' || gapId === 'g14') return 'g9';
+  return String(gapId || '').trim();
+}
+
+function buildDefaultGapsArray() {
+  return GAP_CATALOG.map(function(meta) {
+    return {
+      id: meta.id,
+      name: meta.name,
+      hint: meta.hint,
+      lvl: meta.defaultLvl,
+      hits: 0
+    };
+  });
+}
+
+function ensureAllGapsInState(targetState) {
+  var st = targetState || state;
+  if (!st) return [];
+  var byId = {};
+  if (Array.isArray(st.gaps)) {
+    st.gaps.forEach(function(item) {
+      if (!item || !item.id) return;
+      var normId = normalizeGapId(item.id);
+      if (!byId[normId]) {
+        byId[normId] = {
+          id: normId,
+          name: item.name,
+          hint: item.hint,
+          lvl: Number(item.lvl) >= 0 ? Math.min(4, Number(item.lvl)) : 2,
+          hits: Number(item.hits) || 0
+        };
+      } else {
+        byId[normId].lvl = Math.min(byId[normId].lvl, Number(item.lvl) >= 0 ? Number(item.lvl) : byId[normId].lvl);
+        byId[normId].hits = Math.max(byId[normId].hits, Number(item.hits) || 0);
+      }
+    });
+  } else if (st.gaps && typeof st.gaps === 'object') {
+    Object.keys(st.gaps).forEach(function(k) {
+      var val = st.gaps[k];
+      var normId = normalizeGapId(k);
+      if (val && typeof val === 'object') {
+        byId[normId] = {
+          id: normId,
+          name: val.name || '',
+          hint: val.hint || '',
+          lvl: Number(val.lvl) >= 0 ? Math.min(4, Number(val.lvl)) : 2,
+          hits: Number(val.hits) || 0
+        };
+      }
+    });
+  }
+  st.gaps = GAP_CATALOG.map(function(meta) {
+    var existing = byId[meta.id];
+    return {
+      id: meta.id,
+      name: meta.name,
+      hint: meta.hint,
+      lvl: existing ? existing.lvl : meta.defaultLvl,
+      hits: existing ? existing.hits : 0
+    };
+  });
+  return st.gaps;
+}
+
 function defaultState() {
   return {
+    userId: null,
+    nick: null,
     xp: 0,
     streak: 1,
     lastStreakDate: null,
@@ -488,17 +781,7 @@ function defaultState() {
     diagIdx: 0,
     diagScore: 0,
     diagSkipped: [],
-    gaps: [
-      { id: 'g1', name: 'Ziarno wyniku i mnożenie wierszy po JOIN', hint: 'Przed JOIN sprawdź, co jest jednym wierszem w obu tabelach. Przy łączeniu dwóch tabel faktów użyj COUNT(DISTINCT) lub osobnych CTE.', lvl: 2, hits: 1 },
-      { id: 'g2', name: 'LEFT JOIN: warunek w ON czy w WHERE + NOT IN z NULL', hint: 'Filtr na prawej tabeli w WHERE zamienia LEFT JOIN w INNER JOIN. Unikaj też NOT IN na kolumnach z NULL.', lvl: 2, hits: 1 },
-      { id: 'g3', name: 'NULL w agregatach (COUNT(*) vs COUNT(col))', hint: 'COUNT(*) liczy wszystkie wiersze, COUNT(col) pomija NULL-e.', lvl: 3, hits: 0 },
-      { id: 'g4', name: 'Daty: DATE_TRUNC, INTERVAL i generate_series', hint: 'Kalendarz z generate_series musi być po lewej stronie LEFT JOIN.', lvl: 2, hits: 0 },
-      { id: 'g5', name: 'LAG() i porównania okresowe MoM', hint: 'Najpierw zagreguj dane do poziomu miesiąca w CTE, a dopiero potem użyj LAG() OVER (ORDER BY miesiac).', lvl: 2, hits: 0 },
-      { id: 'g7', name: 'GROUP BY i filtrowanie grup w HAVING', hint: 'WHERE filtruje pojedyncze wiersze przed grupowaniem, HAVING filtruje grupy po agregacji.', lvl: 2, hits: 0 },
-      { id: 'g8', name: 'AVG vs SUM/COUNT przy wartościach NULL', hint: 'AVG pomija NULL-e. Jeśli brak aktywności ma oznaczać 0, użyj COALESCE przed policzeniem średniej.', lvl: 1, hits: 0 },
-      { id: 'g10', name: 'Dzielenie całkowite (* 100.0)', hint: 'Mnożenie przez 100.0 (lub ::numeric) wymusza wynik zmiennoprzecinkowy.', lvl: 1, hits: 2 },
-      { id: 't5', name: 'Funkcje okna: ROW_NUMBER vs DENSE_RANK i CTE', hint: 'Przy remisach używaj DENSE_RANK(). Wynik okna filtruj w zewnętrznym zapytaniu z użyciem WITH.', lvl: 2, hits: 0 }
-    ],
+    gaps: buildDefaultGapsArray(),
     aiProvider: 'gemini',
     apiKey: '',
     nickname: 'Wojtek_SQL',
@@ -518,7 +801,10 @@ try {
     if (!state.stageQuizzes) state.stageQuizzes = {};
     if (!state.completedTasks) state.completedTasks = {};
     if (!state.tutorialsDone) state.tutorialsDone = {};
-    if (!Array.isArray(state.gaps)) state.gaps = defaultState().gaps;
+    if (!state.nick && state.userProfile && state.userProfile.nick) state.nick = state.userProfile.nick;
+    if (!state.userId && state.userProfile && state.userProfile.userId) state.userId = state.userProfile.userId;
+    if (state.userId === undefined) state.userId = null;
+    ensureAllGapsInState(state);
     if (!Array.isArray(state.diagSkipped)) state.diagSkipped = [];
     // Kompatybilność wsteczna: jeśli z poprzednich sesji zaliczono już zadanie podstawowe 1 (klucz ':0'),
     // automatycznie oznacz rozgrzewkę R1-R2 jako zaliczoną, aby nie blokować dotychczasowego postępu.
@@ -577,6 +863,9 @@ var uiState = {
   stageQuizScore: 0,
   stageQuizAnswered: null,
   stageQuizFinished: false,
+  stageQuizStartedAt: 0,
+  stageQuizAttempts: {},
+  stageQuizJustUnlockedStage: null,
   sqlAnimStep: 0,
   sqlAnimRunning: false,
   // v14.5: odwrócony onboarding — najpierw nick (0 XP w Rankingu), potem 4-kartowy samouczek
@@ -601,7 +890,10 @@ var uiState = {
   tableColsOpen: {},
   onboardingTableSelection: null,
   teachFirstOpen: false,
-  topbarModal: null
+  topbarModal: null,
+  gapsSubTab: 'gaps',
+  activeGapPractice: null,
+  geminiTestStatus: null
 };
 
 function resetTaskContextUi() {
@@ -646,12 +938,18 @@ function getRankLevel(xp) {
   }
   return lvl;
 }
+function getRankName(xp) {
+  var lvl = getRankLevel(xp);
+  var obj = RANK_LEVELS[lvl - 1];
+  return obj ? obj.name : 'Nowicjusz SQL';
+}
 function renderRankBadge(xp, extraCls) {
   var lvl = getRankLevel(xp);
   var r = RANK_LEVELS[lvl - 1];
   return '<span class="rank-badge rank-frame-' + lvl + (extraCls ? ' ' + extraCls : '') + '" title="Ranga ' + lvl + '/8: ' + esc(r.name) + '">' + r.icon + '</span>';
 }
 window.getRankLevel = getRankLevel;
+window.getRankName = getRankName;
 
 function triggerStepFlash() {
   uiState.stepFlashActive = true;
@@ -806,8 +1104,9 @@ function updateDailyStreak(st) {
   return target.streak;
 }
 
-window.recalculateRealXP = function(st) {
+window.recalculateRealXP = function(st, opts) {
   var target = st || state;
+  var options = opts || {};
   var total = 0;
   (window.PATH_TASKS || []).forEach(function(task) {
     var solvedInLesson = 0;
@@ -838,7 +1137,7 @@ window.recalculateRealXP = function(st) {
   target.xp = total;
   if (target === state) {
     saveState();
-    if (state.userProfile && state.userProfile.nick) syncProfileToCloud(true);
+    if (!options.skipCloudSync && state.userProfile && state.userProfile.nick) syncProfileToCloud(true);
   }
   return total;
 };
@@ -856,29 +1155,61 @@ function getFirstUnsolvedStepIdx(task) {
   return 0;
 }
 
+function isStageLessonsCompleted(stageId) {
+  var sId = Number(stageId);
+  var stageLessons = (PATH_TASKS || []).filter(function(pt) { return pt.stage === sId; });
+  return stageLessons.length > 0 && stageLessons.every(function(pt) { return isLessonCoreCompleted(pt.id); });
+}
+
+function isStageQuizPassed(stageId) {
+  var sId = Number(stageId);
+  if (sId <= 0) return true;
+  return !!(state && state.stageQuizzes && state.stageQuizzes[sId] && state.stageQuizzes[sId].passed === true);
+}
+
+function isStageUnlockedByDiag(stageId) {
+  var sId = Number(stageId);
+  return !!(state && state.diagDone && sId <= (Number(state.unlockedStage) || 1));
+}
+
+function isStageQuizUnlocked(stageId) {
+  var sId = Number(stageId);
+  if (state && state.testerUnlockAll) return true;
+  if (isStageQuizPassed(sId)) return true;
+  if (isStageUnlockedByDiag(sId) && sId < (Number(state.unlockedStage) || 1)) return true;
+  return isStageLessonsCompleted(sId);
+}
+
 function isLessonUnlocked(taskId) {
   if (state && state.testerUnlockAll) return true;
   var idx = PATH_TASKS.findIndex(function(t) { return t.id === taskId; });
   if (idx <= 0) return true; // Pierwsza lekcja zawsze odblokowana na starcie
   var task = PATH_TASKS[idx];
   var prevTask = PATH_TASKS[idx - 1];
-  // Odblokowana, gdy poprzednia lekcja osiągnęła swój próg odblokowania (doneCount >= getNodeUnlockThreshold(prevNode))
-  if (countTotalLessonSolved(prevTask) >= getNodeUnlockThreshold(prevTask) || isLessonCoreCompleted(prevTask.id)) return true;
-  // Lub została odblokowana przez moduł Diagnozy (state.unlockedStage)
-  if (state && state.diagDone && (state.unlockedStage || 1) > 1) {
-    if (task.stage < state.unlockedStage) return true;
-    if (task.stage === state.unlockedStage && prevTask.stage < task.stage) return true;
+  // Na przejściu między Działem X a Działem X+1 wymagane jest ukończenie Działu X ORAZ zdanie Quizu Działu X
+  // (chyba że Diagnoza odblokowała bezpośrednio wyższy dział)
+  if (task.stage > prevTask.stage) {
+    if (isStageUnlockedByDiag(task.stage)) return true;
+    return isStageLessonsCompleted(prevTask.stage) && isStageQuizPassed(prevTask.stage);
   }
+  // W ramach tego samego działu: Diagnoza dla wcześniejszych działów lub spełniony próg w poprzedniej pod-lekcji
+  if (isStageUnlockedByDiag(task.stage) && task.stage < (Number(state.unlockedStage) || 1)) return true;
+  if (countTotalLessonSolved(prevTask) >= getNodeUnlockThreshold(prevTask) || isLessonCoreCompleted(prevTask.id)) return true;
   return false;
 }
 
 function isStageUnlocked(stageId) {
+  var sId = Number(stageId);
   if (state && state.testerUnlockAll) return true;
-  if (stageId <= 1) return true;
-  if (state && state.diagDone && stageId <= (state.unlockedStage || 1)) return true;
-  var firstTask = PATH_TASKS.find(function(t) { return t.stage === stageId; });
-  return firstTask ? isLessonUnlocked(firstTask.id) : false;
+  if (sId <= 1) return true;
+  if (isStageUnlockedByDiag(sId)) return true;
+  return isStageLessonsCompleted(sId - 1) && isStageQuizPassed(sId - 1);
 }
+window.isStageLessonsCompleted = isStageLessonsCompleted;
+window.isStageQuizPassed = isStageQuizPassed;
+window.isStageQuizUnlocked = isStageQuizUnlocked;
+window.isLessonUnlocked = isLessonUnlocked;
+window.isStageUnlocked = isStageUnlocked;
 
 function getLessonSlides(task) {
   if (!task) return [];
@@ -965,6 +1296,7 @@ function mergeRemoteStateIntoCurrent(remoteState) {
   }
   state.unlockedStage = Math.max(state.unlockedStage || 1, Number(remoteState.unlockedStage) || 1);
   state.diagDone = Boolean(state.diagDone || remoteState.diagDone);
+  if (remoteState.userId && !state.userId) state.userId = remoteState.userId;
   state.tutorialsDone = Object.assign({}, remoteState.tutorialsDone || {}, state.tutorialsDone || {});
   state.completedTasks = Object.assign({}, remoteState.completedTasks || {}, state.completedTasks || {});
   state.completedVariants = Object.assign({}, remoteState.completedVariants || {}, state.completedVariants || {});
@@ -975,15 +1307,17 @@ function mergeRemoteStateIntoCurrent(remoteState) {
     if (!Array.isArray(state.gaps)) state.gaps = [];
     remoteState.gaps.forEach(function(rg) {
       if (!rg || !rg.id) return;
-      var localG = state.gaps.find(function(g) { return g.id === rg.id; });
+      var normId = normalizeGapId(rg.id);
+      var localG = state.gaps.find(function(g) { return g.id === normId; });
       if (localG) {
         localG.lvl = Math.max(localG.lvl || 0, Number(rg.lvl) || 0);
         localG.hits = Math.max(localG.hits || 0, Number(rg.hits) || 0);
       } else {
-        state.gaps.push(Object.assign({}, rg));
+        state.gaps.push(Object.assign({}, rg, { id: normId }));
       }
     });
   }
+  ensureAllGapsInState(state);
 }
 
 async function syncProfileToCloud(silent) {
@@ -996,11 +1330,15 @@ async function syncProfileToCloud(silent) {
   var baseUrl = SUPABASE_CONFIG.url.replace(/\/+$/, '');
   var nowIso = new Date().toISOString();
   state.userProfile.updatedAt = nowIso;
+  ensureAllGapsInState(state);
   var payload = {
     nick: state.userProfile.nick,
     pin_hash: state.userProfile.pinHash,
     xp: state.xp,
+    rank_name: getRankName(state.xp),
     streak: state.streak,
+    country: 'PL',
+    gaps: state.gaps || {},
     solved_count: getTotalSolvedCount(),
     state_json: {
       xp: state.xp,
@@ -1008,6 +1346,7 @@ async function syncProfileToCloud(silent) {
       lastStreakDate: state.lastStreakDate,
       unlockedStage: state.unlockedStage,
       diagDone: state.diagDone,
+      userId: state.userId || null,
       tutorialsDone: state.tutorialsDone,
       completedTasks: state.completedTasks,
       completedVariants: state.completedVariants,
@@ -1018,19 +1357,45 @@ async function syncProfileToCloud(silent) {
     },
     updated_at: nowIso
   };
+  if (state.userId) payload.user_id = state.userId;
   try {
-    var resp = await fetch(baseUrl + '/rest/v1/sql_profiles?on_conflict=nick', {
+    var resp = await fetch(baseUrl + '/rest/v1/sql_profiles?on_conflict=nick&select=user_id,nick,xp,rank_name,streak,country,gaps', {
       method: 'POST',
       headers: {
         'apikey': SUPABASE_CONFIG.anonKey,
         'Authorization': 'Bearer ' + SUPABASE_CONFIG.anonKey,
         'Content-Type': 'application/json',
-        'Prefer': 'resolution=merge-duplicates,return=minimal'
+        'Prefer': 'resolution=merge-duplicates,return=representation'
       },
       body: JSON.stringify(payload)
     });
     uiState.syncing = false;
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    try {
+      var upserted = await resp.json();
+      if (Array.isArray(upserted) && upserted[0] && upserted[0].user_id) {
+        state.userId = upserted[0].user_id;
+        state.userProfile.userId = upserted[0].user_id;
+      }
+    } catch (jsonErr) {}
+    if (!state.userId) {
+      try {
+        var uidResp = await fetch(baseUrl + '/rest/v1/sql_profiles?nick=eq.' + encodeURIComponent(state.userProfile.nick) + '&select=user_id,nick,xp,rank_name,streak,country,gaps', {
+          method: 'GET',
+          headers: {
+            'apikey': SUPABASE_CONFIG.anonKey,
+            'Authorization': 'Bearer ' + SUPABASE_CONFIG.anonKey
+          }
+        });
+        if (uidResp.ok) {
+          var uidRows = await uidResp.json();
+          if (Array.isArray(uidRows) && uidRows[0] && uidRows[0].user_id) {
+            state.userId = uidRows[0].user_id;
+            state.userProfile.userId = uidRows[0].user_id;
+          }
+        }
+      } catch (e2) {}
+    }
     uiState.lastSyncTime = new Date().toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit' });
     saveState();
     await fetchLeaderboard();
@@ -1049,7 +1414,7 @@ async function fetchLeaderboard() {
   if (isSupabaseConfigured()) {
     try {
       var baseUrl = SUPABASE_CONFIG.url.replace(/\/+$/, '');
-      var resp = await fetch(baseUrl + '/rest/v1/sql_profiles?select=nick,xp,streak,solved_count,updated_at&order=xp.desc&limit=50', {
+      var resp = await fetch(baseUrl + '/rest/v1/sql_profiles?select=user_id,nick,xp,rank_name,streak,country,gaps,solved_count,updated_at&order=xp.desc&limit=50', {
         method: 'GET',
         headers: {
           'apikey': SUPABASE_CONFIG.anonKey,
@@ -1076,7 +1441,10 @@ async function fetchLeaderboard() {
 }
 
 function getTelemetryNick() {
-  return String(state.nick || (state.userProfile && state.userProfile.nick) || 'anon');
+  var raw = state.nick || (state.userProfile && state.userProfile.nick) || '';
+  var cleaned = String(raw).trim();
+  if (!cleaned || cleaned.toLowerCase() === 'anon') return '';
+  return cleaned;
 }
 
 function detectDeviceOS() {
@@ -1101,15 +1469,35 @@ function createTelemetrySessionId() {
   });
 }
 
+var SESSION_STORAGE_KEY = 'sql_master_active_session';
+
 var SQLTelemetry = (function() {
-  var sessionId = createTelemetrySessionId();
+  var sessionId = null;
   var sessionStartedAt = Date.now();
+  var sessionLoginIso = null;
   var sessionReady = Promise.resolve();
 
-  async function send(method, endpoint, payload) {
+  function readStoredSession() {
+    try {
+      var raw = sessionStorage.getItem(SESSION_STORAGE_KEY);
+      if (!raw) return null;
+      var obj = JSON.parse(raw);
+      return (obj && obj.sessionId && obj.nick && obj.date) ? obj : null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function writeStoredSession(data) {
+    try {
+      sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(data));
+    } catch (e) {}
+  }
+
+  async function send(method, endpoint, payload, keepalive) {
     if (!isSupabaseConfigured()) return;
     try {
-      var response = await fetch(SUPABASE_CONFIG.url.replace(/\/+$/, '') + endpoint, {
+      var fetchOpts = {
         method: method,
         headers: {
           apikey: SUPABASE_CONFIG.anonKey,
@@ -1118,7 +1506,9 @@ var SQLTelemetry = (function() {
           Prefer: 'return=minimal'
         },
         body: JSON.stringify(payload)
-      });
+      };
+      if (keepalive) fetchOpts.keepalive = true;
+      var response = await fetch(SUPABASE_CONFIG.url.replace(/\/+$/, '') + endpoint, fetchOpts);
       if (!response.ok) throw new Error('HTTP ' + response.status + ' dla ' + endpoint);
     } catch (err) {
       console.warn('SQLTelemetry: nie udało się wysłać danych:', err);
@@ -1130,43 +1520,95 @@ var SQLTelemetry = (function() {
   }
 
   function start() {
-    var startedAt = new Date().toISOString();
+    var nick = getTelemetryNick();
+    if (!nick) {
+      sessionReady = Promise.resolve();
+      return sessionReady;
+    }
+    var today = getLocalDateKey(new Date());
+    var stored = readStoredSession();
+    if (stored && stored.nick === nick && stored.date === today && stored.loginIso && Number(stored.startMs) > 0) {
+      sessionId = stored.sessionId;
+      sessionStartedAt = Number(stored.startMs);
+      sessionLoginIso = stored.loginIso;
+      sessionReady = send('PATCH', '/rest/v1/app_sessions?session_id=eq.' + encodeURIComponent(sessionId), {
+        user_id: state.userId || null,
+        user_nick: nick,
+        logout_at: new Date().toISOString(),
+        duration_sec: Math.max(0, Math.round((Date.now() - sessionStartedAt) / 1000))
+      });
+      return sessionReady;
+    }
+    sessionId = createTelemetrySessionId();
+    sessionStartedAt = Date.now();
+    sessionLoginIso = new Date(sessionStartedAt).toISOString();
+    writeStoredSession({
+      sessionId: sessionId,
+      nick: nick,
+      date: today,
+      loginIso: sessionLoginIso,
+      startMs: sessionStartedAt
+    });
     sessionReady = send('POST', '/rest/v1/app_sessions', {
       session_id: sessionId,
-      user_nick: getTelemetryNick(),
-      started_at: startedAt,
-      last_ping_at: startedAt,
+      user_id: state.userId || null,
+      user_nick: nick,
+      login_at: sessionLoginIso,
+      logout_at: sessionLoginIso,
       duration_sec: 0,
       device_os: detectDeviceOS(),
       screen_width: window.innerWidth,
       is_standalone: getStandaloneStatus(),
-      app_version: 'v14.8'
+      app_version: APP_VERSION
     });
     return sessionReady;
   }
 
-  async function ping() {
+  async function ping(isUnload) {
+    var nick = getTelemetryNick();
+    if (!nick) return;
+    var today = getLocalDateKey(new Date());
+    var stored = readStoredSession();
+    if (!sessionId || !stored || stored.nick !== nick || stored.date !== today) {
+      await start();
+      return;
+    }
     await sessionReady;
     var now = new Date().toISOString();
     await send('PATCH', '/rest/v1/app_sessions?session_id=eq.' + encodeURIComponent(sessionId), {
-      last_ping_at: now,
-      duration_sec: Math.max(0, Math.round((Date.now() - sessionStartedAt) / 1000)),
-      user_nick: getTelemetryNick()
-    });
+      user_id: state.userId || null,
+      user_nick: nick,
+      logout_at: now,
+      duration_sec: Math.max(0, Math.round((Date.now() - sessionStartedAt) / 1000))
+    }, !!isUnload);
   }
 
   async function recordAttempt(payload) {
-    await send('POST', '/rest/v1/task_attempts', payload);
+    var nick = getTelemetryNick();
+    if (!nick) return;
+    if (!sessionId) await start();
+    else await sessionReady;
+    if (!sessionId) return;
+    var finalPayload = Object.assign({}, payload, {
+      session_id: sessionId,
+      user_id: state.userId || null,
+      user_nick: nick
+    });
+    await send('POST', '/rest/v1/task_attempts', finalPayload);
+  }
+
+  function getSessionId() {
+    return sessionId;
   }
 
   return {
-    sessionId: sessionId,
-    sessionStartedAt: sessionStartedAt,
+    getSessionId: getSessionId,
     start: start,
     ping: ping,
     recordAttempt: recordAttempt
   };
 })();
+window.SQLTelemetry = SQLTelemetry;
 
 function setTaskTelemetryContext(moduleType, lessonId, taskId) {
   if (currentModuleType === moduleType && currentLessonId === lessonId && String(currentTaskId) === String(taskId)) return;
@@ -1179,13 +1621,42 @@ function setTaskTelemetryContext(moduleType, lessonId, taskId) {
   taskQuickbarClicks = 0;
 }
 
-function beginTaskAttempt(moduleType, lessonId, taskId) {
+function buildReadableTaskName(moduleType, lessonId, taskId) {
+  var name = String(taskId || '');
+  if (moduleType === 'path' && lessonId && window.PATH_TASKS) {
+    var pt = window.PATH_TASKS.find(function(x) { return x.id === lessonId; });
+    if (pt) {
+      var stepPart = String(taskId || '');
+      var idxMatch = stepPart.match(/:(\d+)$/);
+      var vLabel = stepPart.indexOf(':r1') > -1 ? 'Rozgrzewka 1'
+                 : stepPart.indexOf(':r2') > -1 ? 'Rozgrzewka 2'
+                 : (idxMatch ? ('Zadanie ' + (Number(idxMatch[1]) + 1)) : stepPart);
+      name = pt.title + ' · ' + vLabel;
+    }
+  } else if (moduleType === 'recruitment' && window.INTERVIEW_TASKS) {
+    var it = window.INTERVIEW_TASKS.find(function(x) { return x.id === taskId; });
+    if (it && it.title) name = it.title;
+  } else if (moduleType === 'diagnosis' && window.DIAG_QUESTIONS) {
+    var m = String(taskId || '').match(/^diag_(\d+)$/);
+    var dq = m ? window.DIAG_QUESTIONS[Number(m[1]) - 1] : null;
+    if (dq && dq.title) name = dq.title;
+  } else if (moduleType === 'quiz') {
+    name = 'Quiz Działu ' + String(lessonId || taskId || '').replace(/^.*_/, '');
+  } else if (moduleType === 'gap_practice') {
+    var gMeta = GAP_CATALOG.find(function(x) { return x.id === lessonId; });
+    name = gMeta ? ('Ćwiczenie ' + gMeta.id + ': ' + gMeta.name) : String(taskId || '');
+  }
+  return name.slice(0, 120);
+}
+
+function beginTaskAttempt(moduleType, lessonId, taskId, customTaskName) {
   setTaskTelemetryContext(moduleType, lessonId, taskId);
   taskAttemptCount++;
   return {
     moduleType: currentModuleType,
-    lessonId: currentLessonId,
-    taskId: currentTaskId,
+    lessonId: currentLessonId ? String(currentLessonId) : null,
+    taskId: String(currentTaskId),
+    taskName: (customTaskName ? String(customTaskName).slice(0, 120) : buildReadableTaskName(currentModuleType, currentLessonId, currentTaskId)),
     attemptNumber: taskAttemptCount,
     openedAt: taskOpenedAt,
     hintsUsed: taskHintsUsed,
@@ -1196,18 +1667,20 @@ function beginTaskAttempt(moduleType, lessonId, taskId) {
 function finishTaskAttempt(attempt, userSql, isPassed, checks, errorCategory) {
   if (!attempt) return;
   SQLTelemetry.recordAttempt({
-    session_id: SQLTelemetry.sessionId,
+    session_id: SQLTelemetry.getSessionId(),
+    user_id: state.userId || null,
     user_nick: getTelemetryNick(),
     module_type: attempt.moduleType,
-    lesson_id: attempt.lessonId || null,
+    lesson_id: attempt.lessonId ? String(attempt.lessonId) : null,
     task_id: String(attempt.taskId),
+    task_name: String(attempt.taskName || '').slice(0, 120),
     attempt_number: attempt.attemptNumber,
     time_spent_sec: Math.max(1, Math.round((Date.now() - attempt.openedAt) / 1000)),
     is_passed: Boolean(isPassed),
     check_cols_ok: Boolean(checks && checks.colsOk),
     check_rows_ok: Boolean(checks && checks.rowsOk),
     check_vals_ok: Boolean(checks && checks.valsOk),
-    error_category: errorCategory || null,
+    error_category: Boolean(isPassed) ? 'ok' : (errorCategory || 'validation_fail'),
     hints_used: attempt.hintsUsed,
     used_quickbar_cnt: attempt.quickbarClicks,
     submitted_sql: String(userSql || '').slice(0, 500)
@@ -1215,10 +1688,10 @@ function finishTaskAttempt(attempt, userSql, isPassed, checks, errorCategory) {
 }
 
 function getAttemptErrorCategory(result, isPassed) {
-  if (isPassed) return null;
+  if (isPassed) return 'ok';
   var message = String(result && result.error ? result.error : '');
-  if (!message) return 'validation';
-  return /syntax|parse|unexpected|token/i.test(message) ? 'syntax' : 'execution';
+  if (!message) return 'validation_fail';
+  return /syntax|parse|unexpected|token|przecinek|przecinka/i.test(message) ? 'syntax' : 'execution';
 }
 
 function getDisplayLeaderboard() {
@@ -1270,7 +1743,7 @@ async function loginOrRegisterTester(rawNick, rawPin) {
   if (isSupabaseConfigured()) {
     try {
       var baseUrl = SUPABASE_CONFIG.url.replace(/\/+$/, '');
-      var checkResp = await fetch(baseUrl + '/rest/v1/sql_profiles?nick=eq.' + encodeURIComponent(nick) + '&select=nick,pin_hash,xp,streak,solved_count,state_json,updated_at', {
+      var checkResp = await fetch(baseUrl + '/rest/v1/sql_profiles?nick=eq.' + encodeURIComponent(nick) + '&select=user_id,nick,pin_hash,xp,rank_name,streak,country,gaps,solved_count,state_json,updated_at', {
         method: 'GET',
         headers: {
           'apikey': SUPABASE_CONFIG.anonKey,
@@ -1284,10 +1757,14 @@ async function loginOrRegisterTester(rawNick, rawPin) {
           if (remoteRow.pin_hash && remoteRow.pin_hash !== pinHash) {
             return { ok: false, msg: 'Gracz "' + nick + '" już istnieje w chmurze, ale podano błędny 4-cyfrowy PIN!' };
           }
+          if (remoteRow.user_id) state.userId = remoteRow.user_id;
           if (remoteRow.state_json) {
             mergeRemoteStateIntoCurrent(remoteRow.state_json);
           } else {
             state.xp = Math.max(state.xp, Number(remoteRow.xp) || 0);
+          }
+          if (remoteRow.gaps && (Array.isArray(remoteRow.gaps) || typeof remoteRow.gaps === 'object')) {
+            mergeRemoteStateIntoCurrent({ gaps: remoteRow.gaps });
           }
         }
       }
@@ -1312,14 +1789,17 @@ async function loginOrRegisterTester(rawNick, rawPin) {
   state.userProfile = {
     nick: nick,
     pinHash: pinHash,
+    userId: state.userId || null,
     updatedAt: new Date().toISOString()
   };
   state.nick = nick;
   state.nickname = nick;
   uiState.authModalOpen = false;
   uiState.authError = '';
-  window.recalculateRealXP(state);
+  window.recalculateRealXP(state, { skipCloudSync: true });
   saveState();
+  await syncProfileToCloud(true);
+  SQLTelemetry.start();
   return { ok: true, msg: 'Zalogowano jako ' + nick + '!' };
 }
 
@@ -1465,12 +1945,15 @@ function toast(msg) {
 }
 
 function registerGapTrap(gapId, name, hint) {
-  var g = state.gaps.find(function(x) { return x.id === gapId; });
+  if (!gapId) return;
+  ensureAllGapsInState(state);
+  var normId = normalizeGapId(gapId);
+  var g = state.gaps.find(function(x) { return x.id === normId; });
   if (g) {
     g.lvl = Math.max(0, g.lvl - 1);
     g.hits = (g.hits || 0) + 1;
-  } else if (gapId) {
-    state.gaps.unshift({ id: gapId, name: name, hint: hint, lvl: 0, hits: 1 });
+  } else {
+    state.gaps.unshift({ id: normId, name: name || normId, hint: hint || '', lvl: 0, hits: 1 });
   }
   saveState();
 }
@@ -3193,6 +3676,12 @@ function renderZeroScrollTaskCard(item, parentTask, mode) {
         '<button type="button" class="btn sm" data-act="lemurTrapHint">🛡️ Jaka tu jest pułapka?</button>' +
         '<button type="button" class="btn sm" data-act="showLemurSol">💡 Pokaż wzorcowe rozwiązanie</button>' +
       '</div>';
+    } else if (mode === 'gap') {
+      helpBtnsHtml = '<div class="acts ctx-help-acts">' +
+        '<button type="button" class="btn sm warn" data-act="stepHint">' + esc(getHintButtonLabel()) + '</button>' +
+        '<button type="button" class="btn sm" data-act="showGapSol">💡 Pokaż wzorcowe rozwiązanie</button>' +
+        '<button type="button" class="btn sm" data-act="aiHint">🤖 Podpowiedź AI</button>' +
+      '</div>';
     }
     bodyHtml = renderExampleOutputInline(item.sol) +
       helpBtnsHtml +
@@ -4324,16 +4813,44 @@ function renderStageQuizModal() {
   var questions = (window.STAGE_QUIZZES && window.STAGE_QUIZZES[stageId]) || [];
   var questionIdx = uiState.stageQuizQuestionIdx || 0;
   var quizResult = state.stageQuizzes && state.stageQuizzes[stageId];
+  var maxStages = (window.STAGES && window.STAGES.length) ? window.STAGES.length : 8;
   var content = '';
+  var confettiHtml = '';
+  var isCelebration = false;
 
   if (uiState.stageQuizFinished) {
-    var passed = !!(quizResult && quizResult.passed);
+    var passed = !!(uiState.stageQuizScore >= 4 || (quizResult && quizResult.passed));
+    isCelebration = passed && uiState.stageQuizScore >= 4;
+    if (isCelebration) {
+      var confettiColors = ['#fbbf24', '#34d399', '#60a5fa', '#f472b6', '#a78bfa', '#fb923c'];
+      var pieces = [];
+      for (var ci = 0; ci < 18; ci++) {
+        var leftPct = Math.round((ci * 5.5 + 3) % 96);
+        var delaySec = ((ci % 6) * 0.28).toFixed(2);
+        var durSec = (2.1 + (ci % 4) * 0.35).toFixed(2);
+        var col = confettiColors[ci % confettiColors.length];
+        pieces.push('<span class="confetti-piece" style="left:' + leftPct + '%;background:' + col + ';animation-delay:' + delaySec + 's;animation-duration:' + durSec + 's"></span>');
+      }
+      confettiHtml = '<div class="quiz-confetti-layer" aria-hidden="true">' + pieces.join('') + '</div>';
+    }
+    var unlockedNext = passed && stageId < maxStages;
     content = '<div class="stage-quiz-result">' +
-      '<div class="stage-quiz-result-icon">' + (passed ? '🎉' : '📚') + '</div>' +
-      '<h3>' + (passed ? 'Quiz zaliczony!' : 'Tym razem bez zaliczenia') + '</h3>' +
-      '<p>Wynik: <strong>' + uiState.stageQuizScore + '/5</strong>' + (passed ? ' · <strong>+50 XP</strong>' : ' · wymagane 4/5') + '</p>' +
+      (passed
+        ? '<div class="quiz-trophy-pulse" aria-hidden="true">🏆</div>'
+        : '<div class="stage-quiz-result-icon">📚</div>') +
+      '<h3>' + (passed ? 'Brawo! Quiz Działu ' + stageId + ' zaliczony!' : 'Jeszcze chwila — powtórz pytania') + '</h3>' +
+      '<p>Twój wynik: <strong>' + uiState.stageQuizScore + '/5</strong>' + (passed ? '' : ' · wymagane minimum <strong>4/5</strong>') + '</p>' +
+      (passed
+        ? '<div class="quiz-celebration-badges">' +
+            '<span class="quiz-xp-badge">⚡ +50 XP</span>' +
+            (unlockedNext ? '<span class="quiz-unlock-pill">🔓 Odblokowano Dział ' + (stageId + 1) + '!</span>' : '<span class="quiz-unlock-pill">🏁 Wszystkie działy ukończone!</span>') +
+          '</div>'
+        : '') +
       (quizResult && quizResult.passed && uiState.stageQuizScore < 4 ? '<p class="small muted">Wcześniejsze zaliczenie i zdobyte XP pozostają zachowane.</p>' : '') +
-      '<button type="button" class="btn primary" data-act="closeStageQuiz">Gotowe</button>' +
+      '<div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-top:8px">' +
+        (!passed ? '<button type="button" class="btn warn" data-act="retryStageQuiz" data-stage="' + stageId + '">🔄 Spróbuj ponownie</button>' : '') +
+        '<button type="button" class="btn primary" data-act="closeStageQuiz">' + (passed ? '🚀 Kontynuuj naukę' : 'Zamknij') + '</button>' +
+      '</div>' +
     '</div>';
   } else if (questions.length && questions[questionIdx]) {
     var q = questions[questionIdx];
@@ -4357,11 +4874,12 @@ function renderStageQuizModal() {
   }
 
   return '<div class="stage-quiz-backdrop" role="presentation">' +
-    '<section class="stage-quiz-modal" role="dialog" aria-modal="true" aria-labelledby="stageQuizTitle">' +
-      '<header class="stage-quiz-header"><div><span class="stage-quiz-kicker">🎓 PODSUMOWANIE DZIAŁU ' + stageId + '</span><h2 id="stageQuizTitle">Quiz Działu ' + stageId + '</h2></div>' +
+    '<section class="stage-quiz-modal' + (isCelebration ? ' quiz-celebration' : '') + '" role="dialog" aria-modal="true" aria-labelledby="stageQuizTitle">' +
+      confettiHtml +
+      '<header class="stage-quiz-header" style="position:relative;z-index:3"><div><span class="stage-quiz-kicker">🎓 PODSUMOWANIE DZIAŁU ' + stageId + '</span><h2 id="stageQuizTitle">Quiz Działu ' + stageId + '</h2></div>' +
         '<button type="button" class="stage-quiz-close" data-act="closeStageQuiz" aria-label="Zamknij quiz">✕</button>' +
       '</header>' +
-      '<div class="stage-quiz-content">' + content + '</div>' +
+      '<div class="stage-quiz-content" style="position:relative;z-index:3">' + content + '</div>' +
     '</section>' +
   '</div>';
 }
@@ -4528,12 +5046,20 @@ function renderPathTab() {
       '</button>';
     });
     h += '</div></div>';
+    var maxStagesPath = (window.STAGES && window.STAGES.length) ? window.STAGES.length : 8;
     var stageQuizResult = state.stageQuizzes && state.stageQuizzes[st.id];
     var stageQuizPassed = !!(stageQuizResult && stageQuizResult.passed);
-    h += '<button type="button" class="stage-quiz-card' + (stageQuizPassed ? ' passed' : '') + '" data-act="openStageQuiz" data-stage="' + st.id + '">' +
-      '<span class="stage-quiz-card-icon">🎓</span>' +
-      '<span class="stage-quiz-card-copy"><strong>Quiz Działu ' + st.id + '</strong><small>5 pytań · +50 XP</small></span>' +
-      '<span class="stage-quiz-status">' + (stageQuizPassed ? '✓ Zaliczone (' + Number(stageQuizResult.score || 0) + '/5)' : 'Do zaliczenia') + '</span>' +
+    var quizUnlocked = isStageQuizUnlocked(st.id);
+    var quizStatusText = stageQuizPassed
+      ? '✓ Zaliczone (' + Number(stageQuizResult.score || 0) + '/5)'
+      : (quizUnlocked ? 'Do zaliczenia' : '🔒 Najpierw lekcje');
+    var quizSubText = quizUnlocked
+      ? '5 pytań · +50 XP' + (!stageQuizPassed && st.id < maxStagesPath ? ' · odblokuje Dział ' + (st.id + 1) : '')
+      : '🔒 Ukończ wszystkie pod-lekcje w Dziale ' + st.id + ', aby odblokować Quiz';
+    h += '<button type="button" class="stage-quiz-card' + (stageQuizPassed ? ' passed' : '') + (!quizUnlocked ? ' locked' : '') + '" data-act="openStageQuiz" data-stage="' + st.id + '" aria-disabled="' + (!quizUnlocked ? 'true' : 'false') + '">' +
+      '<span class="stage-quiz-card-icon">' + (quizUnlocked ? '🎓' : '🔒') + '</span>' +
+      '<span class="stage-quiz-card-copy"><strong>Quiz Działu ' + st.id + '</strong><small>' + quizSubText + '</small></span>' +
+      '<span class="stage-quiz-status">' + quizStatusText + '</span>' +
     '</button>';
   });
 
@@ -4579,8 +5105,8 @@ function renderDiagTab() {
     '</section>' +
     '<div class="card">' +
       '<h2>Co zaktualizowaliśmy w Twoim profilu?</h2>' +
-      '<p class="small muted">Wszystkie zagadnienia, które pominąłeś lub w których pojawił się błąd, trafiły automatycznie do Twojego <strong>Rejestru Luk</strong> w zakładce Rekrutacja.</p>' +
-      '<div class="acts"><button class="btn sm" data-act="resetDiag">🔄 Rozwiąż Diagnozę od początku</button></div>' +
+      '<p class="small muted">Wszystkie zagadnienia, które pominąłeś lub w których pojawił się błąd, trafiły automatycznie do zakładki <strong>🎯 Rejestr Luk</strong>.</p>' +
+      '<div class="acts"><button class="btn sm" data-act="resetDiag">🔄 Rozwiąż Diagnozę od początku</button> <button class="btn sm primary" data-act="tab" data-tab="gaps">🎯 Otwórz Rejestr Luk</button></div>' +
     '</div>';
   }
 
@@ -4618,37 +5144,12 @@ function diffBadge(diff) {
 
 function renderLemurTab() {
   var tasksList = window.INTERVIEW_TASKS || window.LEMUR_TASKS || [];
+  ensureAllGapsInState(state);
   var openGapsCnt = state.gaps.filter(function(g) { return g.lvl <= 1; }).length;
   var nav = '<div class="subnav">' +
-    '<button type="button" class="' + (state.lemurSubTab === 'tasks' ? 'active' : '') + '" data-act="backToLemurList" title="Kliknij, aby wrócić do listy wyzwań">🎯 Wyzwania Rekrutacyjne (' + tasksList.length + ')</button>' +
-    '<button type="button" class="' + (state.lemurSubTab === 'gaps' ? 'active' : '') + '" data-act="lemurSub" data-sub="gaps">🧠 Twój Rejestr Luk (' + state.gaps.length + (openGapsCnt ? ' · 🔥' + openGapsCnt : '') + ')</button>' +
+    '<button type="button" class="active" data-act="backToLemurList" title="Kliknij, aby wrócić do listy wyzwań">🎯 Wyzwania Rekrutacyjne (' + tasksList.length + ')</button>' +
+    '<button type="button" data-act="tab" data-tab="gaps">🧠 Rejestr Luk (' + state.gaps.length + (openGapsCnt ? ' · 🔥' + openGapsCnt : '') + ')</button>' +
   '</div>';
-
-  if (state.lemurSubTab === 'gaps') {
-    var gh = nav + '<div class="card">' +
-      '<h2>Twój Rejestr Luk (Spaced Repetition)</h2>' +
-      '<p class="small muted">Każda wpadka na pułapce w zadaniach rekrutacyjnych lub pominięcie pytania w Diagnozie podbija licznik pułapek i obniża poziom luki, przesuwając ją na górę listy.</p>';
-
-    var sortedGaps = state.gaps.slice().sort(function(a, b) {
-      return (a.lvl - b.lvl) || ((b.hits || 0) - (a.hits || 0));
-    });
-
-    sortedGaps.forEach(function(g) {
-      var badgeCls = g.lvl === 0 ? 'open' : g.lvl < 3 ? 'mid' : 'done';
-      gh += '<div style="padding:12px 0;border-bottom:1px solid var(--line)">' +
-        '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">' +
-          '<strong>' + esc(g.name) + '</strong>' +
-          '<div style="display:flex;gap:6px;align-items:center">' +
-            '<span class="chip ' + badgeCls + '">Poziom ' + g.lvl + '/4 · Wpadki: ' + (g.hits || 0) + '</span>' +
-            '<button class="btn sm" data-act="bumpGap" data-id="' + g.id + '">✓ Umiem (+1)</button>' +
-          '</div>' +
-        '</div>' +
-        '<p class="small muted" style="margin:5px 0 0">' + esc(g.hint) + '</p>' +
-      '</div>';
-    });
-    gh += '</div>';
-    return gh;
-  }
 
   if (state.lemurMode === 'solve') {
     var task = tasksList.find(function(x) { return x.id === state.activeLemurId; }) || tasksList[0];
@@ -4664,7 +5165,7 @@ function renderLemurTab() {
         '<span>🎯 Wyzwania rekrutacyjne (' + tasksList.length + ')</span>' +
         '<span class="lemur-back-sub">← Wróć do listy zadań</span>' +
       '</button>' +
-      '<button type="button" class="' + (state.lemurSubTab === 'gaps' ? 'active' : '') + '" data-act="lemurSub" data-sub="gaps">🧠 Twój Rejestr Luk (' + state.gaps.length + (openGapsCnt ? ' · 🔥' + openGapsCnt : '') + ')</button>' +
+      '<button type="button" data-act="tab" data-tab="gaps">🧠 Rejestr Luk (' + state.gaps.length + (openGapsCnt ? ' · 🔥' + openGapsCnt : '') + ')</button>' +
     '</div>';
 
     return topClickBanner + '<div class="card task-solve-card task-transition-enter">' +
@@ -4729,12 +5230,12 @@ function renderLemurTab() {
   return lh;
 }
 
-// ZAKŁADKA 4: BAZA DVDRENTAL + SANDBOX Z TESTEM SKŁADNI POSTGRESQL
-function renderSchemaTab() {
+// ZAKŁADKA 4: REJESTR LUK (13 LUK g1–g13) + SUB-WIDOK SCHEMATU DVDRENTAL
+function renderSchemaTabContent() {
   var h = '<div class="card">' +
     '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">' +
-      '<div><h2 style="margin:0">Sandbox SQL & Test Składni PostgreSQL</h2>' +
-      '<p class="small muted" style="margin:2px 0 0">Przetestuj dowolne zapytanie na bazie <code>dvdrental</code> albo sprawdź działanie naszego transpilera PostgreSQL.</p></div>' +
+      '<div><h2 style="margin:0">Sandbox SQL & Test Składni PostgreSQL 16</h2>' +
+      '<p class="small muted" style="margin:2px 0 0">Przetestuj dowolne zapytanie na bazie <code>dvdrental</code> przy użyciu natywnego silnika PostgreSQL 16 (PGlite WASM).</p></div>' +
       '<button class="btn warn sm" data-act="loadPgTest">⚡ Wklej test składni PG (::numeric, ILIKE, DATE_TRUNC, INTERVAL, generate_series)</button>' +
     '</div>' +
     renderEditorWidget(['film', 'category', 'actor', 'customer', 'rental', 'payment', '::numeric', 'ILIKE', 'DATE_TRUNC', 'INTERVAL', 'generate_series'], 'runOnly') +
@@ -4762,13 +5263,110 @@ function renderSchemaTab() {
   return h;
 }
 
+function renderGapsAndSchemaTab() {
+  ensureAllGapsInState(state);
+  var sub = uiState.gapsSubTab === 'schema' ? 'schema' : 'gaps';
+  var openCnt = state.gaps.filter(function(g) { return g.lvl <= 1; }).length;
+  var masteredCnt = state.gaps.filter(function(g) { return g.lvl >= 3; }).length;
+  var totalHits = state.gaps.reduce(function(acc, g) { return acc + (Number(g.hits) || 0); }, 0);
+
+  var subnav = '<div class="subnav">' +
+    '<button type="button" class="' + (sub === 'gaps' ? 'active' : '') + '" data-act="gapsSub" data-sub="gaps">🎯 Moje Luki (' + state.gaps.length + (openCnt ? ' · 🔥' + openCnt : '') + ')</button>' +
+    '<button type="button" class="' + (sub === 'schema' ? 'active' : '') + '" data-act="gapsSub" data-sub="schema">🗄️ Schemat dvdrental</button>' +
+  '</div>';
+
+  if (sub === 'schema') {
+    return subnav + renderSchemaTabContent();
+  }
+
+  if (uiState.activeGapPractice) {
+    var pr = uiState.activeGapPractice;
+    var gapStateObj = state.gaps.find(function(x) { return x.id === pr.gapId; });
+    var curLvl = gapStateObj ? gapStateObj.lvl : 0;
+    var hasGemini = state.aiProvider === 'gemini' && !!state.apiKey;
+    return subnav +
+      '<div class="card task-solve-card task-transition-enter">' +
+        '<div class="gap-practice-banner">' +
+          '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">' +
+            '<button type="button" class="btn sm" data-act="backToGapsList">← Wróć do listy luk</button>' +
+            '<span class="gap-id-tag">' + esc(pr.gapId) + '</span>' +
+            '<strong>' + esc(pr.title) + '</strong>' +
+            (pr.isAi ? '<span class="chip info">🤖 Gemini AI</span>' : '<span class="chip ok">🐘 PGlite</span>') +
+          '</div>' +
+          '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">' +
+            '<span class="chip ' + (curLvl >= 3 ? 'done' : curLvl <= 1 ? 'open' : 'mid') + '">Opanowanie: ' + curLvl + '/4</span>' +
+            (hasGemini ? '<button type="button" class="btn sm" data-act="practiceGapAi" data-id="' + esc(pr.gapId) + '">🤖 Nowe zadanie AI</button>' : '') +
+          '</div>' +
+        '</div>' +
+        renderZeroScrollTaskCard(pr, null, 'gap') +
+        renderEditorWidget(null, 'checkGapPractice', pr, null) +
+      '</div>';
+  }
+
+  var sortedGaps = state.gaps.slice().sort(function(a, b) {
+    return (a.lvl - b.lvl) || ((b.hits || 0) - (a.hits || 0)) || (Number(a.id.slice(1)) - Number(b.id.slice(1)));
+  });
+
+  var gh = subnav + '<div class="card">' +
+    '<h2>🎯 Rejestr Luk Kompetencyjnych (g1–g13)</h2>' +
+    '<p class="small muted">Wszystkie Twoje wpadki w zadaniach (błędy składni <code>g6</code>, złe warunki <code>LEFT JOIN</code>, brak nawiasów <code>OR</code> czy dzielenie całkowite) są tu zbierane automatycznie. Rozwiąż dedykowane ćwiczenie, aby podbić pasek do <code>4/4</code>.</p>' +
+    '<div class="gap-summary-chips">' +
+      '<span class="chip open">🔥 Do powtórki (0–1/4): <strong>' + openCnt + '</strong></span>' +
+      '<span class="chip done">✅ Opanowane (3–4/4): <strong>' + masteredCnt + '/13</strong></span>' +
+      '<span class="chip info">⚠️ Złapane pułapki łącznie: <strong>' + totalHits + '</strong></span>' +
+    '</div>';
+
+  sortedGaps.forEach(function(g) {
+    var meta = GAP_CATALOG.find(function(m) { return m.id === g.id; }) || {};
+    var lvl = Math.max(0, Math.min(4, Number(g.lvl) || 0));
+    var pct = lvl * 25;
+    var badgeCls = lvl <= 1 ? 'open' : lvl === 2 ? 'mid' : 'done';
+    var cardCls = 'gap-card' + (lvl <= 1 ? ' gap-open' : lvl >= 3 ? ' gap-mastered' : '');
+    var hasGeminiBtn = state.aiProvider === 'gemini' && !!state.apiKey;
+
+    gh += '<div class="' + cardCls + '">' +
+      '<div class="gap-card-hdr">' +
+        '<div class="gap-card-title"><span class="gap-id-tag">' + esc(g.id) + '</span>' + esc(g.name) + '</div>' +
+        '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">' +
+          '<span class="chip ' + badgeCls + '">' + lvl + '/4 · Wpadki: ' + (g.hits || 0) + '</span>' +
+        '</div>' +
+      '</div>' +
+      '<div class="gap-bar-wrap">' +
+        '<div class="gap-bar-meta"><span>Poziom opanowania</span><span><strong>' + lvl + '/4</strong> (' + pct + '%)</span></div>' +
+        '<div class="gap-bar"><i class="lvl-' + lvl + '" style="width:' + pct + '%"></i></div>' +
+      '</div>' +
+      '<p class="small muted" style="margin:6px 0 8px">' + esc(g.hint) + '</p>' +
+      (meta.badExample && meta.goodExample
+        ? '<div class="gap-compare-grid">' +
+            '<div class="gap-ex-bad"><strong>❌ Błąd:</strong> <code>' + esc(meta.badExample) + '</code></div>' +
+            '<div class="gap-ex-good"><strong>✅ Poprawnie:</strong> <code>' + esc(meta.goodExample) + '</code></div>' +
+          '</div>'
+        : '') +
+      '<div class="gap-card-acts">' +
+        '<button type="button" class="btn primary sm" data-act="practiceGap" data-id="' + esc(g.id) + '">⚡ Ćwicz tę lukę</button>' +
+        (hasGeminiBtn ? '<button type="button" class="btn sm" data-act="practiceGapAi" data-id="' + esc(g.id) + '">🤖 Generuj AI</button>' : '') +
+        '<button type="button" class="btn sm" data-act="bumpGap" data-id="' + esc(g.id) + '">✓ Znam (+1)</button>' +
+      '</div>' +
+    '</div>';
+  });
+
+  gh += '</div>';
+  return gh;
+}
+window.renderGapsAndSchemaTab = renderGapsAndSchemaTab;
+window.renderSchemaTab = renderGapsAndSchemaTab;
+
 // MODAL LOGOWANIA TESTERÓW (NICK + 4-CYFROWY PIN)
 var SUPABASE_SQL_SNIPPET = [
   'CREATE TABLE IF NOT EXISTS public.sql_profiles (',
+  '  user_id TEXT DEFAULT (\'User\' || nextval(\'user_id_seq\')::text),',
   '  nick TEXT PRIMARY KEY,',
   '  pin_hash TEXT NOT NULL,',
   '  xp INTEGER DEFAULT 0,',
+  '  rank_name TEXT DEFAULT \'Nowicjusz SQL\',',
   '  streak INTEGER DEFAULT 1,',
+  '  country TEXT DEFAULT \'PL\',',
+  '  gaps JSONB DEFAULT \'[]\'::jsonb,',
   '  solved_count INTEGER DEFAULT 0,',
   '  state_json JSONB DEFAULT \'{}\'::jsonb,',
   '  updated_at TIMESTAMPTZ DEFAULT now()',
@@ -4779,9 +5377,10 @@ var SUPABASE_SQL_SNIPPET = [
   '',
   'CREATE TABLE IF NOT EXISTS public.app_sessions (',
   '  session_id UUID PRIMARY KEY,',
+  '  user_id TEXT,',
   '  user_nick TEXT NOT NULL,',
-  '  started_at TIMESTAMPTZ NOT NULL,',
-  '  last_ping_at TIMESTAMPTZ NOT NULL,',
+  '  login_at TIMESTAMPTZ NOT NULL,',
+  '  logout_at TIMESTAMPTZ NOT NULL,',
   '  duration_sec INTEGER NOT NULL DEFAULT 0,',
   '  device_os TEXT,',
   '  screen_width INTEGER,',
@@ -4800,10 +5399,12 @@ var SUPABASE_SQL_SNIPPET = [
   'CREATE TABLE IF NOT EXISTS public.task_attempts (',
   '  id BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,',
   '  session_id UUID NOT NULL,',
+  '  user_id TEXT,',
   '  user_nick TEXT NOT NULL,',
   '  module_type TEXT NOT NULL,',
   '  lesson_id TEXT,',
   '  task_id TEXT NOT NULL,',
+  '  task_name TEXT,',
   '  attempt_number INTEGER NOT NULL,',
   '  time_spent_sec INTEGER NOT NULL,',
   '  is_passed BOOLEAN NOT NULL DEFAULT false,',
@@ -4988,12 +5589,12 @@ function renderAuthModal() {
   '</div>';
 }
 
-window.closeTopBarModal = function() {
+window.closeTopBarModal = function(e) {
+  if (e && typeof e.stopPropagation === 'function') e.stopPropagation();
   var liveTa = document.getElementById('answer');
   if (liveTa) {
     state.editorCode = liveTa.value;
   }
-  if (e.target.closest('.quick-chip-btn')) taskQuickbarClicks++;
   uiState.topbarModal = null;
   var bd = document.querySelector('.topbar-modal-backdrop');
   if (bd && bd.parentNode) {
@@ -5022,7 +5623,7 @@ function renderTopbarModal() {
 
   if (modalType === 'dbStatus') {
     title = '🐘 PostgreSQL 16 WebAssembly (PGlite)';
-    var isDbReady = !!window._pgliteInstance;
+    var isDbReady = !!(dbReady || window._pgliteInstance);
     var statusBadge = isDbReady ? '<span class="chip ok">🟢 Silnik aktywny (Online / Offline)</span>' : '<span class="chip mid">🟡 Inicjalizacja silnika...</span>';
     var tblCount = window.SCHEMA_META ? Object.keys(window.SCHEMA_META).length : 15;
     bodyHtml = '<div style="display:flex;flex-direction:column;gap:12px">' +
@@ -5041,7 +5642,7 @@ function renderTopbarModal() {
       '</p>' +
       '<div style="display:flex;gap:8px;margin-top:4px;flex-wrap:wrap">' +
         '<button type="button" class="btn sm warn" style="min-height:38px" data-act="resetDatabase">🔄 Zresetuj bazę danych</button>' +
-        '<button type="button" class="btn sm topbar-modal-action-close" style="min-height:38px" data-act="closeTopbarModal" onclick="window.closeTopBarModal(); event.stopPropagation();">✕ Zamknij</button>' +
+        '<button type="button" class="btn sm topbar-modal-action-close" style="min-height:38px" data-act="closeTopbarModal" onclick="window.closeTopBarModal(event);">✕ Zamknij</button>' +
       '</div>' +
     '</div>';
   } else if (modalType === 'xp') {
@@ -5091,7 +5692,7 @@ function renderTopbarModal() {
         '💡 Każde rozwiązane zadanie i ukończona rozgrzewka przyznaje punkty XP i podnosi Twoją pozycję w rankingu!' +
       '</p>' +
       '<div style="display:flex;gap:8px;margin-top:4px">' +
-        '<button type="button" class="btn sm primary topbar-modal-action-close" style="min-height:38px" data-act="closeTopbarModal" onclick="window.closeTopBarModal(); event.stopPropagation();">✕ Zamknij</button>' +
+        '<button type="button" class="btn sm primary topbar-modal-action-close" style="min-height:38px" data-act="closeTopbarModal" onclick="window.closeTopBarModal(event);">✕ Zamknij</button>' +
       '</div>' +
     '</div>';
   } else if (modalType === 'streak') {
@@ -5108,16 +5709,16 @@ function renderTopbarModal() {
         '<div class="small muted" style="margin-top:3px">Rozwiązuj przynajmniej jedno zadanie dziennie, aby Twój płomień nigdy nie wygasł!</div>' +
       '</div>' +
       '<div style="display:flex;justify-content:center;gap:8px;margin-top:4px;flex-wrap:wrap">' +
-        '<button type="button" class="btn sm primary topbar-modal-action-close" style="min-height:38px" data-act="closeTopbarModal" onclick="window.closeTopBarModal(); event.stopPropagation();">✕ Zamknij</button>' +
+        '<button type="button" class="btn sm primary topbar-modal-action-close" style="min-height:38px" data-act="closeTopbarModal" onclick="window.closeTopBarModal(event);">✕ Zamknij</button>' +
       '</div>' +
     '</div>';
   }
 
-  return '<div class="topbar-modal-backdrop" data-act="closeTopbarModal" onclick="if(event.target === this) window.closeTopBarModal();">' +
+  return '<div class="topbar-modal-backdrop" data-act="closeTopbarModal" onclick="if(event.target === this) window.closeTopBarModal(event);">' +
     '<div class="topbar-modal-card">' +
       '<div class="topbar-modal-hdr">' +
         '<h3 style="margin:0;font-size:15px">' + title + '</h3>' +
-        '<button type="button" class="topbar-modal-close" style="min-height:38px;min-width:38px" data-act="closeTopbarModal" onclick="window.closeTopBarModal(); event.stopPropagation();" aria-label="Zamknij">✕</button>' +
+        '<button type="button" class="topbar-modal-close" style="min-height:38px;min-width:38px" data-act="closeTopbarModal" onclick="window.closeTopBarModal(event);" aria-label="Zamknij">✕</button>' +
       '</div>' +
       '<div class="topbar-modal-body">' + bodyHtml + '</div>' +
     '</div>' +
@@ -5153,7 +5754,7 @@ function renderProfileTab() {
           '<span class="chip info">📱 Wersja aplikacji: ' + esc(APP_VERSION) + '</span>' +
           '<button type="button" class="btn sm warn" data-act="forceRefreshApp">🔄 Odśwież do najnowszej wersji (' + esc(APP_VERSION) + ')</button>' +
         '</div>' +
-        '<h2 style="margin:6px 0 2px;display:flex;align-items:center;gap:8px">' + renderRankBadge(state.xp) + '<span>Gracz: ' + esc(curNick) + '</span></h2>' +
+        '<h2 style="margin:6px 0 2px;display:flex;align-items:center;gap:8px">' + renderRankBadge(state.xp) + '<span>Gracz: ' + esc(curNick) + '</span>' + (state.userId ? ' <span class="chip info" style="font-size:11px">' + esc(state.userId) + '</span>' : '') + '</h2>' +
         '<p class="small" style="margin:0 0 2px">Ranga ' + getRankLevel(state.xp) + '/8: <strong>' + esc(RANK_LEVELS[getRankLevel(state.xp) - 1].name) + '</strong></p>' +
         '<p class="small muted" style="margin:0">XP: <strong>' + state.xp + '</strong> · Rozwiązane zadania: <strong>' + getTotalSolvedCount() + '</strong>' +
         (uiState.lastSyncTime ? ' · Ost. sync: <strong>' + esc(uiState.lastSyncTime) + '</strong>' : '') + '</p>' +
@@ -5205,17 +5806,31 @@ function renderProfileTab() {
   '</div>' +
 
   '<div class="card">' +
-    '<h2>Konfiguracja Silnika AI (Tryb Hybrydowy)</h2>' +
-    '<p class="small muted">Wszystkie ' + totalAllTasks + ' zadania na bazie <code>dvdrental</code> działają w 100% lokalnie i offline. Jeśli chcesz korzystać z podpowiedzi mentora AI, wybierz dostawcę:</p>' +
-    '<label class="small">Dostawca AI</label>' +
+    '<h2>🔑 Twój klucz Google Gemini API (Darmowy)</h2>' +
+    '<p class="small muted">Wszystkie ' + totalAllTasks + ' zadania na bazie <code>dvdrental</code> działają w 100% lokalnie i offline. Własny klucz Gemini odblokowuje podpowiedzi mentora AI oraz generator nowych wariantów zadań w zakładce <strong>🎯 Rejestr Luk</strong>.</p>' +
+    '<div class="gemini-steps-box">' +
+      '<strong style="font-size:12.5px">Jak zdobyć darmowy klucz w 30 sekund:</strong>' +
+      '<ol class="gemini-steps-list">' +
+        '<li>Otwórz <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer" style="color:var(--accent)">aistudio.google.com</a> i zaloguj się kontem Google.</li>' +
+        '<li>Kliknij <strong>Get API key</strong> → <strong>Create API key</strong> i skopiuj klucz zaczynający się od <code>AIza...</code>.</li>' +
+        '<li>Wklej klucz poniżej i kliknij <strong>Zapisz i przetestuj klucz</strong> (zapisywany wyłącznie w <code>localStorage</code> Twojej przeglądarki).</li>' +
+      '</ol>' +
+    '</div>' +
+    '<label class="small" for="aiProvSel">Dostawca AI</label>' +
     '<select id="aiProvSel">' +
       '<option value="gemini" ' + (state.aiProvider === 'gemini' ? 'selected' : '') + '>Google Gemini API (Darmowy klucz z Google AI Studio)</option>' +
       '<option value="claude" ' + (state.aiProvider === 'claude' ? 'selected' : '') + '>Claude Artifacts (Zalogowane konto Claude)</option>' +
       '<option value="offline" ' + (state.aiProvider === 'offline' ? 'selected' : '') + '>Tylko lokalny silnik SQL (100% Offline)</option>' +
     '</select>' +
-    '<label class="small" style="display:block;margin-top:10px">Twój klucz API (zapisywany wyłącznie w pamięci Twojej przeglądarki)</label>' +
+    '<label class="small" for="apiKeyInp" style="display:block;margin-top:10px">Twój klucz Google Gemini API (zaczyna się od <code>AIza...</code>)</label>' +
     '<input type="password" id="apiKeyInp" placeholder="AIzaSy..." value="' + esc(state.apiKey) + '">' +
-    '<div class="acts"><button class="btn primary sm" data-act="saveConfig">Zapisz konfigurację</button></div>' +
+    '<div class="acts" style="margin-top:10px">' +
+      '<button type="button" class="btn primary sm" data-act="saveAndTestGeminiKey">🔌 Zapisz i przetestuj klucz</button>' +
+      '<button type="button" class="btn sm" data-act="saveConfig">💾 Zapisz bez testu</button>' +
+    '</div>' +
+    (uiState.geminiTestStatus
+      ? '<div class="gemini-status-box ' + esc(uiState.geminiTestStatus.type || 'ok') + '">' + esc(uiState.geminiTestStatus.msg || '') + '</div>'
+      : '') +
   '</div>' +
   '<div class="card">' +
     '<h2>Kopia zapasowa postępów (.json)</h2>' +
@@ -5230,6 +5845,7 @@ function renderProfileTab() {
    9. OBSŁUGA ZDARZEŃ I AKCJI
    ========================================================================== */
 function updateHeader() {
+  ensureAllGapsInState(state);
   var xpEl = document.getElementById('xpPill');
   var stEl = document.getElementById('streakPill');
   var bdg = document.getElementById('gapBdg');
@@ -5314,7 +5930,7 @@ function render() {
   var mainHtml = currentTab === 'path' ? renderPathTab()
                : currentTab === 'diag' ? renderDiagTab()
                : currentTab === 'lemur' ? renderLemurTab()
-               : currentTab === 'schema' ? renderSchemaTab()
+               : (currentTab === 'gaps' || currentTab === 'schema') ? renderGapsAndSchemaTab()
                : renderProfileTab();
   v.innerHTML = mainHtml + renderOnboardingModal() + renderAuthModal() + renderTopbarModal() + renderStageQuizModal();
 
@@ -5421,7 +6037,7 @@ document.addEventListener('toggle', function(e) {
 
 window.addEventListener('keydown', function(e) {
   if (e.key === 'Escape' && uiState.topbarModal) {
-    window.closeTopBarModal();
+    window.closeTopBarModal(e);
     return;
   }
   if (e.key === 'Enter') {
@@ -5464,6 +6080,8 @@ document.addEventListener('click', async function(e) {
     state.editorCode = liveTa.value;
   }
 
+  if (e.target.closest('.quick-chip-btn')) taskQuickbarClicks++;
+
   // Zamknij rozwijaną listę zadań, jeśli kliknięto poza dropdown
   if (uiState.taskDropdownOpen && !e.target.closest('.task-dropdown-menu') && !e.target.closest('.task-sheet-card') && !e.target.closest('[data-act="toggleTaskDropdown"]')) {
     uiState.taskDropdownOpen = false;
@@ -5491,10 +6109,14 @@ document.addEventListener('click', async function(e) {
   var act = el.dataset.act;
   if (act === 'stepHint' || act === 'aiHint' || act === 'lemurTrapHint') taskHintsUsed++;
 
-  if (act === 'openStageQuiz') {
+  if (act === 'openStageQuiz' || act === 'retryStageQuiz') {
     var stageId = Number(el.dataset.stage);
     if (!window.STAGE_QUIZZES || !window.STAGE_QUIZZES[stageId]) {
       console.error('Brak pytań quizu dla działu ' + stageId);
+      return;
+    }
+    if (!isStageQuizUnlocked(stageId)) {
+      toast('🔒 Ukończ wszystkie pod-lekcje w Dziale ' + stageId + ', aby odblokować Quiz!');
       return;
     }
     uiState.stageQuizStage = stageId;
@@ -5502,6 +6124,7 @@ document.addEventListener('click', async function(e) {
     uiState.stageQuizScore = 0;
     uiState.stageQuizAnswered = null;
     uiState.stageQuizFinished = false;
+    uiState.stageQuizStartedAt = Date.now();
     render();
   }
   else if (act === 'answerStageQuiz') {
@@ -5524,13 +6147,39 @@ document.addEventListener('click', async function(e) {
     } else {
       if (!state.stageQuizzes) state.stageQuizzes = {};
       var previousQuizResult = state.stageQuizzes[nextStageId] || {};
+      var quizPassedNow = uiState.stageQuizScore >= 4;
+      var maxStagesQuiz = (window.STAGES && window.STAGES.length) ? window.STAGES.length : 8;
       state.stageQuizzes[nextStageId] = {
-        passed: previousQuizResult.passed === true || uiState.stageQuizScore >= 4,
+        passed: previousQuizResult.passed === true || quizPassedNow,
         score: Math.max(Number(previousQuizResult.score) || 0, uiState.stageQuizScore),
         total: 5
       };
+      if (state.stageQuizzes[nextStageId].passed && nextStageId >= (state.unlockedStage || 1) && nextStageId < maxStagesQuiz) {
+        state.unlockedStage = nextStageId + 1;
+      }
+      if (!uiState.stageQuizAttempts) uiState.stageQuizAttempts = {};
+      uiState.stageQuizAttempts[nextStageId] = (uiState.stageQuizAttempts[nextStageId] || 0) + 1;
       uiState.stageQuizFinished = true;
       window.recalculateRealXP(state);
+      SQLTelemetry.recordAttempt({
+        session_id: SQLTelemetry.getSessionId(),
+        user_id: state.userId || null,
+        user_nick: getTelemetryNick(),
+        module_type: 'quiz',
+        lesson_id: 'stage_' + nextStageId,
+        task_id: 'quiz_stage_' + nextStageId,
+        task_name: ('Quiz Działu ' + nextStageId + ' (' + uiState.stageQuizScore + '/5)').slice(0, 120),
+        attempt_number: uiState.stageQuizAttempts[nextStageId],
+        time_spent_sec: Math.max(1, Math.round((Date.now() - (uiState.stageQuizStartedAt || Date.now())) / 1000)),
+        is_passed: quizPassedNow,
+        check_cols_ok: quizPassedNow,
+        check_rows_ok: quizPassedNow,
+        check_vals_ok: quizPassedNow,
+        error_category: quizPassedNow ? 'ok' : 'quiz_fail',
+        hints_used: 0,
+        used_quickbar_cnt: 0,
+        submitted_sql: 'SCORE: ' + uiState.stageQuizScore + '/5'
+      });
     }
     render();
   }
@@ -5542,6 +6191,14 @@ document.addEventListener('click', async function(e) {
   }
   else if (act === 'tab') {
     currentTab = el.dataset.tab;
+    if (currentTab === 'gaps') {
+      uiState.gapsSubTab = 'gaps';
+      uiState.activeGapPractice = null;
+    } else if (currentTab === 'schema') {
+      currentTab = 'gaps';
+      uiState.gapsSubTab = 'schema';
+      uiState.activeGapPractice = null;
+    }
     if (currentTab === 'diag' && state.diagIdx < DIAG_QUESTIONS.length) {
       setTaskTelemetryContext('diagnosis', null, 'diag_' + (state.diagIdx + 1));
     }
@@ -5591,7 +6248,7 @@ document.addEventListener('click', async function(e) {
     window.toggleTopBarModal('streak');
   }
   else if (act === 'closeTopbarModal') {
-    window.closeTopBarModal();
+    window.closeTopBarModal(e);
   }
   else if (act === 'resetDatabase') {
     if (!confirm('Czy na pewno chcesz zresetować pamięć podręczną bazy danych i pobrać ją na nowo? Twój postęp nauki (punkty XP i zaliczone zadania) zostanie zachowany!')) {
@@ -6112,10 +6769,12 @@ document.addEventListener('click', async function(e) {
     }
     var cmp = compareResults(lastExecResult, expRes, variant.order, variant.sol);
     lastChecklist = buildValidationChecklist(lastExecResult, expRes, variant.order, variant.sol);
-    finishTaskAttempt(pathAttempt, pathSubmittedSql, cmp.ok, lastChecklist, getAttemptErrorCategory(lastExecResult, cmp.ok));
+    var errCatPath = getAttemptErrorCategory(lastExecResult, cmp.ok);
+    finishTaskAttempt(pathAttempt, pathSubmittedSql, cmp.ok, lastChecklist, errCatPath);
     if (cmp.ok) {
       lastExpectedResult = null;
       var wasCoreUnlocked = isLessonCoreCompleted(task.id);
+      var wasStageDoneBefore = isStageLessonsCompleted(task.stage);
       var vKey = getVariantKey(task, vIdx);
       var isWarmStep = variant.isWarmup === true || variant.tier === 'warmup' || vIdx < warmupTaskCnt;
       if (!state.completedVariants[vKey]) {
@@ -6127,17 +6786,21 @@ document.addEventListener('click', async function(e) {
         if (!state.completedTasks[task.id]) {
           state.completedTasks[task.id] = true;
         }
-        // Sprawdź czy cały etap ma ukończone lekcje podstawowe, by podbić unlockedStage
-        var stageLessons = PATH_TASKS.filter(function(pt) { return pt.stage === task.stage; });
-        var allStageBasicDone = stageLessons.every(function(pt) { return isLessonCoreCompleted(pt.id); });
-        var maxStageNum = (window.STAGES && window.STAGES.length) ? window.STAGES.length : STAGES.length;
-        if (allStageBasicDone && task.stage >= state.unlockedStage && state.unlockedStage < maxStageNum) {
-          state.unlockedStage = task.stage + 1;
-        }
         if (!wasCoreUnlocked) {
           unlockBonusMsg = '\n🔓 Brawo! Rozwiązałeś ' + unlockThresh + ' z ' + totalTaskVars + ' zadań w tej pod-lekcji — odblokowałeś kolejną pod-lekcję na Mapie Ścieżki!';
           toast('🔓 Odblokowano kolejną pod-lekcję (' + unlockThresh + '/' + totalTaskVars + ' zadań)!');
         }
+      }
+      var stageDoneNow = isStageLessonsCompleted(task.stage);
+      if (!wasStageDoneBefore && stageDoneNow && !isStageQuizPassed(task.stage)) {
+        uiState.stageQuizStage = task.stage;
+        uiState.stageQuizQuestionIdx = 0;
+        uiState.stageQuizScore = 0;
+        uiState.stageQuizAnswered = null;
+        uiState.stageQuizFinished = false;
+        uiState.stageQuizStartedAt = Date.now();
+        unlockBonusMsg += '\n🎓 Ukończyłeś wszystkie lekcje Działu ' + task.stage + '! Rozwiąż teraz Quiz Działu ' + task.stage + ', aby odblokować kolejny dział.';
+        toast('🎓 Wszystkie lekcje Działu ' + task.stage + ' ukończone! Rozpoczynamy Quiz Działu ' + task.stage + '!');
       }
       if (vIdx + 1 < totalTaskVars) {
         unlockBonusMsg += '\n👉 Odblokowano kolejny krok: ' + getStepSwitchLabel(vIdx + 1, task) + '. Kliknij zielony przycisk poniżej!';
@@ -6150,6 +6813,9 @@ document.addEventListener('click', async function(e) {
       saveState();
     } else {
       lastExpectedResult = lastExecResult.error ? null : expRes;
+      if (errCatPath === 'syntax' && lastExecResult && lastExecResult.error) {
+        registerGapTrap('g6', null, lastExecResult.error);
+      }
       var pathTrap = task.detectTrap ? task.detectTrap(state.editorCode, lastExecResult) : null;
       if (pathTrap && task.gapId) registerGapTrap(task.gapId, task.title, pathTrap);
       var pathErrMsg = lastExecResult.error
@@ -6183,7 +6849,8 @@ document.addEventListener('click', async function(e) {
     }
     var dCmp = compareResults(lastExecResult, dExp, dq.order, dq.sol);
     lastChecklist = buildValidationChecklist(lastExecResult, dExp, dq.order, dq.sol);
-    finishTaskAttempt(diagAttempt, diagSubmittedSql, dCmp.ok, lastChecklist, getAttemptErrorCategory(lastExecResult, dCmp.ok));
+    var dErrCat = getAttemptErrorCategory(lastExecResult, dCmp.ok);
+    finishTaskAttempt(diagAttempt, diagSubmittedSql, dCmp.ok, lastChecklist, dErrCat);
     if (dCmp.ok) {
       var diagCompletionId = String(state.diagIdx);
       var isFirstDiagCompletion = !state.completedDiag[diagCompletionId];
@@ -6205,6 +6872,9 @@ document.addEventListener('click', async function(e) {
       render();
       scrollToResult();
     } else {
+      if (dErrCat === 'syntax' && lastExecResult && lastExecResult.error) {
+        registerGapTrap('g6', null, lastExecResult.error);
+      }
       lastExpectedResult = lastExecResult.error ? null : dExp;
       var diagErrMsg = lastExecResult.error
         ? dCmp.msg
@@ -6327,7 +6997,8 @@ document.addEventListener('click', async function(e) {
     }
     var lCmp = compareResults(lastExecResult, lExp, !!lt.order, lt.sol);
     lastChecklist = buildValidationChecklist(lastExecResult, lExp, !!lt.order, lt.sol);
-    finishTaskAttempt(lemurAttempt, lemurSubmittedSql, lCmp.ok, lastChecklist, getAttemptErrorCategory(lastExecResult, lCmp.ok));
+    var lErrCat = getAttemptErrorCategory(lastExecResult, lCmp.ok);
+    finishTaskAttempt(lemurAttempt, lemurSubmittedSql, lCmp.ok, lastChecklist, lErrCat);
     if (lCmp.ok) {
       lastExpectedResult = null;
       if (!state.completedLemur[lt.id]) {
@@ -6338,13 +7009,16 @@ document.addEventListener('click', async function(e) {
       saveState();
     } else {
       lastExpectedResult = lastExecResult.error ? null : lExp;
+      if (lErrCat === 'syntax' && lastExecResult && lastExecResult.error) {
+        registerGapTrap('g6', null, lastExecResult.error);
+      }
       var trapMsg = lt.detectTrap ? lt.detectTrap(state.editorCode, lastExecResult) : null;
       if (trapMsg) {
         registerGapTrap(lt.gapId, lt.gapName, lt.gapHint || lt.hint);
         lastFeedback = {
           type: 'trap',
           title: '⚠️ Wpadłeś w pułapkę rekrutacyjną (' + (lt.categoryTag || 'SQL') + ')!',
-          msg: trapMsg + '\n👉 Luka [' + lt.gapName + '] została zaktualizowana w Twoim Rejestrze Luk.'
+          msg: trapMsg + '\n👉 Luka [' + (lt.gapName || lt.gapId) + '] została zaktualizowana w Twoim Rejestrze Luk.'
         };
       } else {
         lastFeedback = {
@@ -6374,11 +7048,173 @@ document.addEventListener('click', async function(e) {
     lastFeedback = { type: 'warn', title: '🛡️ Wskazówka dotycząca pułapki (' + lt3.gapName + ')', msg: lt3.hint || lt3.gapHint };
     render();
   }
+  else if (act === 'gapsSub') {
+    uiState.gapsSubTab = el.dataset.sub === 'schema' ? 'schema' : 'gaps';
+    uiState.activeGapPractice = null;
+    resetTaskContextUi();
+    lastExecResult = null;
+    lastExpectedResult = null;
+    lastFeedback = null;
+    lastChecklist = null;
+    render();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+  else if (act === 'backToGapsList') {
+    uiState.gapsSubTab = 'gaps';
+    uiState.activeGapPractice = null;
+    resetTaskContextUi();
+    lastExecResult = null;
+    lastExpectedResult = null;
+    lastFeedback = null;
+    lastChecklist = null;
+    render();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+  else if (act === 'practiceGap') {
+    var gpId = normalizeGapId(el.dataset.id);
+    var gpMeta = GAP_CATALOG.find(function(x) { return x.id === gpId; }) || GAP_CATALOG[0];
+    if (gpMeta && gpMeta.practice) {
+      uiState.gapsSubTab = 'gaps';
+      uiState.activeGapPractice = Object.assign({}, gpMeta.practice, { gapId: gpMeta.id, isAi: false });
+      currentTab = 'gaps';
+      setTaskTelemetryContext('gap_practice', gpMeta.id, uiState.activeGapPractice.id);
+      resetTaskContextUi();
+      state.editorCode = '';
+      lastExecResult = null;
+      lastExpectedResult = null;
+      lastFeedback = null;
+      lastChecklist = null;
+      saveState();
+      render();
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  }
+  else if (act === 'practiceGapAi') {
+    var aiGpId = normalizeGapId(el.dataset.id);
+    var aiGpMeta = GAP_CATALOG.find(function(x) { return x.id === aiGpId; }) || GAP_CATALOG[0];
+    if (!(state.aiProvider === 'gemini' && state.apiKey)) {
+      toast('🔑 Najpierw dodaj klucz Google Gemini API w zakładce Konto & AI!');
+      return;
+    }
+    toast('🤖 Generuję świeże zadanie AI dla luki ' + aiGpMeta.id + ' i weryfikuję je w PostgreSQL…');
+    try {
+      var schemaSummary = (window.SCHEMA_META || []).map(function(m) { return m.table + '(' + m.cols.join(', ') + ')'; }).join('; ');
+      var aiPrompt = 'Stwórz 1 praktyczne zadanie SQL w PostgreSQL na bazie dvdrental ćwiczące lukę: "' + aiGpMeta.name + '" (' + aiGpMeta.hint + '). ' +
+        'DOSTĘPNE TABELE I KOLUMNY: ' + schemaSummary + '. ' +
+        'Zwróć WYŁĄCZNIE czysty JSON (bez markdown) z polami: ' +
+        '{"title":"krótki tytuł","prompt":"polecenie po polsku z konkretnymi nazwami kolumn i aliasów w backtickach","sol":"poprawne zapytanie SELECT w PostgreSQL kończące się średnikiem","order":false,"tables":["tabela"],"hint":"krótka wskazówka po polsku"}.';
+      var aiResp = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=' + encodeURIComponent(state.apiKey), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contents: [{ parts: [{ text: aiPrompt }] }] })
+      });
+      var aiData = await aiResp.json();
+      var rawAiText = aiData.candidates && aiData.candidates[0] && aiData.candidates[0].content.parts[0].text;
+      if (!rawAiText) throw new Error('Brak odpowiedzi z Gemini');
+      var jsonMatch = rawAiText.match(/\{[\s\S]*\}/);
+      var parsedAi = JSON.parse(jsonMatch ? jsonMatch[0] : rawAiText);
+      if (!parsedAi || !parsedAi.sol || !parsedAi.prompt) throw new Error('Niekompletny JSON zadania');
+      var verifyRes = await runQuery(parsedAi.sol);
+      if (!verifyRes || verifyRes.error || !verifyRes.columns || !verifyRes.columns.length) {
+        throw new Error('Zapytanie wygenerowane przez AI nie przeszło walidacji w PGlite');
+      }
+      uiState.gapsSubTab = 'gaps';
+      uiState.activeGapPractice = {
+        id: 'ai_' + aiGpMeta.id + '_' + Date.now(),
+        gapId: aiGpMeta.id,
+        title: String(parsedAi.title || ('AI Trener: ' + aiGpMeta.name)),
+        prompt: String(parsedAi.prompt),
+        sol: String(parsedAi.sol),
+        order: Boolean(parsedAi.order),
+        tables: Array.isArray(parsedAi.tables) && parsedAi.tables.length ? parsedAi.tables : (aiGpMeta.practice.tables || ['film']),
+        hint: String(parsedAi.hint || aiGpMeta.hint),
+        isAi: true
+      };
+      currentTab = 'gaps';
+      setTaskTelemetryContext('gap_practice', aiGpMeta.id, uiState.activeGapPractice.id);
+      resetTaskContextUi();
+      state.editorCode = '';
+      lastExecResult = null;
+      lastExpectedResult = null;
+      lastFeedback = null;
+      lastChecklist = null;
+      saveState();
+      render();
+      toast('✅ Zadanie AI gotowe i zweryfikowane w PGlite!');
+    } catch (aiErr) {
+      console.warn('practiceGapAi fallback:', aiErr);
+      toast('⚠️ Nie udało się wygenerować zadania AI — otwieram sprawdzone ćwiczenie lokalne.');
+      uiState.gapsSubTab = 'gaps';
+      uiState.activeGapPractice = Object.assign({}, aiGpMeta.practice, { gapId: aiGpMeta.id, isAi: false });
+      currentTab = 'gaps';
+      state.editorCode = '';
+      lastExecResult = null;
+      lastExpectedResult = null;
+      lastFeedback = null;
+      lastChecklist = null;
+      render();
+    }
+  }
+  else if (act === 'checkGapPractice') {
+    var prTask = uiState.activeGapPractice;
+    if (!prTask) return;
+    var gAttempt = beginTaskAttempt('gap_practice', prTask.gapId, prTask.id || prTask.gapId, prTask.title);
+    var gSubSql = state.editorCode;
+    lastExecResult = await runQuery(state.editorCode);
+    var gExp = await runQuery(prTask.sol);
+    if (gExp && !gExp.error && gExp.columns) {
+      expectedOutputCache[String(prTask.sol || '').trim()] = gExp;
+    }
+    var gCmp = compareResults(lastExecResult, gExp, !!prTask.order, prTask.sol);
+    lastChecklist = buildValidationChecklist(lastExecResult, gExp, !!prTask.order, prTask.sol);
+    var gErrCat = getAttemptErrorCategory(lastExecResult, gCmp.ok);
+    finishTaskAttempt(gAttempt, gSubSql, gCmp.ok, lastChecklist, gErrCat);
+    if (gCmp.ok) {
+      lastExpectedResult = null;
+      ensureAllGapsInState(state);
+      var gapObj = state.gaps.find(function(x) { return x.id === prTask.gapId; });
+      if (gapObj) gapObj.lvl = Math.min(4, (Number(gapObj.lvl) || 0) + 1);
+      lastFeedback = {
+        type: 'ok',
+        title: '✅ Ćwiczenie luki [' + prTask.gapId + '] zaliczone!',
+        msg: gCmp.msg + '\n👉 Opanowanie luki wzrosło do ' + (gapObj ? gapObj.lvl : 4) + '/4.'
+      };
+      saveState();
+      if (state.userProfile && state.userProfile.nick) syncProfileToCloud(true);
+      toast('✅ Poziom luki ' + prTask.gapId + ' podniesiony do ' + (gapObj ? gapObj.lvl : 4) + '/4!');
+    } else {
+      lastExpectedResult = lastExecResult.error ? null : gExp;
+      if (gErrCat === 'syntax' && lastExecResult && lastExecResult.error) {
+        registerGapTrap('g6', null, lastExecResult.error);
+      }
+      lastFeedback = {
+        type: 'trap',
+        title: '❌ Wynik niezgodny ze wzorcem',
+        msg: lastExecResult.error ? gCmp.msg : (prTask.hint || 'Sprawdź 3-punktową checklistę walidacji oraz porównaj swój wynik z wzorcem poniżej.')
+      };
+    }
+    render();
+    scrollToResult();
+  }
+  else if (act === 'showGapSol') {
+    var prSol = uiState.activeGapPractice;
+    if (!prSol) return;
+    state.editorCode = formatSqlPretty(prSol.sol);
+    lastExecResult = await runQuery(prSol.sol);
+    lastExpectedResult = null;
+    lastChecklist = buildValidationChecklist(lastExecResult, lastExecResult, !!prSol.order, prSol.sol);
+    lastFeedback = { type: 'warn', title: '💡 Wzorcowe rozwiązanie (' + prSol.title + ')', msg: prSol.hint || '' };
+    saveState();
+    render();
+    scrollToResult();
+  }
   else if (act === 'bumpGap') {
-    var g = state.gaps.find(function(x) { return x.id === el.dataset.id; });
+    ensureAllGapsInState(state);
+    var g = state.gaps.find(function(x) { return x.id === normalizeGapId(el.dataset.id); });
     if (g) {
       g.lvl = Math.min(4, g.lvl + 1);
       saveState();
+      if (state.userProfile && state.userProfile.nick) syncProfileToCloud(true);
       render();
       toast('Poziom luki podniesiony do ' + g.lvl + '/4.');
     }
@@ -6489,17 +7325,64 @@ document.addEventListener('click', async function(e) {
     if (prov) state.aiProvider = prov.value;
     if (key) state.apiKey = key.value.trim();
     saveState();
+    uiState.geminiTestStatus = { type: 'ok', msg: '💾 Zapisano klucz w pamięci przeglądarki (localStorage).' };
+    render();
     toast('Zapisano ustawienia AI.');
+  }
+  else if (act === 'saveAndTestGeminiKey') {
+    var provTest = document.getElementById('aiProvSel');
+    var keyTest = document.getElementById('apiKeyInp');
+    if (provTest) state.aiProvider = provTest.value;
+    if (keyTest) state.apiKey = keyTest.value.trim();
+    saveState();
+    if (!state.apiKey) {
+      uiState.geminiTestStatus = { type: 'err', msg: '❌ Wklej najpierw klucz API z aistudio.google.com (zaczyna się od AIza...).' };
+      render();
+      return;
+    }
+    uiState.geminiTestStatus = { type: 'loading', msg: '⏳ Testuję połączenie z Google Gemini API…' };
+    render();
+    try {
+      var testResp = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=' + encodeURIComponent(state.apiKey), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: 'Odpowiedz dokładnie jednym słowem: OK' }] }]
+        })
+      });
+      var testData = await testResp.json();
+      if (!testResp.ok || (testData && testData.error)) {
+        var apiErrMsg = (testData && testData.error && testData.error.message) ? testData.error.message : ('HTTP ' + testResp.status);
+        uiState.geminiTestStatus = { type: 'err', msg: '❌ Błąd klucza lub limitu Gemini API: ' + apiErrMsg };
+      } else {
+        var replyTxt = testData.candidates && testData.candidates[0] && testData.candidates[0].content && testData.candidates[0].content.parts[0] && testData.candidates[0].content.parts[0].text;
+        state.aiProvider = 'gemini';
+        saveState();
+        uiState.geminiTestStatus = { type: 'ok', msg: '✅ Połączono z Google Gemini! Odpowiedź modelu: "' + String(replyTxt || 'OK').trim().slice(0, 40) + '". Podpowiedzi AI i generator zadań są gotowe.' };
+        toast('✅ Klucz Google Gemini API działa poprawnie!');
+      }
+    } catch (testErr) {
+      uiState.geminiTestStatus = { type: 'err', msg: '❌ Brak połączenia z serwerem Google Gemini API. Sprawdź sieć i spróbuj ponownie.' };
+    }
+    render();
   }
   else if (act === 'aiHint') {
     if (state.aiProvider === 'gemini' && state.apiKey) {
       toast('Pytam Gemini AI…');
       try {
+        var activeAiTask = currentTab === 'gaps' && uiState.activeGapPractice
+          ? uiState.activeGapPractice
+          : currentTab === 'lemur'
+            ? (LEMUR_TASKS.find(function(x) { return x.id === state.activeLemurId; }) || LEMUR_TASKS[0])
+            : currentTab === 'diag'
+              ? DIAG_QUESTIONS[state.diagIdx]
+              : (PATH_TASKS.find(function(t) { return t.id === state.activeTaskId; }) || PATH_TASKS[0]);
+        var taskDescCtx = activeAiTask ? (activeAiTask.prompt || activeAiTask.title || '') : '';
         var resp = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=' + encodeURIComponent(state.apiKey), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            contents: [{ parts: [{ text: 'Jesteś mentorem SQL. Daj krótką, 2-zdaniową wskazówkę po polsku (bez podawania gotowego kodu) do obecnego kodu ucznia: ' + state.editorCode }] }]
+            contents: [{ parts: [{ text: 'Jesteś mentorem SQL. Daj krótką, 2-zdaniową wskazówkę po polsku (bez podawania gotowego kodu) do zadania: "' + taskDescCtx + '" oraz obecnego kodu ucznia: ' + state.editorCode }] }]
           })
         });
         var data = await resp.json();
@@ -6509,12 +7392,21 @@ document.addEventListener('click', async function(e) {
         lastFeedback = { type: 'trap', title: 'Błąd połączenia z API', msg: 'Sprawdź swój klucz API w zakładce Konto & AI.' };
       }
     } else {
-      var hintTask = PATH_TASKS.find(function(t) { return t.id === state.activeTaskId; }) || PATH_TASKS[0];
-      var hintVar = hintTask.variants[state.activeVariantIdx % hintTask.variants.length];
+      var localHintMsg = 'Rozwiń sekcję "👁 Podejrzyj i kliknij kolumny tabel w tym zadaniu" nad edytorem, aby upewnić się co do nazw kolumn i zawartości tabel.';
+      if (currentTab === 'gaps' && uiState.activeGapPractice && uiState.activeGapPractice.hint) {
+        localHintMsg = uiState.activeGapPractice.hint + '\n\n' + localHintMsg;
+      } else if (currentTab === 'lemur') {
+        var curLm = LEMUR_TASKS.find(function(x) { return x.id === state.activeLemurId; }) || LEMUR_TASKS[0];
+        if (curLm && curLm.hint) localHintMsg = curLm.hint + '\n\n' + localHintMsg;
+      } else {
+        var hintTask = PATH_TASKS.find(function(t) { return t.id === state.activeTaskId; }) || PATH_TASKS[0];
+        var hintVar = hintTask.variants[state.activeVariantIdx % hintTask.variants.length];
+        if (hintVar && hintVar.hint) localHintMsg = hintVar.hint + '\n\n' + localHintMsg;
+      }
       lastFeedback = {
         type: 'warn',
         title: '💡 Wskazówka lokalnego mentora (Offline)',
-        msg: (hintVar && hintVar.hint ? hintVar.hint + '\n\n' : '') + 'Rozwiń sekcję "👁 Podejrzyj i kliknij kolumny tabel w tym zadaniu" nad edytorem, aby upewnić się co do nazw kolumn i zawartości tabel.'
+        msg: localHintMsg
       };
     }
     render();
@@ -6547,12 +7439,19 @@ if ('scrollRestoration' in history) {
   try { history.scrollRestoration = 'manual'; } catch (e) {}
 }
 updateDailyStreak(state);
-window.recalculateRealXP(state);
+window.recalculateRealXP(state, { skipCloudSync: true });
 var initialTask = PATH_TASKS.find(function(task) { return task.id === state.activeTaskId; }) || PATH_TASKS[0];
 if (initialTask) setTaskTelemetryContext('path', initialTask.id, getVariantKey(initialTask, state.activeVariantIdx || 0));
-SQLTelemetry.start();
-setInterval(function() { SQLTelemetry.ping(); }, 60000);
-document.addEventListener('visibilitychange', function() { SQLTelemetry.ping(); });
+if (getTelemetryNick()) {
+  if (!state.userId && isSupabaseConfigured()) {
+    syncProfileToCloud(true).then(function() { SQLTelemetry.start(); });
+  } else {
+    SQLTelemetry.start();
+  }
+}
+setInterval(function() { SQLTelemetry.ping(false); }, 60000);
+document.addEventListener('visibilitychange', function() { SQLTelemetry.ping(document.visibilityState === 'hidden'); });
+window.addEventListener('pagehide', function() { SQLTelemetry.ping(true); });
 render();
 window.scrollTo(0, 0);
 if (document.documentElement) document.documentElement.scrollTop = 0;
@@ -6569,7 +7468,7 @@ if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.
   });
 
   window.addEventListener('load', function() {
-    navigator.serviceWorker.register('./sw.js?v=14.8', { updateViaCache: 'none' }).then(function(registration) {
+    navigator.serviceWorker.register('./sw.js?v=15.0', { updateViaCache: 'none' }).then(function(registration) {
       document.addEventListener('visibilitychange', function() {
         if (document.visibilityState === 'visible') {
           registration.update().catch(function() {});
