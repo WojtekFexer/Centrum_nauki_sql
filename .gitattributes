@@ -1,2 +1,4 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+# Skrypty powloki zawsze z koncami linii LF (wymaga tego Cloudflare)
+*.sh text eol=lf
